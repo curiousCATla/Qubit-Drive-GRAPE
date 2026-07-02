@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import numpy as np
 from numpy.linalg import eigh
 from scipy.optimize import minimize
@@ -84,15 +85,38 @@ def fidelity_grad(u, H0, Hc, psi_i, psi_f, dt,want_grad=True):
 
         ew = np.exp(-1j*dt*w)
         dw = w[:,None] - w[None,:] # w_m - w_n for all pairs of eigenvalues, as an (n.n) matrix
-        with np.errstate(divide='ignore', invalid='ignore'):
-            Phi = (ew[:,None] - ew[None,:]) / dw # off-diagonal difference quotients
-        np.fill_diagonal(Phi, -1j*dt*ew) # fill the diagonal of Phi with the true derivative 
+        near =np.abs(dw) < 1e-10 # boolean array indicating where the differences are near zero
+        #H0 is the drift in the rotating frame, not the lab frame; it subtracts exactly one ℏωC per photon
+        #|g,0⟩ and |g,1⟩ are degenerate, so we need to handle the case where dw is near zero to avoid division by zero in the calculation of Phi.
+        dw_safe = np.where(near, 1.0, dw) # replace near-zero differences with 1.0 to avoid division by zero
+        Phi = (ew[:,None] - ew[None,:]) / dw_safe # off-diagonal difference quotients
+        Phi = np.where(near, (-1j*dt*ew)[:,None], Phi) # fill the diagonal of Phi with the true derivative for near-zero differences
         qc = q.conj()
         for j in range(4):
             X = V.conj().T @ Hc[j] @ V # Hj in eigenbasis
             dv = qc @ ((Phi * X) @ p) # <lam_k| dUk |phi_{k-1}>
             grad[k, j] = 2.0 * np.real(np.conj(v)* dv) # gradient of fidelity with respect to control u_j at time step k
     return F, grad
+
+def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
+    """
+    Average fidelity over multiple state transfers.
+    Uses the simple average of |<f|U|i>|^2 (more stable for optimization).
+    """
+    M = len(psi_i_list)
+    total_F = 0.0
+    total_grad = np.zeros_like(u)
+    
+    for psi_i, psi_f in zip(psi_i_list, psi_f_list):
+        F_i, grad_i = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt, want_grad=want_grad)
+        total_F += F_i
+        if want_grad and grad_i is not None:
+            total_grad += grad_i
+    
+    F_avg = total_F / M
+    grad_avg = total_grad / M if want_grad else None
+    
+    return F_avg, grad_avg
 
 def make_objective(H0, Hc, psi_i, psi_f, dt, N):
     #Return a function that computes the fidelity and its gradient for a given control sequence u.
@@ -102,16 +126,210 @@ def make_objective(H0, Hc, psi_i, psi_f, dt, N):
         return -F, -grad.ravel() 
     return objective
 
-def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0):
-    #Optimize the control sequence u to maximize the fidelity between the initial state psi_i and the final state psi_f.
-    objective = make_objective(H0, Hc, psi_i, psi_f, dt, N)
+
+def smooth_initial_controls(N, amp, cutoff_frac, seed):
+    #Build the pulse in the frequency domain and keep only low frequencies
+    rng = np.random.default_rng(seed)
+    nf = N// 2 + 1  # number of real-FFT frequency bins
+    kcut = max(1, int(cutoff_frac * nf))    # how many LOW bins to populate
+    u = np.zeros((N, 4))
+    for j in range(4):
+        spec = np.zeros(nf, dtype=complex) #empty spectrum array of length nf, initialized to zero
+        spec[:kcut] = rng.standard_normal(kcut) + 1j*rng.standard_normal(kcut)# populate the first kcut frequency bins with random complex numbers drawn from a standard normal distribution
+        col = np.fft.irfft(spec, n=N)                 # -> length-N REAL series
+        u[:, j] = amp * col / (np.std(col) + 1e-12)   # rescale to target rms
+    return u
+
+def derivative_penalty(u):
+    #Copmute the smoothness penalty and its gradient for optimization
+    
+    diff = u[1:] - u[:-1]
+    smooth_pen = np.sum(diff**2)
+
+    grad = np.zeros_like(u)
+    grad[1:] += 2*diff #condibution from u[k]
+    grad[:-1] -=2*diff #contribution from u[k-1]
+
+    return smooth_pen, grad
+
+def boundary_penalty(u):
+    """
+    Penalty for control waveforms not starting and ending at zero.
+    """
+    g_boundary = np.sum(u[0]**2) + np.sum(u[-1]**2)
+    grad = np.zeros_like(u)
+    grad[0] += 2*u[0]
+    grad[-1] += 2*u[-1]
+    return g_boundary, grad
+
+def amplitude_penalty(u, amp_max=40.0):
+    # Compute excesss amplitude 
+    excess = np.maximum(np.abs(u)-amp_max, 0)
+    g_amp = np.sum(excess**2)
+    grad = np.zeros_like(u)
+    mask = np.abs(u) > amp_max
+    grad[mask] = 2*excess[mask] * np.sign(u[mask])
+
+    return g_amp, grad
+
+
+def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, amp_max=40.0):
+    """
+    Objective that includes fidelity + derivative + boundary + amplitude penalties.
+    """
+    def objective(x):
+        u = x.reshape(N, 4)
+        
+        # Fidelity
+        F, grad_F = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt)
+        
+        total_cost = -F
+        total_grad = -grad_F
+        
+        # Derivative (smoothness) penalty
+        if lambda_deriv > 0:
+            g_deriv, grad_deriv = derivative_penalty(u)
+            total_cost  += lambda_deriv * g_deriv
+            total_grad  += lambda_deriv * grad_deriv
+        
+        # Boundary penalty (start and end at zero)
+        if lambda_boundary > 0:
+            g_bound, grad_bound = boundary_penalty(u)
+            total_cost  += lambda_boundary * g_bound
+            total_grad  += lambda_boundary * grad_bound
+        
+        # Amplitude penalty
+        if lambda_amp > 0:
+            g_amp, grad_amp = amplitude_penalty(u, amp_max=amp_max)
+            total_cost  += lambda_amp * g_amp
+            total_grad  += lambda_amp * grad_amp
+        
+        return total_cost, total_grad.ravel()
+    
+    return objective
+
+
+def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, lambda_disc=0.0, amp_max=40.0):
+    """
+    Multi-truncation objective with discrepancy penalty + existing penalties.
+    """
+    n_trunc = len(H0_list)
+    def objective(x):
+        u = x.reshape(N, 4)
+        
+        total_F = 0.0
+        total_grad = np.zeros_like(u)
+        F_values = []
+        
+        for H0, Hc, psi_i, psi_f in zip(H0_list, Hc_list, psi_i_list, psi_f_list):
+            F, grad_F = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt)
+            total_F += F
+            total_grad += grad_F
+            F_values.append(F)
+        
+        # Average fidelity (more stable scaling)
+        avg_F = total_F / n_trunc
+        avg_grad = total_grad / n_trunc
+        
+        # We minimize -avg_F
+        cost = -avg_F
+        grad = -avg_grad
+        
+        # Discrepancy penalty (optional)
+        if lambda_disc > 0 and len(F_values) > 1:
+            g_disc = 0.0
+            for i in range(len(F_values)):
+                for j in range(i+1, len(F_values)):
+                    g_disc += (F_values[i] - F_values[j])**2
+            cost += lambda_disc * g_disc
+            # (gradient of discrepancy left as 0 for simplicity)
+        
+        # Add other penalties
+        if lambda_deriv > 0:
+            g_d, gr_d = derivative_penalty(u)
+            cost += lambda_deriv * g_d
+            grad += lambda_deriv * gr_d
+        
+        if lambda_boundary > 0:
+            g_b, gr_b = boundary_penalty(u)
+            cost += lambda_boundary * g_b
+            grad += lambda_boundary * gr_b
+        
+        if lambda_amp > 0:
+            g_a, gr_a = amplitude_penalty(u, amp_max=amp_max)
+            cost += lambda_amp * g_a
+            grad += lambda_amp * gr_a
+        
+        return cost, grad.ravel()
+    
+    return objective
+
+
+def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_deriv = 0.0, lambda_boundary = 0.0, lambda_amp = 0.0, lambda_disc=0.0, amp_max= 40.0):
+    if trunc_list is not None and len(trunc_list) > 1:
+        # === Multi-truncation mode ===
+        print(f"Using multi-truncation mode with truncations: {trunc_list}")
+        
+        H0_list, Hc_list, psi_i_list, psi_f_list = [], [], [], []
+        
+        for nc in trunc_list:
+            H0_k, Hc_k, psi_i_k, psi_f_k = build_system(nc)
+            H0_list.append(H0_k)
+            Hc_list.append(Hc_k)
+            psi_i_list.append(psi_i_k)
+            psi_f_list.append(psi_f_k)
+        
+        objective = make_objective_multi_trunc(
+            H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,
+            lambda_deriv=lambda_deriv,
+            lambda_boundary=lambda_boundary,
+            lambda_amp=lambda_amp,
+            lambda_disc=lambda_disc,
+            amp_max=amp_max
+        )
+        
+    else:
+    # Single trunction, ptimize the control sequence u to maximize the fidelity between the initial state psi_i and the final state psi_f.
+        objective = make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N,lambda_deriv=lambda_deriv,lambda_boundary=lambda_boundary,lambda_amp=lambda_amp,amp_max=amp_max)
+    
     x0 = u0.ravel() # flatten the initial control array into a 1D array
-    res = minimize(objective, x0, method='L-BFGS-B', jac=True, options={'maxiter': 1000, 'ftol': 1e-12, 'gtol': 1e-8 })
+    amp_max = 50  # maximum control amplitude in rad/μs (~8 MHz)
+    bounds = [(-amp_max, amp_max)] * (N * 4)
+    res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds, options={'maxiter': 2000, 'ftol': 1e-12, 'gtol': 1e-8 })
     u_opt = res.x.reshape(N, 4) # reshape the optimized control array back into a 2D array with 4 columns
     if not res.success:
         print("Optimization failed:", res.message)
-    F_reported   = -res.fun
-    F_recomputed, _ = fidelity_grad(u_opt, H0, Hc, psi_i, psi_f, dt, want_grad=False)
-    print(F_reported, F_recomputed, abs(F_reported - F_recomputed))
-    return u_opt, -res.fun, res
+    # Final fidelity evaluation (always done at the largest truncation)
+    if trunc_list is not None:
+        n_c_final = max(trunc_list)
+        H0_final, Hc_final, psi_i_final, psi_f_final = build_system(n_c_final)
+    else:
+        H0_final, Hc_final, psi_i_final, psi_f_final = H0, Hc, psi_i, psi_f
+    
+    F_final, _ = fidelity_grad(u_opt, H0_final, Hc_final, psi_i_final, psi_f_final, dt, want_grad=False)
+    print(f"Final fidelity (at n_c={n_c_final if trunc_list else 'single'}): {F_final:.6f}")
+    
+    return u_opt, F_final, res
+
+def build_system(n_c, n_t=2):
+    """
+    Build H0, Hc, psi_i, psi_f for a given cavity truncation n_c.
+    """
+    A, B = make_ops(n_t, n_c)
+    Ad, Bd = A.conj().T, B.conj().T
+    nA, nB = Ad @ A, Bd @ B
+
+    H0 = (chi * (nA @ nB) +
+          (Kerr / 2) * (Ad @ Ad @ A @ A) +
+          (chip / 2) * (nB @ (Ad @ Ad @ A @ A)))
+
+    if n_t >= 3:
+        H0 += (alpha / 2) * (Bd @ Bd @ B @ B)
+
+    Hc = [A + Ad, 1j * (A - Ad), B + Bd, 1j * (B - Bd)]
+
+    psi_i = basis_state(n_t, n_c, 0, 0)   # |g,0⟩
+    psi_f = basis_state(n_t, n_c, 0, 6)   # |g,6⟩
+
+    return H0, Hc, psi_i, psi_f
 
