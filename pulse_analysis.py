@@ -7,15 +7,19 @@ and does the following analysis:
 1. Simulate the full time-depedent cavity photon number distribution P(n.t)
 2. Visualize the pulse and the photon number distribution
 """
+import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 sys.path.insert(0,'.')
 from grape_core import *
 
+FIG_DIR = "figures"
+os.makedirs(FIG_DIR, exist_ok=True)
+
 two_pi = 2 * np.pi 
 dt = 0.002 #in μs
-n_t = 2 #number of transmon levels
+n_t = 3 #number of transmon levels
 n_c = 24 #number of cavity levels
 N = 250 #number of time steps dt*N = total time of the pulse
 amp_init = 6.0 #amplitude used for smooth random initialization
@@ -44,9 +48,12 @@ def evaluate_fidelity_at_truncations(u, n_c_list, n_t=2, dt=0.002):
 #  GET THE OPTIMIZED PULSE
 USE_SAVED_PULSE = False          # ← Change to False if you want to re-optimize
 
+PULSE_DIR = "pulses"
+os.makedirs(PULSE_DIR, exist_ok=True)
+
 if USE_SAVED_PULSE:
-    u_opt = np.load("u_opt.npy")
-    print("Loaded optimized pulse from u_opt.npy")
+    u_opt = np.load(os.path.join(PULSE_DIR, "u_opt.npy"))
+    print(f"Loaded optimized pulse from {PULSE_DIR}/u_opt.npy")
 
 else:
     #Create the smoothed initial controls u0 for the optimization
@@ -63,8 +70,8 @@ else:
     print(f"Optimizer stopped because: {res.message}")
 
     #Save the optimized pulse
-    np.save("u_opt.npy", u_opt)
-    print ("Optimized pulse saved to u_opt.npy")
+    np.save(os.path.join(PULSE_DIR, "u_opt.npy"), u_opt)
+    print(f"Optimized pulse saved to {PULSE_DIR}/u_opt.npy")
 
 
 
@@ -155,8 +162,8 @@ ax1[1].grid(True, alpha=0.3)
 
 plt.suptitle('GRAPE Control Waveforms for |g,6⟩ Preparation')
 plt.tight_layout()
-plt.savefig('waveforms.png', dpi=150)
-print("Saved: waveforms.png")
+plt.savefig(os.path.join(FIG_DIR, 'waveforms.png'), dpi=150)
+print(f"Saved: {FIG_DIR}/waveforms.png")
 
 #Figure 2: Photon number trajectory
 fig2, ax2 = plt.subplots(figsize=(10, 5))
@@ -175,8 +182,8 @@ ax2.plot(t_ns, n_mean, color='red', linewidth=2.8, alpha=0.75, label='<n>(t)')
 ax2.legend(loc='upper right')
 
 plt.tight_layout()
-plt.savefig('photon_trajectory.png', dpi=150)
-print("Saved: photon_trajectory.png")
+plt.savefig(os.path.join(FIG_DIR, 'photon_trajectory.png'), dpi=150)
+print(f"Saved: {FIG_DIR}/photon_trajectory.png")
 
 #Figure 3: Selected Fock states
 fig3, ax3 = plt.subplots(figsize=(10, 5))
@@ -188,6 +195,6 @@ ax3.set_title('Evolution of Individual Fock State Populations')
 ax3.legend(ncol=2)
 ax3.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('fock_populations.png', dpi=150)
-print("Saved: fock_populations.png")
+plt.savefig(os.path.join(FIG_DIR, 'fock_populations.png'), dpi=150)
+print(f"Saved: {FIG_DIR}/fock_populations.png")
 

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+import os
+
 import numpy as np
 from scipy.optimize import minimize
 from cat_code import *
 from grape_core import *
+from joblib import Parallel, delayed
 
 # ---------------- Parameters ----------------
 n_c = 24          # main truncation for final reporting
@@ -39,7 +42,20 @@ psi_i_list = psi_i_list_all[trunc_list.index(n_c)]
 psi_f_list = psi_f_list_all[trunc_list.index(n_c)]
 
 # ---------------- Initial controls ----------------
-u0 = smooth_initial_controls(N, amp=12.0, cutoff_frac=0.04, seed=42)
+# ---------------- Initial controls (Warm Start) ----------------
+#  GET THE OPTIMIZED PULSE
+USE_SAVED_PULSE = True          # ← Change to False if you want to re-optimize
+PULSE_DIR = "pulses"
+os.makedirs(PULSE_DIR, exist_ok=True)
+enc_multi_path = os.path.join(PULSE_DIR, "u_enc_multi.npy")
+
+if USE_SAVED_PULSE and os.path.exists(enc_multi_path):
+    u0 = np.load(enc_multi_path)
+    print(f"Using WARM START from {enc_multi_path}")
+else:
+    u0 = smooth_initial_controls(N, amp=12.0, cutoff_frac=0.04, seed=42)
+    print("Starting from random smooth controls")
+
 x0 = u0.ravel()
 
 bounds = [(-amp_max, amp_max)] * (N * 4)
@@ -47,13 +63,23 @@ bounds = [(-amp_max, amp_max)] * (N * 4)
 # ---------------- Multi-truncation Objective ----------------
 def make_multi_trunc_encode_objective(H0_list, Hc_list, psi_i_list_all, psi_f_list_all, dt, N,
                                       lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, amp_max=40.0):
+    
+    def evaluate_truncation(u, H0_k, Hc_k, psi_i_k, psi_f_k):
+        """Helper function for parallel execution"""
+        return fidelity_multi_state(u, H0_k, Hc_k, psi_i_k, psi_f_k, dt, want_grad=True)
+    
     def objective(x):
         u = x.reshape(N, 4)
+        
+        # === Parallel execution across truncations ===
+        results = Parallel(n_jobs=3)(delayed(evaluate_truncation)(
+            u, H0_k, Hc_k, psi_i_k, psi_f_k
+        ) for H0_k, Hc_k, psi_i_k, psi_f_k in zip(H0_list, Hc_list, psi_i_list_all, psi_f_list_all))
+        
         total_F = 0.0
         total_grad = np.zeros_like(u)
         
-        for H0_k, Hc_k, psi_i_k, psi_f_k in zip(H0_list, Hc_list, psi_i_list_all, psi_f_list_all):
-            F_k, grad_k = fidelity_multi_state(u, H0_k, Hc_k, psi_i_k, psi_f_k, dt, want_grad=True)
+        for F_k, grad_k in results:
             total_F += F_k
             if grad_k is not None:
                 total_grad += grad_k
@@ -65,7 +91,7 @@ def make_multi_trunc_encode_objective(H0_list, Hc_list, psi_i_list_all, psi_f_li
         cost = -F_avg
         g = -grad_avg
         
-        # Penalties
+        # Penalties (same as before)
         if lambda_deriv > 0:
             g_d, gr_d = derivative_penalty(u)
             cost += lambda_deriv * g_d
@@ -82,7 +108,6 @@ def make_multi_trunc_encode_objective(H0_list, Hc_list, psi_i_list_all, psi_f_li
         return cost, g.ravel()
     
     return objective
-
 
 objective = make_multi_trunc_encode_objective(
     H0_list, Hc_list, psi_i_list_all, psi_f_list_all, dt, N,
@@ -103,7 +128,7 @@ res = minimize(
 )
 
 u_enc = res.x.reshape(N, 4)
-np.save("u_enc_multi.npy", u_enc)
+np.save(enc_multi_path, u_enc)
 
 # ---------------- Final Evaluation ----------------
 F_final, _ = fidelity_multi_state(u_enc, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=False)

@@ -118,6 +118,14 @@ def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     
     return F_avg, grad_avg
 
+def average_fidelity_two_transfers(u, H0, Hc, psi_i_list, psi_f_list, dt):
+    """Compute average fidelity over two state transfers."""
+    F_sum = 0.0
+    for psi_i, psi_f in zip(psi_i_list, psi_f_list):
+        F, _ = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt, want_grad=False)
+        F_sum += F
+    return F_sum / len(psi_i_list)
+
 def make_objective(H0, Hc, psi_i, psi_f, dt, N):
     #Return a function that computes the fidelity and its gradient for a given control sequence u.
     def objective(x):
