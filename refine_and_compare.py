@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-refine_and_compare.py
+refine_and_compare.py2
 
 Convenience script to refine an existing GRAPE pulse and compare
 performance before vs after refinement.
@@ -37,7 +37,7 @@ from cat_code import (
 # CONFIGURATION - Edit this section
 # ============================================================
 
-GATE = "U_enc"   # Options: "X", "Y", "Z", "H", "T", "I", "U_enc", "U_dec"
+GATE = os.environ.get("REFINE_GATE", "U_enc")   # Options: "X", "Y", "Z", "H", "T", "I", "U_enc", "U_dec"
 
 N_T = 3  # number of transmon levels used throughout refinement/evaluation
 
@@ -45,43 +45,43 @@ N_T = 3  # number of transmon levels used throughout refinement/evaluation
 GATE_CONFIG = {
     "U_enc": {
         "factory": get_encode_state_pairs,
-        "input":  "pulses/u_enc_v2.npy",
-        "output": "pulses/u_enc_refined_t3.npy"
+        "input":  "pulses/u_enc_refined_t3.npy",
+        "output": "pulses/u_enc_refined_t3v2.npy"
     },
     "U_dec": {
         "factory": get_decode_state_pairs,
-        "input":  "pulses/u_dec_v1.npy",
-        "output": "pulses/u_dec_refined_t3.npy"
+        "input":  "pulses/u_dec_refined_t3.npy",
+        "output": "pulses/u_dec_refined_t3v2.npy"
     },
     "X": {
         "factory": get_logical_X_state_pairs,
-        "input":  "pulses/u_X_logical_v1.npy",
-        "output": "pulses/u_X_refined_t3.npy"
+        "input":  "pulses/u_X_refined_t3.npy",
+        "output": "pulses/u_X_refined_t3v2.npy"
     },
     "Y": {
         "factory": get_logical_Y_state_pairs,
-        "input":  "pulses/u_Y_logical_v1.npy",
-        "output": "pulses/u_Y_refined_t3.npy"
+        "input":  "pulses/u_Y_refined_t3.npy",
+        "output": "pulses/u_Y_refined_t3v2.npy"
     },
     "Z": {
         "factory": get_logical_Z_state_pairs,
-        "input":  "pulses/u_Z_logical_v1.npy",
-        "output": "pulses/u_Z_refined_t3.npy"
+        "input":  "pulses/u_Z_refined_t3.npy",
+        "output": "pulses/u_Z_refined_t3v2.npy"
     },
     "H": {
         "factory": get_logical_H_state_pairs,
-        "input":  "pulses/u_H_refined_v1.npy",
-        "output": "pulses/u_H_refined_t3.npy"
+        "input":  "pulses/u_H_refined_t3.npy",
+        "output": "pulses/u_H_refined_t3v2.npy"
     },
     "T": {
         "factory": get_logical_T_state_pairs,
-        "input":  "pulses/u_T_refined_v1.npy",      # Use refined version as starting point
-        "output": "pulses/u_T_refined_t3.npy"
+        "input":  "pulses/u_T_refined_t3.npy",      # Use refined version as starting point
+        "output": "pulses/u_T_refined_t3v2.npy"
     },
     "I": {
         "factory": get_identity_state_pairs,
-        "input":  "pulses/u_I_logical_v1.npy",
-        "output": "pulses/u_I_refined_t3.npy"
+        "input":  "pulses/u_I_logical_v2.npy",
+        "output": "pulses/u_I_refined_t3v2.npy"
     },
 }
 
@@ -94,7 +94,15 @@ INPUT_PULSE_PATH  = config["input"]
 OUTPUT_PULSE_NAME = config["output"]
 
 # Refinement settings
-PENALTY_SCALE = 0.7
+# Base penalty (lambda) values used during refinement. Edit these directly to
+# tune regularization strength; PENALTY_SCALE (below) applies on top of these.
+PENALTIES = {
+    'deriv': 0.0001,     # smoothness penalty
+    'boundary': 0.00002,  # start/end-at-zero penalty
+    'amp': 0.00008,       # amplitude-excess penalty
+    'amp_max': 40.0       # amplitude cap (rad/us) used by the amp penalty
+}
+PENALTY_SCALE = 1
 EXTRA_MAXITER = 1500
 TRAINING_TRUNC_LIST = [22, 24, 26]
 
@@ -179,9 +187,12 @@ def main():
         trunc_list=TRAINING_TRUNC_LIST,
         n_t=N_T,
         extra_maxiter=EXTRA_MAXITER,
+        penalties=PENALTIES,
         penalty_scale=PENALTY_SCALE,
         widen_training=WIDEN_TRAINING,
         save_path=OUTPUT_PULSE_NAME,
+        cav_band=(-27.0, 27.0),
+        tra_band=(-33.0, 33.0),
         verbose=True
     )
 

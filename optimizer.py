@@ -4,6 +4,16 @@ from scipy.optimize import minimize
 from joblib import Parallel, delayed
 from grape_core import make_hamiltonian, smooth_initial_controls, derivative_penalty, boundary_penalty, amplitude_penalty, fidelity_multi_state
 from cat_code import validate_pulse_truncations
+from fourier_cutoff import project_bandlimit
+
+
+def make_smooth_warm_start(N, amp_max=4.0, cutoff_frac=0.04, seed=42):
+    """Low-pass random controls with peak amplitude capped at amp_max (rad/μs)."""
+    u0 = smooth_initial_controls(N, amp=amp_max, cutoff_frac=cutoff_frac, seed=seed)
+    peak = np.max(np.abs(u0))
+    if peak > amp_max:
+        u0 *= amp_max / peak
+    return u0
 
 
 def optimize_multi_state_pulse(
@@ -14,13 +24,42 @@ def optimize_multi_state_pulse(
     dt=0.002,
     penalties=None,
     warm_start=None,
+    warm_start_amp=4.0,
+    warm_start_cutoff_frac=0.04,
+    warm_start_seed=42,
     save_path=None,
     n_jobs=3,
     maxiter=2000,
+    cav_band=None,
+    tra_band=None,
+    hard_amp_limit=50.0,
     verbose=True
 ):
+    """
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Hard frequency cutoffs on the cavity (eps_C = C_I + i*C_Q) and
+        transmon (eps_T = T_I + i*T_Q) drives, mirroring Heeres et al. 2017
+        Supplementary Eq. (22). When both are given, the raw L-BFGS-B
+        variable x is treated as a pre-image and the PHYSICAL pulse used
+        for fidelity, penalties, and the returned pulse is the orthogonal
+        projection u = P(x) onto the band-limited subspace (see
+        fourier_cutoff.project_bandlimit). Leave both None to disable
+        (identical to previous behavior).
+    hard_amp_limit : float
+        L-BFGS-B box constraint on the raw variable x, in rad/us. This is
+        the true hard amplitude bound, decoupled from penalties['amp_max']
+        (which only sets the *soft* quadratic amplitude_penalty threshold).
+        Note: when cav_band/tra_band are set, this bounds the raw
+        pre-image x, not the projected physical pulse u -- band-edge
+        ringing from project_bandlimit can push u's peak slightly outside
+        [-hard_amp_limit, hard_amp_limit] even though x stays within bounds.
+    """
     if penalties is None:
-        penalties = {'deriv': 0.000008, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
+        penalties = {'deriv': 0.00001, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
+
+    bandlimit = cav_band is not None and tra_band is not None
+    if (cav_band is None) != (tra_band is None):
+        raise ValueError("cav_band and tra_band must both be given or both be None")
 
     if verbose:
         print(f"\n{'='*60}")
@@ -46,10 +85,17 @@ def optimize_multi_state_pulse(
         u0 = np.zeros((N, 4))
         if verbose: print("Starting from zero controls (warm_start='zero')")
     else:
-        u0 = smooth_initial_controls(N, amp=10.0, cutoff_frac=0.04, seed=42)
+        u0 = make_smooth_warm_start(
+            N, amp_max=warm_start_amp, cutoff_frac=warm_start_cutoff_frac, seed=warm_start_seed
+        )
+        if verbose:
+            print(
+                f"Starting from smooth random controls "
+                f"(peak |u| = {np.max(np.abs(u0)):.4f} <= {warm_start_amp})"
+            )
 
     x0 = u0.ravel()
-    bounds = [(-penalties['amp_max'], penalties['amp_max'])] * (N * 4)
+    bounds = [(-hard_amp_limit, hard_amp_limit)] * (N * 4)
 
     # === Best bare-F tracking (mutable container for closure) ===
     best = {'u': None, 'F': -np.inf}
@@ -62,7 +108,13 @@ def optimize_multi_state_pulse(
         return fidelity_multi_state(u, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=True)
 
     def objective(x):
-        u = x.reshape(N, 4)
+        u_raw = x.reshape(N, 4)
+        # Reparametrization (Heeres et al. 2017, Supp. Eq. 22): x is a free
+        # pre-image; the physical pulse is its projection onto the
+        # band-limited subspace. All fidelity/penalty terms below act on
+        # the PHYSICAL pulse u, so the returned pulse is guaranteed
+        # band-limited by construction.
+        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
 
         results = Parallel(n_jobs=n_jobs)(
             delayed(evaluate_trunc)(u, H0_k, Hc_k, nc)
@@ -98,13 +150,20 @@ def optimize_multi_state_pulse(
             cost += penalties['amp'] * g_a
             g += penalties['amp'] * gr_a
 
+        # Chain rule for the reparametrization: dCost/dx = P(dCost/du).
+        # Valid because P is self-adjoint & idempotent (see fourier_cutoff.py).
+        if bandlimit:
+            g = project_bandlimit(g, dt, cav_band, tra_band)
+
         return cost, g.ravel()
 
     # Run optimization
     res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
                    options={'maxiter': maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
 
-    u_final = res.x.reshape(N, 4)
+    # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
+    u_final = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
+        else res.x.reshape(N, 4)
 
     # Decide which pulse to return: final from minimizer or best bare-F seen during run
     if best['u'] is not None and best['F'] > 0.5:   # only consider if reasonably good
@@ -181,6 +240,9 @@ def refine_pulse(
     penalty_scale=1.0,
     widen_training=False,
     save_path=None,
+    cav_band=None,
+    tra_band=None,
+    hard_amp_limit=40.0,
     verbose=True
 ):
     """
@@ -211,6 +273,13 @@ def refine_pulse(
         Actual widening is left manual (as requested).
     save_path : str or None
         Path to save the refined pulse. If None, does not save.
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Forwarded to optimize_multi_state_pulse; hard frequency cutoff on
+        the cavity/transmon drives (see its docstring).
+    hard_amp_limit : float
+        Forwarded to optimize_multi_state_pulse; true hard L-BFGS-B bound
+        on the raw variable, decoupled from penalties['amp_max'] (which
+        only sets the soft amplitude_penalty threshold).
     verbose : bool
         Print progress and results.
     """
@@ -266,6 +335,9 @@ def refine_pulse(
         penalties=penalties,
         maxiter=extra_maxiter,
         save_path=save_path,
+        cav_band=cav_band,
+        tra_band=tra_band,
+        hard_amp_limit=hard_amp_limit,
         verbose=verbose
     )
 

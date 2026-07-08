@@ -60,11 +60,13 @@ else:
     u0 = smooth_initial_controls(N,amp_init, cutoff_frac, seed)
     #Run the optimizer
     #u_opt, F_opt, res = optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, lambda_deriv= 0.0003, lambda_boundary= 0.0003, lambda_amp=0.001, amp_max=40.0)
-    u_opt, F_opt, res = optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, 
-                                          lambda_deriv= 0.00002, 
-                                          lambda_boundary= 0.0001, 
+    u_opt, F_opt, res = optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0,
+                                          lambda_deriv= 0.00002,
+                                          lambda_boundary= 0.0001,
                                           lambda_amp=0.00001
-                                          , amp_max=40.0)
+                                          , amp_max=40.0
+                                          , cav_band=(-27.0, 27.0)
+                                          , tra_band=(-33.0, 33.0))
 
     print(f"optimized fidelity: {F_opt:.6f}")
     print(f"Optimizer stopped because: {res.message}")

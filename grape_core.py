@@ -2,6 +2,7 @@
 import numpy as np
 from numpy.linalg import eigh
 from scipy.optimize import minimize
+from fourier_cutoff import project_bandlimit
 
 
 two_pi = 2 * np.pi
@@ -181,50 +182,70 @@ def amplitude_penalty(u, amp_max=40.0):
     return g_amp, grad
 
 
-def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, amp_max=40.0):
+def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, amp_max=40.0, cav_band=None, tra_band=None):
     """
     Objective that includes fidelity + derivative + boundary + amplitude penalties.
+
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22) applied via
+        orthogonal projection: x is a free pre-image, the physical pulse is
+        u = P(x). Leave both None to disable.
     """
+    bandlimit = cav_band is not None and tra_band is not None
+
     def objective(x):
-        u = x.reshape(N, 4)
-        
+        u_raw = x.reshape(N, 4)
+        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+
         # Fidelity
         F, grad_F = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt)
-        
+
         total_cost = -F
         total_grad = -grad_F
-        
+
         # Derivative (smoothness) penalty
         if lambda_deriv > 0:
             g_deriv, grad_deriv = derivative_penalty(u)
             total_cost  += lambda_deriv * g_deriv
             total_grad  += lambda_deriv * grad_deriv
-        
+
         # Boundary penalty (start and end at zero)
         if lambda_boundary > 0:
             g_bound, grad_bound = boundary_penalty(u)
             total_cost  += lambda_boundary * g_bound
             total_grad  += lambda_boundary * grad_bound
-        
+
         # Amplitude penalty
         if lambda_amp > 0:
             g_amp, grad_amp = amplitude_penalty(u, amp_max=amp_max)
             total_cost  += lambda_amp * g_amp
             total_grad  += lambda_amp * grad_amp
-        
+
+        # Chain rule for the reparametrization: dCost/dx = P(dCost/du),
+        # valid because P is self-adjoint & idempotent.
+        if bandlimit:
+            total_grad = project_bandlimit(total_grad, dt, cav_band, tra_band)
+
         return total_cost, total_grad.ravel()
-    
+
     return objective
 
 
-def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, lambda_disc=0.0, amp_max=40.0):
+def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, lambda_disc=0.0, amp_max=40.0, cav_band=None, tra_band=None):
     """
     Multi-truncation objective with discrepancy penalty + existing penalties.
+
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22) applied via
+        orthogonal projection: x is a free pre-image, the physical pulse is
+        u = P(x). Leave both None to disable.
     """
     n_trunc = len(H0_list)
+    bandlimit = cav_band is not None and tra_band is not None
     def objective(x):
-        u = x.reshape(N, 4)
-        
+        u_raw = x.reshape(N, 4)
+        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+
         total_F = 0.0
         total_grad = np.zeros_like(u)
         F_values = []
@@ -267,13 +288,29 @@ def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,l
             g_a, gr_a = amplitude_penalty(u, amp_max=amp_max)
             cost += lambda_amp * g_a
             grad += lambda_amp * gr_a
-        
+
+        # Chain rule for the reparametrization: dCost/dx = P(dCost/du),
+        # valid because P is self-adjoint & idempotent.
+        if bandlimit:
+            grad = project_bandlimit(grad, dt, cav_band, tra_band)
+
         return cost, grad.ravel()
-    
+
     return objective
 
 
-def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_deriv = 0.0, lambda_boundary = 0.0, lambda_amp = 0.0, lambda_disc=0.0, amp_max= 40.0):
+def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_deriv = 0.0, lambda_boundary = 0.0, lambda_amp = 0.0, lambda_disc=0.0, amp_max= 40.0, cav_band=None, tra_band=None, hard_amp_limit=50.0):
+    """
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22). When both
+        are given, the returned pulse is exactly band-limited via
+        orthogonal projection. Leave both None to disable.
+    hard_amp_limit : float
+        L-BFGS-B box constraint on the raw variable, in rad/us -- the true
+        hard amplitude bound, decoupled from amp_max (which only sets the
+        soft quadratic amplitude_penalty threshold).
+    """
+    bandlimit = cav_band is not None and tra_band is not None
     if trunc_list is not None and len(trunc_list) > 1:
         # === Multi-truncation mode ===
         print(f"Using multi-truncation mode with truncations: {trunc_list}")
@@ -293,18 +330,21 @@ def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_de
             lambda_boundary=lambda_boundary,
             lambda_amp=lambda_amp,
             lambda_disc=lambda_disc,
-            amp_max=amp_max
+            amp_max=amp_max,
+            cav_band=cav_band,
+            tra_band=tra_band
         )
-        
+
     else:
     # Single trunction, ptimize the control sequence u to maximize the fidelity between the initial state psi_i and the final state psi_f.
-        objective = make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N,lambda_deriv=lambda_deriv,lambda_boundary=lambda_boundary,lambda_amp=lambda_amp,amp_max=amp_max)
-    
+        objective = make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N,lambda_deriv=lambda_deriv,lambda_boundary=lambda_boundary,lambda_amp=lambda_amp,amp_max=amp_max,cav_band=cav_band,tra_band=tra_band)
+
     x0 = u0.ravel() # flatten the initial control array into a 1D array
-    amp_max = 50  # maximum control amplitude in rad/μs (~8 MHz)
-    bounds = [(-amp_max, amp_max)] * (N * 4)
+    bounds = [(-hard_amp_limit, hard_amp_limit)] * (N * 4)
     res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds, options={'maxiter': 2000, 'ftol': 1e-12, 'gtol': 1e-8 })
-    u_opt = res.x.reshape(N, 4) # reshape the optimized control array back into a 2D array with 4 columns
+    # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
+    u_opt = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
+        else res.x.reshape(N, 4)
     if not res.success:
         print("Optimization failed:", res.message)
     # Final fidelity evaluation (always done at the largest truncation)

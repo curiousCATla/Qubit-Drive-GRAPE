@@ -60,10 +60,13 @@ if __name__ == "__main__":
     u_I, info_I = optimize_multi_state_pulse(
         get_state_pairs=get_identity_state_pairs,
         trunc_list=[22, 24, 26],
-        warm_start="zero",
-        save_path="pulses/u_I_logical_v1.npy",
-        penalties={'deriv': 0.00001, 'boundary': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
+        warm_start_amp=np.pi,
+        save_path="pulses/u_I_logical_v2.npy",
+        penalties={'deriv': 0.00005, 'boundary': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
         maxiter=1500,
+        cav_band=(-27.0, 27.0),
+        tra_band=(-33.0, 33.0),
+        hard_amp_limit=50.0,
         verbose=True
     )
 
