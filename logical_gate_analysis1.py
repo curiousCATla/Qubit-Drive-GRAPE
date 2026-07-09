@@ -50,19 +50,19 @@ if __name__ == "__main__":
     # Identity operation (reference / sanity check)
     # ============================================================
     print("\n" + "=" * 70)
-    print("IDENTITY OPERATION (reference)")
+
     print("=" * 70)
 
     from cat_code import get_identity_state_pairs
 
-    print("\n=== Identity Optimization ===\n")
+   
 
-    u_I, info_I = optimize_multi_state_pulse(
-        get_state_pairs=get_identity_state_pairs,
+    u_H, info_H = optimize_multi_state_pulse(
+        get_state_pairs=get_logical_H_state_pairs,
         trunc_list=[22, 24, 26],
         warm_start_amp=np.pi,
-        save_path="pulses/u_I_logical_v2.npy",
-        penalties={'deriv': 0.00005, 'boundary': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
+        save_path="pulses/u_H_logical_v2.npy",
+        penalties={'deriv': 0.00001, 'boundary': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
         maxiter=1500,
         cav_band=(-27.0, 27.0),
         tra_band=(-33.0, 33.0),
@@ -72,9 +72,9 @@ if __name__ == "__main__":
 
     print("\n--- Identity Validation ---")
     validate_pulse_truncations(
-        u=u_I,
-        get_targets_func=get_identity_state_pairs,
+        u=u_H,
+        get_targets_func=get_logical_H_state_pairs,
         title="Identity Full Truncation Validation"
     )
 
-    print("\nIdentity optimization complete. Saved: u_I_logical_v1.npy")
+    print("\nIdentity optimization complete. Saved: u_H_logical_v2.npy")

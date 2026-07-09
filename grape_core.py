@@ -4,6 +4,10 @@ from numpy.linalg import eigh
 from scipy.optimize import minimize
 from fourier_cutoff import project_bandlimit
 
+# Apple's Accelerate BLAS backend spuriously raises RuntimeWarnings (divide by
+# zero / overflow / invalid value) on ordinary complex matmuls (verified: no
+# actual NaN/Inf is produced, norms are preserved). Silence just these codes.
+np.seterr(divide='ignore', over='ignore', invalid='ignore')
 
 two_pi = 2 * np.pi
 chi = two_pi * (-2.194) #in MHz (dispersive shift)

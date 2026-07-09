@@ -75,14 +75,14 @@ ALPHA = np.sqrt(3.0)
 
 # Expected refined pulse filenames (from refine_and_compare.py convention)
 GATE_PULSE_MAP = {
-    "enc": os.path.join(PULSE_DIR, "u_enc_refined_t3.npy"),
-    "dec": os.path.join(PULSE_DIR, "u_dec_refined_t3.npy"),
-    "X":   os.path.join(PULSE_DIR, "u_X_refined_t3.npy"),
-    "Y":   os.path.join(PULSE_DIR, "u_Y_refined_t3.npy"),
-    "Z":   os.path.join(PULSE_DIR, "u_Z_refined_t3.npy"),
-    "H":   os.path.join(PULSE_DIR, "u_H_refined_t3.npy"),
-    "T":   os.path.join(PULSE_DIR, "u_T_refined_t3.npy"),
-    "I":   os.path.join(PULSE_DIR, "u_I_refined_t3.npy"),   # or u_I_logical_v1.npy
+    "enc": os.path.join(PULSE_DIR, "u_enc_refined_t3v2.npy"),
+    "dec": os.path.join(PULSE_DIR, "u_dec_refined_t3v2.npy"),
+    "X":   os.path.join(PULSE_DIR, "u_X_refined_t3v2.npy"),
+    "Y":   os.path.join(PULSE_DIR, "u_Y_refined_t3v2.npy"),
+    "Z":   os.path.join(PULSE_DIR, "u_Z_refined_t3v2.npy"),
+    "H":   os.path.join(PULSE_DIR, "u_H_refined_t3v2.npy"),
+    "T":   os.path.join(PULSE_DIR, "u_T_refined_t3v2.npy"),
+    "I":   os.path.join(PULSE_DIR, "u_I_refined_t3v2.npy"),   # or u_I_logical_v1.npy
 }
 
 # Wide validation range (used in Tier 1)
@@ -127,6 +127,7 @@ def tier1_fidelity_robustness(gate_name, get_state_pairs, u, title=None):
     min_f = df['Fidelity'].min()
     std_f = df['Fidelity'].std()
     print(f"\nSummary: mean={mean_f:.6f} | min={min_f:.6f} | std={std_f:.6f} | range={min_f:.6f}–{df['Fidelity'].max():.6f}")
+    print("Target: aim for mean ≥ 0.985 and min ≥ 0.985 (literature target from Heeres et al.)")
     return df, {'mean': mean_f, 'min': min_f, 'std': std_f}
 
 # ============================================================
@@ -389,12 +390,12 @@ def tier4_enc_gate_dec_pipeline(gate_name, u_gate, u_enc=None, u_dec=None, n_c_l
 
     overall = np.mean([r['avg'] for r in results.values()])
     print(f"\n  Overall pipeline avg fidelity: {overall:.6f}")
-    if overall > 0.98:
-        print("  ✅  Excellent — logical gate correctly transferred to computational subspace.")
-    elif overall > 0.95:
-        print("  ⚠️  Good but room for improvement (refine further or check U_enc/U_dec).")
+    if overall >= 0.985:
+        print("  ✅  Excellent — logical gate correctly transferred to computational subspace (≥0.985).")
+    elif overall >= 0.97:
+        print("  ⚠️  Acceptable (≥0.97) but room for improvement — refine further or check U_enc/U_dec.")
     else:
-        print("  ❌  Low pipeline fidelity — investigate leakage or gate optimization.")
+        print("  ❌  Below target (<0.97) — investigate leakage or re-optimize gate.")
     return results
 
 # ============================================================
@@ -453,13 +454,18 @@ def main():
         pipe = tier4_enc_gate_dec_pipeline(gate_name, u)
 
         # Collect summary
+        if pipe:
+            pipeline_avg = np.mean([v['avg'] for v in pipe.values()])
+        else:
+            pipeline_avg = np.nan
+
         summary_rows.append({
             'Gate': gate_name,
             'F_mean': stats['mean'],
             'F_min': stats['min'],
             'F_std': stats['std'],
             'Unitarity_err': alg['unitarity_err'],
-            'Pipeline_avg': pipe['avg'] if pipe else np.nan,
+            'Pipeline_avg': pipeline_avg,
             'Pulse_file': os.path.basename(pulse_path)
         })
 
@@ -471,10 +477,10 @@ def main():
         df_sum = pd.DataFrame(summary_rows)
         print(df_sum.to_string(index=False, float_format="%.6f"))
         print("\nInterpretation guide:")
-        print("  • F_mean / F_min : higher is better; aim >0.99 / >0.98")
+        print("  • F_mean / F_min : higher is better; target ≥ 0.985 (matches Heeres et al. 98.5% literature target)")
         print("  • Unitarity_err  : <1e-3 excellent (extracted logical map is unitary)")
-        print("  • Pipeline_avg   : measures how well logical gate works in full enc/gate/dec stack")
-        print("                     (most important number for practical use of the logical qubit)")
+        print("  • Pipeline_avg   : most important practical metric — target ≥ 0.985")
+        print("                     (measures how well the logical gate works inside the full encode/gate/decode stack)")
 
     print("\n" + "="*70)
     print("VALIDATION COMPLETE")

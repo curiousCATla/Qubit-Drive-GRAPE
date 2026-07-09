@@ -37,7 +37,7 @@ from cat_code import (
 # CONFIGURATION - Edit this section
 # ============================================================
 
-GATE = os.environ.get("REFINE_GATE", "U_enc")   # Options: "X", "Y", "Z", "H", "T", "I", "U_enc", "U_dec"
+GATE = "H"   # Options: "X", "Y", "Z", "H", "T", "I", "U_enc", "U_dec"
 
 N_T = 3  # number of transmon levels used throughout refinement/evaluation
 
@@ -70,7 +70,7 @@ GATE_CONFIG = {
     },
     "H": {
         "factory": get_logical_H_state_pairs,
-        "input":  "pulses/u_H_refined_t3.npy",
+        "input":  "pulses/u_H_logical_v2.npy",
         "output": "pulses/u_H_refined_t3v2.npy"
     },
     "T": {
