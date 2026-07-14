@@ -96,6 +96,25 @@ Once a pulse is optimized (and ideally refined — see below), `validate_logical
 
 Results are summarized in `pandas` tables for quick inspection.
 
+### Decoherence simulation
+
+`decoherence.py` re-evolves an optimized pulse under the **Lindblad master equation** to estimate the realistic, decoherence-limited fidelity (vs. the closed-system fidelity GRAPE optimizes against). Jump operators are cavity relaxation ($\kappa$), transmon relaxation ($\gamma$), and transmon pure dephasing ($\gamma_\phi$), with rates set from $T_1^C$, $T_1^T$, $T_\phi$ (given in seconds, converted internally to the simulation's μs time base to match `dt`).
+
+The density matrix is vectorized ($d^2$-dimensional, row-major/`order='C'` to match the Kronecker convention used to build the Liouvillian $\mathcal{L}$) and propagated with `scipy.sparse.linalg.expm_multiply`, which applies $e^{\mathcal{L}\,dt}$ directly to the state vector instead of forming the dense $d^2\times d^2$ matrix exponential at every step — the latter is intractable even for modest truncations (e.g. $n_c=24 \Rightarrow d^2 = 5184$).
+
+```python
+import numpy as np
+from grape_core import basis_state
+from decoherence import simulate_with_decoherence, compute_fidelity
+
+u = np.load("pulses/u_opt.npy")
+psi0 = basis_state(n_t=3, n_c=24, t_level=0, c_level=0)      # |g,0⟩
+psi_target = basis_state(n_t=3, n_c=24, t_level=0, c_level=6) # |g,6⟩
+
+rho_final = simulate_with_decoherence(u, psi0)
+print(compute_fidelity(rho_final, psi_target))
+```
+
 ## Project layout
 
 | File | Purpose |
@@ -109,6 +128,7 @@ Results are summarized in `pandas` tables for quick inspection.
 | `refine_and_compare.py` | Refine an existing pulse and compare fidelity before/after |
 | `validate_logical_gates.py` | Five-tier validation suite for refined logical-gate pulses |
 | `pulse_analysis.py` | Trajectory simulation, Fock populations, basic optimization demo |
+| `decoherence.py` | Lindblad master-equation simulation with $T_1$/$T_\phi$ decoherence; reports decoherence-limited fidelity |
 | `pulse_viz.py` | I/Q waveform and complex-envelope FFT spectrum plots |
 | `wigner_viz.py` | Wigner-function tomography: Fock states, cat states, and states propagated through a saved pulse |
 | `pulses/` | Saved control sequences (`u_*.npy`, shape `(N, 4)`) |
