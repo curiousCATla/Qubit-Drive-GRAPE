@@ -13,6 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 sys.path.insert(0,'.')
 from grape_core import *
+from optimizer import optimize_multi_state_pulse
 
 FIG_DIR = "figures"
 os.makedirs(FIG_DIR, exist_ok=True)
@@ -46,33 +47,44 @@ def evaluate_fidelity_at_truncations(u, n_c_list, n_t=2, dt=0.002):
     return results
 
 #  GET THE OPTIMIZED PULSE
-USE_SAVED_PULSE = False          # ← Change to False if you want to re-optimize
+USE_SAVED_PULSE = True          # ← Change to False if you want to re-optimize
 
 PULSE_DIR = "pulses"
 os.makedirs(PULSE_DIR, exist_ok=True)
+
+TRUNC_LIST = [22, 24, 26]  # cavity truncations trained on simultaneously (matches logical_gate_analysis1.py)
+
+def get_g6_state_pairs(n_c, n_t=3):
+    """Factory for the |g,0> -> |g,6> state transfer at a given cavity truncation."""
+    psi_i = basis_state(n_t, n_c, 0, 0)
+    psi_f = basis_state(n_t, n_c, 0, 6)
+    return [(psi_i, psi_f)]
 
 if USE_SAVED_PULSE:
     u_opt = np.load(os.path.join(PULSE_DIR, "u_opt.npy"))
     print(f"Loaded optimized pulse from {PULSE_DIR}/u_opt.npy")
 
 else:
-    #Create the smoothed initial controls u0 for the optimization
-    u0 = smooth_initial_controls(N,amp_init, cutoff_frac, seed)
-    #Run the optimizer
-    #u_opt, F_opt, res = optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, lambda_deriv= 0.0003, lambda_boundary= 0.0003, lambda_amp=0.001, amp_max=40.0)
-    u_opt, F_opt, res = optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0,
-                                          lambda_deriv= 0.00002,
-                                          lambda_boundary= 0.0001,
-                                          lambda_amp=0.00001
-                                          , amp_max=40.0
-                                          , cav_band=(-27.0, 27.0)
-                                          , tra_band=(-33.0, 33.0))
+    #Run the optimizer, averaging fidelity+gradient across TRUNC_LIST at every step
+    u_opt, info = optimize_multi_state_pulse(
+        get_state_pairs=get_g6_state_pairs,
+        trunc_list=TRUNC_LIST,
+        n_t=n_t,
+        N=N,
+        dt=dt,
+        warm_start_amp=amp_init,
+        warm_start_cutoff_frac=cutoff_frac,
+        warm_start_seed=seed,
+        save_path=os.path.join(PULSE_DIR, "u_opt.npy"),
+        penalties={'deriv': 0.00002, 'boundary': 0.0001, 'amp': 0.00001, 'amp_max': 40.0},
+        maxiter=2000,
+        cav_band=(-27.0, 27.0),
+        tra_band=(-33.0, 33.0),
+        verbose=True
+    )
 
-    print(f"optimized fidelity: {F_opt:.6f}")
-    print(f"Optimizer stopped because: {res.message}")
-
-    #Save the optimized pulse
-    np.save(os.path.join(PULSE_DIR, "u_opt.npy"), u_opt)
+    print(f"optimized fidelity (at max trunc n_c={max(TRUNC_LIST)}): {info['final_fidelity']:.6f}")
+    print(f"Optimizer stopped because: {info['message']}")
     print(f"Optimized pulse saved to {PULSE_DIR}/u_opt.npy")
 
 
@@ -134,7 +146,7 @@ print(f"Final transmon excited population:    {transmon_ex[-1]:.6f}")
 
 print("\nTruncation Validation")
 n_c_list = [16, 18, 20, 22, 24, 26, 28, 30, 32]
-fidelities = evaluate_fidelity_at_truncations(u_opt, n_c_list)
+fidelities = evaluate_fidelity_at_truncations(u_opt, n_c_list, n_t=n_t)
 
 # Optional: print a nice summary
 print("\nTruncation validation summary:")

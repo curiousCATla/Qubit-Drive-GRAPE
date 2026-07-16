@@ -44,6 +44,11 @@ def make_hamiltonian(n_t, n_c):
     Hc = [A+Ad, 1j*(A-Ad), B+Bd, 1j*(B-Bd)] # 1j = i the imaginary unit
     return H0, Hc
 
+def refine_dt(waveform, s):
+    """Shrink dt by a factor of s via zero-order hold: repeat each of the N
+    rows s times, giving an (s*N) x 4 array over the same total duration."""
+    return np.repeat(waveform, s, axis=0)
+
 def step_data(H0, Hc, u_k, dt):
     #Return propagator Uk and eig data (w,V) for one time step's controls u_k (length 4).
     Hk = H0 + u_k[0]*Hc[0] + u_k[1]*Hc[1] + u_k[2]*Hc[2] + u_k[3]*Hc[3]

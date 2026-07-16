@@ -84,6 +84,15 @@ onto the band-limited subspace, applied separately to the cavity drive $\varepsi
 
 Time-step propagators use `numpy.linalg.eigh` rather than matrix exponentials directly: $U_k = V \,\mathrm{diag}(e^{-i\,dt\,\omega})\, V^\dagger$.
 
+### Max-truncation refinement (`optimizer_max_trunc.py`)
+
+`optimizer.py`'s multi-truncation mode averages fidelity (and its gradient) over every $n_c$ in `trunc_list` on **every** L-BFGS-B call — robust, but expensive since each call propagates the full pulse once per truncation. `optimizer_max_trunc.py` restructures this for pulses that need to hold up well past their training truncations:
+
+- The **primary objective** each call is the bare fidelity at only `max(trunc_list)`, with a fresh gradient every time — this is the term L-BFGS-B actually chases.
+- Robustness at the *lower* truncations is instead enforced by a **consistency penalty**, $\sum_k (F_{\max} - F_k)^2$, that pulls the lower-truncation fidelities toward the primary one. Since computing it requires propagating every lower truncation too, it's only **refreshed every `refresh_every` iterations** (via an L-BFGS-B `callback`) rather than on every objective/gradient call — between refreshes its cost and gradient are held frozen (a constant, so the line search still sees a valid, if stale, slope).
+
+`refine_pulse_max_trunc()` wraps this into the same warm-start-and-refine pattern as `optimizer.refine_pulse`. In practice it's applied as a two-stage **"refine + restart"** recipe (see `refine_enc_max_trunc.py` / `refine_enc_max_trunc_restart.py` / `refine_all_gates_max_trunc.py`): run once from an existing pulse, then run again warm-started from *that* output. L-BFGS-B often reports convergence only because its quasi-Newton Hessian approximation has gone stale, not because it's truly stuck — restarting with a fresh Hessian from the same point frequently recovers further fidelity gains. This recipe produced every `pulses/*_mt.npy` file, which `qutip_validate.py` (above) cross-checks.
+
 ### Validation
 
 Once a pulse is optimized (and ideally refined — see below), `validate_logical_gates.py` runs it through a five-tier check before it's trusted as a usable logical gate:
@@ -95,6 +104,8 @@ Once a pulse is optimized (and ideally refined — see below), `validate_logical
 5. **Effective unitary extraction** — recover the realized single-qubit unitary and compare it to the ideal target.
 
 Results are summarized in `pandas` tables for quick inspection.
+
+`qutip_validate.py` adds an independent cross-check on top of that: every propagator used elsewhere in this repo (`grape_core.fidelity_grad`/`fidelity_multi_state`) is the same hand-rolled `eigh`-and-exponentiate code the optimizer itself maximizes, so a bug there (wrong operator ordering, a missing `dt`/factor-of-2) could converge cleanly and still self-report a great fidelity. `qutip_validate.py` rebuilds the operators and Hamiltonian from scratch with QuTiP (not by importing `grape_core.make_ops`) and propagates each saved `pulses/*_mt.npy` waveform with `qutip.sesolve` — a separately implemented ODE integrator — using a zero-order-hold `Coefficient` (`order=0`) per control channel so the piecewise-constant pulse convention is reproduced exactly rather than smoothed by the default spline interpolation. Agreement between the two propagators (all pulses currently agree to $\lesssim 10^{-5}$, within `sesolve`'s solver tolerance) is evidence the physics is right, not just that the code is internally consistent.
 
 ### Decoherence simulation
 
@@ -123,10 +134,15 @@ print(compute_fidelity(rho_final, psi_target))
 | `cat_code.py` | Cat-state generation, encode/decode/logical-gate target factories, truncation validation |
 | `fourier_cutoff.py` | Hard frequency-band projection for controls and gradients (Heeres Supplementary Eq. 22) |
 | `optimizer.py` | `optimize_multi_state_pulse()`, `refine_pulse()` |
+| `optimizer_max_trunc.py` | `optimize_multi_state_pulse_max_trunc()`, `refine_pulse_max_trunc()` — max-truncation objective + consistency penalty (see above) |
 | `logical_gate_analysis.py` | Standalone encode optimization script |
 | `logical_gate_analysis1.py` | Gate optimization examples + encode/decode round-trip check |
 | `refine_and_compare.py` | Refine an existing pulse and compare fidelity before/after |
+| `refine_enc_max_trunc.py` | Refine `U_enc` with the max-truncation objective ("refine" stage) |
+| `refine_enc_max_trunc_restart.py` | Restart `U_enc`'s max-truncation refinement with a fresh L-BFGS-B Hessian ("restart" stage) |
+| `refine_all_gates_max_trunc.py` | Apply the refine+restart max-truncation recipe to every remaining saved pulse (X/Y/Z/H/T/I, `U_dec`, `u_opt`), producing the `pulses/*_mt.npy` files |
 | `validate_logical_gates.py` | Five-tier validation suite for refined logical-gate pulses |
+| `qutip_validate.py` | Independent fidelity cross-check of every saved pulse via `qutip.sesolve`, run in parallel with `grape_core`'s own propagator |
 | `pulse_analysis.py` | Trajectory simulation, Fock populations, basic optimization demo |
 | `decoherence.py` | Lindblad master-equation simulation with $T_1$/$T_\phi$ decoherence; reports decoherence-limited fidelity |
 | `pulse_viz.py` | I/Q waveform and complex-envelope FFT spectrum plots |
@@ -140,6 +156,7 @@ print(compute_fidelity(rho_final, psi_target))
 ```bash
 pip install -r requirements.txt
 pip install joblib matplotlib pandas   # used by analysis scripts
+pip install qutip                      # used by qutip_validate.py
 ```
 
 **Optimize a logical gate** (example from `logical_gate_analysis1.py`):
@@ -167,6 +184,12 @@ python refine_and_compare.py
 
 ```bash
 python validate_logical_gates.py
+```
+
+**Cross-check every saved pulse against an independent QuTiP propagator**:
+
+```bash
+python qutip_validate.py
 ```
 
 **Visualize a pulse**:
