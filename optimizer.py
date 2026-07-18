@@ -56,6 +56,9 @@ def optimize_multi_state_pulse(
     """
     if penalties is None:
         penalties = {'deriv': 0.00001, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
+    else:
+        penalties = penalties.copy()
+    penalties.setdefault('disc', 0.0)
 
     bandlimit = cav_band is not None and tra_band is not None
     if (cav_band is None) != (tra_band is None):
@@ -136,6 +139,25 @@ def optimize_multi_state_pulse(
         cost = -F_avg
         g = -grad_avg
 
+        # Heeres et al. 2017 Supp. Eq. 24: discrepancy penalty enforcing the
+        # per-truncation fidelities agree with each other, not just each be
+        # individually high. Reuses the (F_k, grad_k) pairs already computed
+        # above for the Eq. 23 sum -- no extra propagation needed. Evaluated
+        # fresh (no staleness) on every objective call, exactly like F_avg.
+        if penalties['disc'] > 0:
+            Fs = [F for F, _ in results]
+            grads = [g_ for _, g_ in results]
+            disc_cost = 0.0
+            disc_grad = np.zeros_like(u)
+            for i in range(M):
+                for j in range(M):
+                    if i != j:
+                        delta = Fs[i] - Fs[j]
+                        disc_cost += delta ** 2
+                        disc_grad += 2.0 * delta * (grads[i] - grads[j])
+            cost += penalties['disc'] * disc_cost
+            g += penalties['disc'] * disc_grad
+
         # Penalties (added to cost and gradient)
         if penalties['deriv'] > 0:
             g_d, gr_d = derivative_penalty(u)
@@ -194,12 +216,17 @@ def optimize_multi_state_pulse(
         print("\n" + "="*60)
         print("Post-optimization bare fidelity per training truncation")
         print("="*60)
+        F_per_trunc = []
         for nc, H0_k, Hc_k in zip(trunc_list, H0_list, Hc_list):
             state_pairs_k = get_state_pairs(n_c=nc, n_t=n_t)
             psi_i_list = [p[0] for p in state_pairs_k]
             psi_f_list = [p[1] for p in state_pairs_k]
             F_k, _ = fidelity_multi_state(u_opt, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=False)
+            F_per_trunc.append(F_k)
             print(f"  n_c={nc:2d}: F = {F_k:.6f}")
+        if len(F_per_trunc) > 1:
+            max_disc = max(F_per_trunc) - min(F_per_trunc)
+            print(f"  max pairwise |F_i - F_j| across training truncations: {max_disc:.3e}")
         print("="*60)
 
     # Final evaluation at max truncation (for backward compatibility / info dict)
@@ -220,7 +247,8 @@ def optimize_multi_state_pulse(
         'iterations': res.nit,
         'final_fidelity': F_final,
         'best_bare_F_during_opt': best['F'],
-        'trunc_list': trunc_list
+        'trunc_list': trunc_list,
+        'disc_penalty_weight': penalties.get('disc', 0.0)
     }
 
     return u_opt, info

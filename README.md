@@ -2,6 +2,8 @@
 
 GRAPE (Gradient Ascent Pulse Engineering) optimization of microwave drive waveforms for a **transmon–cavity** circuit-QED system. The pulses are designed for Fock-state preparation, **even-parity cat-code** encoding/decoding, and single-qubit logical gates on the resulting cat-code qubit.
 
+This project is based entirely on the scheme demonstrated in Heeres, R. W. *et al.* ["Implementing a universal gate set on a logical qubit encoded in an oscillator"](https://www.nature.com/articles/s41467-017-00045-1), *Nature Communications* **8**, 94 (2017). All Hamiltonian conventions, the cat-code definition, and the frequency-band-limited pulse constraint reproduce that paper's approach.
+
 ## Physics
 
 ### System model
@@ -84,14 +86,27 @@ onto the band-limited subspace, applied separately to the cavity drive $\varepsi
 
 Time-step propagators use `numpy.linalg.eigh` rather than matrix exponentials directly: $U_k = V \,\mathrm{diag}(e^{-i\,dt\,\omega})\, V^\dagger$.
 
-### Max-truncation refinement (`optimizer_max_trunc.py`)
+### Max-truncation refinement (retired)
 
-`optimizer.py`'s multi-truncation mode averages fidelity (and its gradient) over every $n_c$ in `trunc_list` on **every** L-BFGS-B call — robust, but expensive since each call propagates the full pulse once per truncation. `optimizer_max_trunc.py` restructures this for pulses that need to hold up well past their training truncations:
+An earlier revision of this project used a second optimizer module, `optimizer_max_trunc.py`, for pulses that needed to hold up past their training truncation. Unlike `optimizer.py`'s multi-truncation mode (which averages fidelity and its gradient over every $n_c$ in `trunc_list` on **every** L-BFGS-B call), it drove L-BFGS-B primarily with the bare fidelity at only `max(trunc_list)`, with a separate **consistency penalty** $\sum_k (F_{\max} - F_k)^2$ against the lower truncations — refreshed (and held frozen between refreshes) only every `refresh_every` iterations rather than every call, to keep it cheap. Applied as a two-stage "refine + restart" recipe, this produced every `pulses/*_mt.npy` file, which `qutip_validate.py` (above) cross-checks.
 
-- The **primary objective** each call is the bare fidelity at only `max(trunc_list)`, with a fresh gradient every time — this is the term L-BFGS-B actually chases.
-- Robustness at the *lower* truncations is instead enforced by a **consistency penalty**, $\sum_k (F_{\max} - F_k)^2$, that pulls the lower-truncation fidelities toward the primary one. Since computing it requires propagating every lower truncation too, it's only **refreshed every `refresh_every` iterations** (via an L-BFGS-B `callback`) rather than on every objective/gradient call — between refreshes its cost and gradient are held frozen (a constant, so the line search still sees a valid, if stale, slope).
+That staleness turned out to be exactly what let the optimizer exploit the finite-truncation wall — see "Challenge" below. `optimizer_max_trunc.py` and the two scripts that depended on it (`refine_all_gates_max_trunc.py`, `refine_all_mt_with_leak.py`) have since been removed in favor of `optimizer.py`'s cold-start Eq. 23+24 recipe. `pulses/u_opt_mt.npy` is the one pulse still in active use that this retired recipe produced — `U_opt` was already fully convergent, so it was never retrained.
 
-`refine_pulse_max_trunc()` wraps this into the same warm-start-and-refine pattern as `optimizer.refine_pulse`. In practice it's applied as a two-stage **"refine + restart"** recipe (see `refine_enc_max_trunc.py` / `refine_enc_max_trunc_restart.py` / `refine_all_gates_max_trunc.py`): run once from an existing pulse, then run again warm-started from *that* output. L-BFGS-B often reports convergence only because its quasi-Newton Hessian approximation has gone stale, not because it's truly stuck — restarting with a fresh Hessian from the same point frequently recovers further fidelity gains. This recipe produced every `pulses/*_mt.npy` file, which `qutip_validate.py` (above) cross-checks.
+### Challenge: truncation wall-exploitation
+
+`validate_pulse_truncations` / `truncation_convergence.py` sweep a trained pulse's bare fidelity $F_N$ across a wide range of truncations $N$, well past whatever the pulse was trained at. This is the paper's own validity criterion (Supplementary Note 2, Eq. 23–24): $F_N$ should plateau once $N$ exceeds the training truncation, since a finite-dimensional cavity truncation is only a valid stand-in for the real infinite-dimensional oscillator if none of the relevant dynamics reach the wall.
+
+Sweeping the `pulses/*_mt.npy` gates this way turned up a real problem: 5 of 9 (`U_enc`, `U_X`, `U_Y`, `U_Z`, `U_T`) reported excellent fidelity (0.96–0.98) at their training truncation $n_c=26$, but collapsed to 0.55–0.73 once simulated at $n_c > 26$. The `optimizer_max_trunc.py` recipe that produced them drives L-BFGS-B with the bare fidelity at only `nc_max` as the primary objective, with the cross-truncation consistency penalty refreshed (and held stale) only every 10 iterations — enough slack for the optimizer to find a solution that exploits the artificial reflection off the $n_c=26$ Hilbert-space wall to reach the target state, rather than one that would behave the same in a real, untruncated cavity. This is exactly the failure mode Heeres *et al.* 2017 warn about: *"For generic applied drives this is not the case [dynamics staying within N]. In order to enforce this property, we modify the optimization problem..."*
+
+Two fixes were tried and **didn't** solve it:
+- Widening `trunc_list` within the same max-trunc architecture (e.g. `[20, 26, 32]`) — the wall-exploitation just relocated to the new `nc_max`.
+- Switching to `optimizer.py`'s averaged-fidelity objective (the paper's Eq. 23 alone, fresh gradient every iteration, no staleness) while still warm-starting from the already-overfit pulse — fidelity became consistent *across the trained truncations* but still collapsed beyond them.
+
+What actually fixed it was implementing the paper's **full** combined recipe and removing the warm start:
+- **Eq. 23 + Eq. 24 together, both fresh every iteration** — `optimizer.py`'s `optimize_multi_state_pulse` now also computes the discrepancy penalty $\sum_{k_1 \neq k_2} (F_{k_1} - F_{k_2})^2$ (a `'disc'` key in `penalties`, defaulting to `0.0` so existing callers are unaffected) from the same per-truncation fidelity/gradient pairs it already evaluates for the Eq. 23 sum — no extra propagation needed, and no staleness, unlike the `optimizer_max_trunc.py` consistency term.
+- **Cold start, not warm start.** L-BFGS-B is a local method: refining from a pulse already sitting in a wall-exploiting basin, no matter what penalty is added, tends to stay in that basin. Retraining from scratch let the optimizer find a fundamentally different, cheaper solution — for `U_Z` and `U_T` in particular, one that implements the (pure-phase) target almost entirely through the transmon with a nearly negligible cavity drive, sidestepping the truncation question altogether, mirroring how the paper's own `T`/`I` gates work (Supplementary Figure 4: *"grape finds a solution with a very small oscillator drive amplitude"*).
+
+All 8 logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_T`, `U_I`) have since been retrained this way (`trunc_list=[22,24,26]`, saved as new `pulses/u_*_eq23eq24_coldstart.npy` files, originals untouched). The 5 that were broken now show flat fidelity from $n_c=18$ all the way to $n_c=40$ — fully converged, at higher fidelity (0.995–0.9998) than the originals ever reached even at their own training truncation. `U_dec`, `U_H`, and `U_I` were already convergent and were redone purely for consistency, so every logical gate except `U_opt` (already fully convergent, never needed retraining) now comes from the same recipe.
 
 ### Validation
 
@@ -133,16 +148,14 @@ print(compute_fidelity(rho_final, psi_target))
 | `grape_core.py` | Hamiltonian construction, propagation, fidelity, gradients, penalties |
 | `cat_code.py` | Cat-state generation, encode/decode/logical-gate target factories, truncation validation |
 | `fourier_cutoff.py` | Hard frequency-band projection for controls and gradients (Heeres Supplementary Eq. 22) |
-| `optimizer.py` | `optimize_multi_state_pulse()`, `refine_pulse()` |
-| `optimizer_max_trunc.py` | `optimize_multi_state_pulse_max_trunc()`, `refine_pulse_max_trunc()` — max-truncation objective + consistency penalty (see above) |
+| `optimizer.py` | `optimize_multi_state_pulse()`, `refine_pulse()` — averaged-fidelity (Eq. 23) objective, optionally with the fresh Eq. 24 discrepancy penalty (`penalties['disc']`) |
+| `truncation_convergence.py` | Sweeps bare fidelity across a wide truncation range per gate to check the paper's Eq. 23–24 validity criterion (see "Challenge: truncation wall-exploitation") |
 | `logical_gate_analysis.py` | Standalone encode optimization script |
 | `logical_gate_analysis1.py` | Gate optimization examples + encode/decode round-trip check |
 | `refine_and_compare.py` | Refine an existing pulse and compare fidelity before/after |
-| `refine_enc_max_trunc.py` | Refine `U_enc` with the max-truncation objective ("refine" stage) |
-| `refine_enc_max_trunc_restart.py` | Restart `U_enc`'s max-truncation refinement with a fresh L-BFGS-B Hessian ("restart" stage) |
-| `refine_all_gates_max_trunc.py` | Apply the refine+restart max-truncation recipe to every remaining saved pulse (X/Y/Z/H/T/I, `U_dec`, `u_opt`), producing the `pulses/*_mt.npy` files |
 | `validate_logical_gates.py` | Five-tier validation suite for refined logical-gate pulses |
 | `qutip_validate.py` | Independent fidelity cross-check of every saved pulse via `qutip.sesolve`, run in parallel with `grape_core`'s own propagator |
+| `qutip_grape_optimizer.py` | Teaching implementation of the same GRAPE algorithm built directly on QuTiP `Qobj` physics (not just a cross-check) — same adjoint-gradient/L-BFGS-B structure as `optimizer.py`, deliberately simpler and without band-limiting, the discrepancy penalty, or `joblib` parallelism |
 | `pulse_analysis.py` | Trajectory simulation, Fock populations, basic optimization demo |
 | `decoherence.py` | Lindblad master-equation simulation with $T_1$/$T_\phi$ decoherence; reports decoherence-limited fidelity |
 | `pulse_viz.py` | I/Q waveform and complex-envelope FFT spectrum plots |
@@ -232,6 +245,6 @@ plot_wigner_from_pulse("pulses/u_enc_refined_t3v2.npy", initial_state="vacuum",
 
 ## References
 
+- Heeres, Reinhold, Ofek, *et al.* — Implementing a universal gate set on a logical qubit encoded in an oscillator ([Nature Communications 8, 94 (2017)](https://www.nature.com/articles/s41467-017-00045-1)) — **primary reference for this project**
 - Khaneja, Reiss, Kehlet, *et al.* — GRAPE: optimal control of spin systems ([JMR 2005](https://doi.org/10.1016/j.jmr.2004.11.004))
-- Heeres, *et al.* — Even-parity cat encoding ([PRL 2017](https://doi.org/10.1103/PhysRevLett.119.060501))
 - Blais, Huang, Wallraff, Girvin — Circuit QED ([arxiv:cond-mat/0402216](https://arxiv.org/abs/cond-mat/0402216))

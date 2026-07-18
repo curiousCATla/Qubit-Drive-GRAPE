@@ -278,38 +278,74 @@ def plot_wigner_from_pulse(pulse, initial_state="vacuum", transmon='g', n_c=24, 
 
 
 # ============================================================
+# GATE -> PULSE FILE MAP (cold-start Eq.23+24 pulses)
+# ============================================================
+# filename (in pulses/) -> (label, [(initial_state, transmon, description), ...])
+# For U_opt the only relevant input is vacuum; for U_enc it's vacuum on each
+# transmon level (which cat state you get depends on transmon level); for
+# every other gate (dec + logical X/Y/Z/H/T/I) the inputs are the two cat
+# basis states |+Z_L>/|-Z_L> with the transmon in |g> (see cat_code.py's
+# get_*_state_pairs factories -- all embed at t_level=0 except get_encode).
+WIGNER_GATE_MAP = {
+    "u_opt_eq23eq24_coldstart.npy": ("U_opt", [
+        ("vacuum", "g", "|g,0⟩ → |g,6⟩"),
+    ]),
+    "u_enc_eq23eq24_coldstart.npy": ("U_enc", [
+        ("vacuum", "g", "+Z_L after encoding"),
+        ("vacuum", "e", "-Z_L after encoding"),
+    ]),
+    "u_dec_eq23eq24_coldstart.npy": ("U_dec", [
+        ("cat_plus", "g", "+Z_L → |g,0⟩ (decode)"),
+        ("cat_minus", "g", "-Z_L → |e,0⟩ (decode)"),
+    ]),
+    "u_X_eq23eq24_coldstart.npy": ("U_X", [
+        ("cat_plus", "g", "+Z_L after X"),
+        ("cat_minus", "g", "-Z_L after X"),
+    ]),
+    "u_Y_eq23eq24_coldstart.npy": ("U_Y", [
+        ("cat_plus", "g", "+Z_L after Y"),
+        ("cat_minus", "g", "-Z_L after Y"),
+    ]),
+    "u_Z_eq23eq24_coldstart.npy": ("U_Z", [
+        ("cat_plus", "g", "+Z_L after Z"),
+        ("cat_minus", "g", "-Z_L after Z"),
+    ]),
+    "u_H_eq23eq24_coldstart.npy": ("U_H", [
+        ("cat_plus", "g", "+Z_L after H"),
+        ("cat_minus", "g", "-Z_L after H"),
+    ]),
+    "u_T_eq23eq24_coldstart.npy": ("U_T", [
+        ("cat_plus", "g", "+Z_L after T"),
+        ("cat_minus", "g", "-Z_L after T"),
+    ]),
+    "u_I_eq23eq24_coldstart.npy": ("U_I", [
+        ("cat_plus", "g", "+Z_L after I"),
+        ("cat_minus", "g", "-Z_L after I"),
+    ]),
+}
+
+# ============================================================
 # EXAMPLE USAGE
 # ============================================================
 if __name__ == "__main__":
     print("=== Wigner Visualization Module ===")
-    print("Example usage:")
-    print("  plot_wigner_fock(n=6)")
-    print("  plot_wigner_cat(which='+')")
-    print("  plot_wigner_from_pulse('pulses/u_opt.npy', initial_state='vacuum')")
-    print("  plot_wigner_from_pulse('pulses/u_H_refined_t3.npy', initial_state='cat_plus')")
-    print("  plot_wigner_from_pulse('pulses/u_enc_refined_t3v2.npy', initial_state='vacuum', transmon='g')  # +Z_L")
-    print("  plot_wigner_from_pulse('pulses/u_enc_refined_t3v2.npy', initial_state='vacuum', transmon='e')  # -Z_L")
-    print("\nModule loaded successfully.")
+    print("Rendering final-state Wigner functions for every cold-start pulse in WIGNER_GATE_MAP...")
 
+    os.makedirs("wigner", exist_ok=True)
 
-    plot_wigner_from_pulse(
-        pulse="pulses/u_enc_refined_t3v2.npy",
-        initial_state="vacuum",
-        transmon='g',
-        n_c=24,
-        alpha_max=5.5,
-        title="Wigner function of |+Z_L⟩ after encoding",
-        save_path="wigner/wigner_encode_plus.png",
-        show=False
-    )
+    for filename, (label, entries) in WIGNER_GATE_MAP.items():
+        pulse_path = os.path.join("pulses", filename)
+        for initial_state, transmon, desc in entries:
+            safe_name = f"{label}_{initial_state}_{transmon}"
+            plot_wigner_from_pulse(
+                pulse=pulse_path,
+                initial_state=initial_state,
+                transmon=transmon,
+                n_c=26,
+                alpha_max=5.5,
+                title=f"{label}: {desc}",
+                save_path=os.path.join("wigner", f"{safe_name}.png"),
+                show=False,
+            )
 
-    plot_wigner_from_pulse(
-        pulse="pulses/u_enc_refined_t3v2.npy",
-        initial_state="vacuum",
-        transmon='e',
-        n_c=24,
-        alpha_max=5.5,
-        title="Wigner function of |-Z_L⟩ after encoding",
-        save_path="wigner/wigner_encode_minus.png",
-        show=False
-    )
+    print("Done.")

@@ -125,8 +125,92 @@ def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     
     F_avg = total_F / M
     grad_avg = total_grad / M if want_grad else None
-    
+
     return F_avg, grad_avg
+
+def leakage_grad(u, H0, Hc, psi_i, dt, n_c, n_t, N_cut, leak_tol=1e-5, want_grad=True):
+    """
+    Penalize cavity population above Fock level N_cut at every step of the
+    trajectory (running cost), unlike fidelity_grad's terminal-only cost.
+
+    Returns (cost, grad, max_leak):
+    - cost: sum_k max(P(n>N_cut, t_k) - leak_tol, 0)^2 over the trajectory
+    - grad: [N,4] gradient of cost w.r.t. u (None if want_grad=False)
+    - max_leak: raw (unthresholded) worst-case P(n>N_cut, t) observed --
+      diagnostic to check directly against the 1e-5 requirement.
+
+    Same forward propagation and eigenbasis (Phi/X) machinery as
+    fidelity_grad, but the backward costate is seeded with a source term at
+    EVERY step (chi_k = 2*excess_k*mask*phi_k) instead of only at the final
+    step, since the cost here is a sum over the whole trajectory rather than
+    a single terminal overlap. Because each l_k is already real-valued, the
+    final gradient contraction skips fidelity_grad's extra conj(v) factor
+    (that factor arises specifically from the |v|^2 terminal-cost form).
+    """
+    N = u.shape[0]
+    mask = (np.arange(n_t * n_c) % n_c) > N_cut  # True where cavity level > N_cut
+
+    phi = [psi_i.copy()]
+    Us, Ws, Vs = [], [], []
+    psi = psi_i.copy()
+    for k in range(N):
+        Uk, w, V = step_data(H0, Hc, u[k], dt)
+        psi = Uk @ psi
+        phi.append(psi)
+        Us.append(Uk); Ws.append(w); Vs.append(V)
+
+    l = np.array([np.sum(np.abs(phi[k][mask]) ** 2) for k in range(1, N + 1)])  # P(n>N_cut, t_k)
+    excess = np.maximum(l - leak_tol, 0.0)
+    cost = np.sum(excess ** 2)
+    max_leak = np.max(l)
+
+    if not want_grad:
+        return cost, None, max_leak
+
+    # backward costates with a running source injected at every step
+    mu = [None] * (N + 1)
+    mu[N] = 2 * excess[N - 1] * mask * phi[N]
+    for k in range(N - 1, 0, -1):
+        mu[k] = 2 * excess[k - 1] * mask * phi[k] + Us[k].conj().T @ mu[k + 1]
+
+    grad = np.zeros((N, 4))
+    for k in range(N):
+        w, V = Ws[k], Vs[k]
+
+        p = V.conj().T @ phi[k]
+        q = V.conj().T @ mu[k + 1]
+
+        ew = np.exp(-1j * dt * w)
+        dw = w[:, None] - w[None, :]
+        near = np.abs(dw) < 1e-10
+        dw_safe = np.where(near, 1.0, dw)
+        Phi = (ew[:, None] - ew[None, :]) / dw_safe
+        Phi = np.where(near, (-1j * dt * ew)[:, None], Phi)
+        qc = q.conj()
+        for j in range(4):
+            X = V.conj().T @ Hc[j] @ V
+            dv = qc @ ((Phi * X) @ p)
+            grad[k, j] = 2.0 * np.real(dv)
+
+    return cost, grad, max_leak
+
+def leakage_multi_state(u, H0, Hc, psi_i_list, dt, n_c, n_t, N_cut, leak_tol=1e-5, want_grad=True):
+    """Average leakage_grad over multiple initial states (mirrors fidelity_multi_state)."""
+    M = len(psi_i_list)
+    total_cost = 0.0
+    total_grad = np.zeros_like(u)
+    worst = 0.0
+
+    for psi_i in psi_i_list:
+        c, g, m = leakage_grad(u, H0, Hc, psi_i, dt, n_c, n_t, N_cut, leak_tol=leak_tol, want_grad=want_grad)
+        total_cost += c
+        worst = max(worst, m)
+        if want_grad and g is not None:
+            total_grad += g
+
+    cost_avg = total_cost / M
+    grad_avg = total_grad / M if want_grad else None
+    return cost_avg, grad_avg, worst
 
 def average_fidelity_two_transfers(u, H0, Hc, psi_i_list, psi_f_list, dt):
     """Compute average fidelity over two state transfers."""
