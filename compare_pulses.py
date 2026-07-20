@@ -32,7 +32,7 @@ from cat_code import (
 PULSE_DIR = "pulses"
 N_T = 3
 DT = 0.002
-N_C_LIST = [20, 22, 24, 26, 28]
+N_C_LIST = list(range(20, 37))  # F(n_c) for n_c = 20 … 36 inclusive
 
 
 def get_g6_state_pairs(n_c, n_t=3):
@@ -43,16 +43,17 @@ def get_g6_state_pairs(n_c, n_t=3):
 
 
 # filename -> (label, get_state_pairs factory)
+# Eq. 23 + Eq. 24 cold-start pulses (optimizer multi-trunc + discrepancy)
 PULSE_MAP = {
-    "u_X_refined_t3v2.npy":   ("X",           get_logical_X_state_pairs),
-    "u_Y_refined_t3v2.npy":   ("Y",           get_logical_Y_state_pairs),
-    "u_Z_refined_t3v2.npy":   ("Z",           get_logical_Z_state_pairs),
-    "u_H_refined_t3v2.npy":   ("H",           get_logical_H_state_pairs),
-    "u_T_refined_t3v2.npy":   ("T",           get_logical_T_state_pairs),
-    "u_I_refined_t3v2.npy":   ("I",           get_identity_state_pairs),
-    "u_enc_refined_t3v2.npy": ("U_enc",       get_encode_state_pairs),
-    "u_dec_refined_t3v2.npy": ("U_dec",       get_decode_state_pairs),
-    "u_opt.npy":              ("g0->g6 prep", get_g6_state_pairs),
+    "u_X_eq23eq24_coldstart.npy":   ("X",           get_logical_X_state_pairs),
+    "u_Y_eq23eq24_coldstart.npy":   ("Y",           get_logical_Y_state_pairs),
+    "u_Z_eq23eq24_coldstart.npy":   ("Z",           get_logical_Z_state_pairs),
+    "u_H_eq23eq24_coldstart.npy":   ("H",           get_logical_H_state_pairs),
+    "u_T_eq23eq24_coldstart.npy":   ("T",           get_logical_T_state_pairs),
+    "u_I_eq23eq24_coldstart.npy":   ("I",           get_identity_state_pairs),
+    "u_enc_eq23eq24_coldstart.npy": ("U_enc",       get_encode_state_pairs),
+    "u_dec_eq23eq24_coldstart.npy": ("U_dec",       get_decode_state_pairs),
+    "u_opt_eq23eq24_coldstart.npy": ("g0->g6 prep", get_g6_state_pairs),
 }
 
 

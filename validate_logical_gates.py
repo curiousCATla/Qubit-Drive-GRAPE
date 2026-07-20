@@ -12,16 +12,16 @@ This script implements the validation plan for the project:
 - Tier 4: Full encode–logical_gate–decode pipeline fidelity (the key "usable logical qubit" test)
 - Tier 5: Effective logical unitary extraction + closeness to ideal single-qubit gate
 
-Run this after refining pulses with refine_and_compare.py (or optimize_multi_state_pulse).
+Run this after cold-start (or refined) pulses are saved under ./pulses/.
 It produces clean pandas tables and actionable diagnostics.
 
 Usage:
     python validate_logical_gates.py
 
-Expected pulse files (in ./pulses/ relative to run dir or absolute):
-    u_enc_refined_t3.npy, u_dec_refined_t3.npy (or v1)
-    u_X_refined_t3.npy, u_Y_refined_t3.npy, u_Z_refined_t3.npy,
-    u_H_refined_t3.npy, u_T_refined_t3.npy, u_I_logical_v1.npy (or refined)
+Expected pulse files (in ./pulses/):
+    u_enc_eq23eq24_coldstart.npy, u_dec_eq23eq24_coldstart.npy
+    u_X_eq23eq24_coldstart.npy, u_Y_eq23eq24_coldstart.npy, u_Z_eq23eq24_coldstart.npy,
+    u_H_eq23eq24_coldstart.npy, u_T_eq23eq24_coldstart.npy, u_I_eq23eq24_coldstart.npy
 
 Author: Project mentor (Grok) + Ian Dong
 Date: 2026-07-06
@@ -73,16 +73,16 @@ DT = 0.002                    # µs, same as optimization
 N_T = 3                       # transmon levels (must match refinement)
 ALPHA = np.sqrt(3.0)
 
-# Expected refined pulse filenames (from refine_and_compare.py convention)
+# Eq. 23 + Eq. 24 cold-start pulses (same set as compare_pulses.py)
 GATE_PULSE_MAP = {
-    "enc": os.path.join(PULSE_DIR, "u_enc_refined_t3v2.npy"),
-    "dec": os.path.join(PULSE_DIR, "u_dec_refined_t3v2.npy"),
-    "X":   os.path.join(PULSE_DIR, "u_X_refined_t3v2.npy"),
-    "Y":   os.path.join(PULSE_DIR, "u_Y_refined_t3v2.npy"),
-    "Z":   os.path.join(PULSE_DIR, "u_Z_refined_t3v2.npy"),
-    "H":   os.path.join(PULSE_DIR, "u_H_refined_t3v2.npy"),
-    "T":   os.path.join(PULSE_DIR, "u_T_refined_t3v2.npy"),
-    "I":   os.path.join(PULSE_DIR, "u_I_refined_t3v2.npy"),   # or u_I_logical_v1.npy
+    "enc": os.path.join(PULSE_DIR, "u_enc_eq23eq24_coldstart.npy"),
+    "dec": os.path.join(PULSE_DIR, "u_dec_eq23eq24_coldstart.npy"),
+    "X":   os.path.join(PULSE_DIR, "u_X_eq23eq24_coldstart.npy"),
+    "Y":   os.path.join(PULSE_DIR, "u_Y_eq23eq24_coldstart.npy"),
+    "Z":   os.path.join(PULSE_DIR, "u_Z_eq23eq24_coldstart.npy"),
+    "H":   os.path.join(PULSE_DIR, "u_H_eq23eq24_coldstart.npy"),
+    "T":   os.path.join(PULSE_DIR, "u_T_eq23eq24_coldstart.npy"),
+    "I":   os.path.join(PULSE_DIR, "u_I_eq23eq24_coldstart.npy"),
 }
 
 # Wide validation range (used in Tier 1)
@@ -424,16 +424,8 @@ def main():
     for gate_name, factory in GATE_FACTORIES.items():
         pulse_path = GATE_PULSE_MAP.get(gate_name)
         if not pulse_path or not os.path.exists(pulse_path):
-            # Try fallback names
-            fallbacks = {
-                "I": os.path.join(PULSE_DIR, "u_I_logical_v1.npy"),
-            }
-            alt = fallbacks.get(gate_name)
-            if alt and os.path.exists(alt):
-                pulse_path = alt
-            else:
-                print(f"\n[SKIP] {gate_name}: pulse not found at {pulse_path}")
-                continue
+            print(f"\n[SKIP] {gate_name}: pulse not found at {pulse_path}")
+            continue
 
         print(f"\n{'#'*70}")
         print(f"VALIDATING GATE: {gate_name}")

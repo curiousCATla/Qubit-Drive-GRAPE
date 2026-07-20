@@ -40,7 +40,7 @@ def make_hamiltonian(n_t, n_c):
     nA, nB = Ad @ A, Bd @ B
     H0 = chi * (nA @ nB) + (Kerr / 2) * (Ad @ Ad @ A @ A) + (chip/2) * (nB @ (Ad @ Ad @ A @ A)) 
     if n_t >= 3:
-        H0 += (alpha / 2) * (Bd @ Bd @ B @ B) # 2 level transmon, the anharmonicity term is not needed ~ 0
+        H0 += (alpha / 2) * (Bd @ Bd @ B @ B) # 2 level transmon, the anharmonicity term is not needed since: B B|transmon> = 0 for the 2-level subspace.
     Hc = [A+Ad, 1j*(A-Ad), B+Bd, 1j*(B-Bd)] # 1j = i the imaginary unit
     return H0, Hc
 

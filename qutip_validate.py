@@ -19,8 +19,8 @@ QuTiP helpers (Hamiltonian build, sesolve propagation, multi-state fidelity)
 live in ``qutip_grape_optimizer.py``; this file only runs the pulse table
 against grape_core's propagator.
 
-Start here: pulses/u_opt_mt.npy, the |g,0> -> |g,6> cavity Fock-state
-preparation pulse (N=250 steps, 4 channels: cavity I/Q, transmon I/Q).
+Start here: pulses/u_opt_eq23eq24_coldstart.npy, the |g,0> -> |g,6> cavity
+Fock-state preparation pulse (N=250 steps, 4 channels: cavity I/Q, transmon I/Q).
 
 Usage:
     python qutip_validate.py
@@ -55,15 +55,15 @@ TRUNC_LIST = [22, 24, 26, 28]   # 22/24/26 = trained on; 28 = generalization che
 # *propagator* (qutip.sesolve in qutip_grape_optimizer) is independent of
 # grape_core's eigh-based fidelity_grad.
 PULSE_MAP = {
-    "u_opt_mt.npy": ("g0->g6 prep", get_g6_state_pairs),
-    "u_X_mt.npy":   ("X",           get_logical_X_state_pairs),
-    "u_Y_mt.npy":   ("Y",           get_logical_Y_state_pairs),
-    "u_Z_mt.npy":   ("Z",           get_logical_Z_state_pairs),
-    "u_H_mt.npy":   ("H",           get_logical_H_state_pairs),
-    "u_T_mt.npy":   ("T",           get_logical_T_state_pairs),
-    "u_I_mt.npy":   ("I",           get_identity_state_pairs),
-    "u_enc_mt.npy": ("U_enc",       get_encode_state_pairs),
-    "u_dec_mt.npy": ("U_dec",       get_decode_state_pairs),
+    "u_opt_eq23eq24_coldstart.npy": ("g0->g6 prep", get_g6_state_pairs),
+    "u_X_eq23eq24_coldstart.npy":   ("X",           get_logical_X_state_pairs),
+    "u_Y_eq23eq24_coldstart.npy":   ("Y",           get_logical_Y_state_pairs),
+    "u_Z_eq23eq24_coldstart.npy":   ("Z",           get_logical_Z_state_pairs),
+    "u_H_eq23eq24_coldstart.npy":   ("H",           get_logical_H_state_pairs),
+    "u_T_eq23eq24_coldstart.npy":   ("T",           get_logical_T_state_pairs),
+    "u_I_eq23eq24_coldstart.npy":   ("I",           get_identity_state_pairs),
+    "u_enc_eq23eq24_coldstart.npy": ("U_enc",       get_encode_state_pairs),
+    "u_dec_eq23eq24_coldstart.npy": ("U_dec",       get_decode_state_pairs),
 }
 
 

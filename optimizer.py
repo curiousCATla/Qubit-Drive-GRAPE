@@ -2,7 +2,7 @@ import os
 import numpy as np
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
-from grape_core import make_hamiltonian, smooth_initial_controls, derivative_penalty, boundary_penalty, amplitude_penalty, fidelity_multi_state
+from grape_core import make_hamiltonian, smooth_initial_controls, derivative_penalty, boundary_penalty, amplitude_penalty, fidelity_multi_state, refine_dt
 from cat_code import validate_pulse_truncations
 from fourier_cutoff import project_bandlimit
 
@@ -261,7 +261,7 @@ def optimize_multi_state_pulse(
 def refine_pulse(
     get_state_pairs,
     initial_pulse,
-    trunc_list=[22, 24, 26],
+    trunc_list=[20, 24, 28],
     n_t=3,
     extra_maxiter=2000,
     penalties=None,
@@ -346,7 +346,7 @@ def refine_pulse(
 
     # --- Optional wider training advice (manual mode) ---
     if widen_training:
-        recommended = sorted(set(trunc_list + [20, 28]))
+        recommended = sorted(set(trunc_list + [18, 30]))
         print(f"\n[INFO] widen_training=True")
         print(f"       Recommended wider set: {recommended}")
         print(f"       → You can re-run with trunc_list={recommended} if desired.\n")
@@ -383,6 +383,141 @@ def refine_pulse(
     if verbose:
         print("\n" + "=" * 70)
         print("REFINEMENT COMPLETE")
+        print("=" * 70)
+        if save_path:
+            print(f"Saved refined pulse to: {save_path}")
+
+    return u_refined, info
+
+
+# ============================================================
+# DT REFINEMENT FUNCTION
+# ============================================================
+
+def refine_pulse_dt(
+    get_state_pairs,
+    initial_pulse,
+    s,
+    dt=0.002,
+    trunc_list=[20, 24, 28],
+    n_t=3,
+    extra_maxiter=2000,
+    penalties=None,
+    penalty_scale=1.0,
+    widen_training=False,
+    save_path=None,
+    cav_band=None,
+    tra_band=None,
+    hard_amp_limit=40.0,
+    verbose=True
+):
+    """
+    Refine an already-optimized pulse onto a finer time grid, then
+    re-optimize with warm start (mirrors refine_pulse; see its docstring
+    for the shared parameters).
+
+    Additional parameters
+    ----------------------
+    s : int
+        Integer factor to shrink dt by. initial_pulse is upsampled via
+        grape_core.refine_dt (zero-order hold: each row repeated s times),
+        giving an (s*N, 4) warm start over the SAME total duration
+        (N*dt == s*N*(dt/s)).
+    dt : float
+        The ORIGINAL step size (in us) of initial_pulse. new_dt = dt / s
+        is computed here and passed through to optimize_multi_state_pulse
+        as both N and dt overrides -- required because optimize_multi_state_pulse
+        sizes its L-BFGS-B bounds from N, which must match the upsampled
+        warm start's row count or scipy raises a shape mismatch.
+
+    Penalty note: derivative_penalty's raw sum scales ~dt (so it shrinks by
+    ~s at the finer grid) while amplitude_penalty's raw sum scales ~1/dt (so
+    it grows by ~s); boundary_penalty is unaffected. This function does NOT
+    rescale lambda_deriv/lambda_amp automatically -- penalties are passed
+    through unchanged, exactly as given.
+    """
+    if verbose:
+        print("\n" + "=" * 70)
+        print("DT REFINEMENT STARTED")
+        print("=" * 70)
+        print(f"Original: N={initial_pulse.shape[0]}, dt={dt}")
+
+    u0 = refine_dt(initial_pulse, s)
+    new_dt = dt / s
+    N_new = u0.shape[0]
+
+    if verbose:
+        print(f"Refined:  N={N_new}, dt={new_dt} (duration unchanged: "
+              f"{initial_pulse.shape[0]*dt:.4f} us)")
+        print(f"Training truncations : {trunc_list}")
+        print(f"Extra maxiter        : {extra_maxiter}")
+        print(f"Penalty scale        : {penalty_scale}")
+
+    # --- Prepare base penalties (same defaults/scaling logic as refine_pulse) ---
+    if penalties is None:
+        penalties = {
+            'deriv': 0.00001,
+            'boundary': 0.00002,
+            'amp': 0.00008,
+            'amp_max': 40.0
+        }
+
+    penalties = penalties.copy()
+
+    if isinstance(penalty_scale, dict):
+        for key, scale in penalty_scale.items():
+            if key in penalties and key != 'amp_max':
+                penalties[key] *= scale
+                if verbose:
+                    print(f"  Scaled '{key}' by {scale} → {penalties[key]:.2e}")
+    elif penalty_scale != 1.0:
+        for key in ['deriv', 'boundary', 'amp']:
+            if key in penalties:
+                penalties[key] *= penalty_scale
+        if verbose:
+            print(f"  Applied uniform scale {penalty_scale} to regularization penalties")
+
+    if widen_training:
+        recommended = sorted(set(trunc_list + [20, 28]))
+        print(f"\n[INFO] widen_training=True")
+        print(f"       Recommended wider set: {recommended}")
+        print(f"       → You can re-run with trunc_list={recommended} if desired.\n")
+
+    if verbose:
+        print("\n--- Running refinement optimization on finer grid ---\n")
+
+    u_refined, info = optimize_multi_state_pulse(
+        get_state_pairs=get_state_pairs,
+        trunc_list=trunc_list,
+        n_t=n_t,
+        N=N_new,
+        dt=new_dt,
+        warm_start=u0,
+        penalties=penalties,
+        maxiter=extra_maxiter,
+        save_path=save_path,
+        cav_band=cav_band,
+        tra_band=tra_band,
+        hard_amp_limit=hard_amp_limit,
+        verbose=verbose
+    )
+
+    if verbose:
+        print("\n--- Post-Refinement Validation ---")
+
+    validate_pulse_truncations(
+        u=u_refined,
+        get_targets_func=get_state_pairs,
+        n_t=n_t,
+        dt=new_dt,
+        title="Refined Pulse (finer dt) - Full Truncation Validation"
+    )
+
+    info['dt'] = new_dt
+
+    if verbose:
+        print("\n" + "=" * 70)
+        print("DT REFINEMENT COMPLETE")
         print("=" * 70)
         if save_path:
             print(f"Saved refined pulse to: {save_path}")
