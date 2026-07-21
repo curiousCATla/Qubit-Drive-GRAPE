@@ -33,6 +33,7 @@ def optimize_multi_state_pulse(
     cav_band=None,
     tra_band=None,
     hard_amp_limit=50.0,
+    parallel_backend='loky',
     verbose=True
 ):
     """
@@ -53,6 +54,17 @@ def optimize_multi_state_pulse(
         pre-image x, not the projected physical pulse u -- band-edge
         ringing from project_bandlimit can push u's peak slightly outside
         [-hard_amp_limit, hard_amp_limit] even though x stays within bounds.
+    parallel_backend : str
+        joblib backend for the per-truncation Parallel evaluation ('loky'
+        = separate processes, 'threading' = shared-memory threads). One
+        Parallel pool is opened for the whole call (L-BFGS-B loop +
+        best-vs-final re-evaluation + diagnostics) instead of being
+        recreated on every objective() call. Benchmarked on this repo's
+        workloads: 'loky' vs 'threading' and pool-reuse vs per-call
+        recreation were all statistically indistinguishable here (joblib's
+        loky backend already caches its executor globally across calls
+        with matching parameters) -- kept configurable in case that stops
+        holding on a different joblib version/machine.
     """
     if penalties is None:
         penalties = {'deriv': 0.00001, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
@@ -110,102 +122,107 @@ def optimize_multi_state_pulse(
         psi_f_list = [p[1] for p in state_pairs_k]
         return fidelity_multi_state(u, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=True)
 
-    def objective(x):
-        u_raw = x.reshape(N, 4)
-        # Reparametrization (Heeres et al. 2017, Supp. Eq. 22): x is a free
-        # pre-image; the physical pulse is its projection onto the
-        # band-limited subspace. All fidelity/penalty terms below act on
-        # the PHYSICAL pulse u, so the returned pulse is guaranteed
-        # band-limited by construction.
-        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+    # One Parallel pool for the entire call (L-BFGS-B loop + best-vs-final
+    # re-evaluation + diagnostics below) instead of a fresh Parallel(...)
+    # object on every objective() evaluation.
+    with Parallel(n_jobs=n_jobs, backend=parallel_backend) as parallel:
 
-        results = Parallel(n_jobs=n_jobs)(
-            delayed(evaluate_trunc)(u, H0_k, Hc_k, nc)
-            for H0_k, Hc_k, nc in zip(H0_list, Hc_list, trunc_list)
-        )
+        def objective(x):
+            u_raw = x.reshape(N, 4)
+            # Reparametrization (Heeres et al. 2017, Supp. Eq. 22): x is a free
+            # pre-image; the physical pulse is its projection onto the
+            # band-limited subspace. All fidelity/penalty terms below act on
+            # the PHYSICAL pulse u, so the returned pulse is guaranteed
+            # band-limited by construction.
+            u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
 
-        total_F = sum(F for F, _ in results)
-        total_grad = sum(g for _, g in results if g is not None)
-
-        M = len(trunc_list)
-        F_avg = total_F / M          # bare average fidelity across training truncations
-        grad_avg = total_grad / M
-
-        # Track best bare-F pulse seen so far
-        if F_avg > best['F']:
-            best['F'] = F_avg
-            best['u'] = u.copy()
-
-        cost = -F_avg
-        g = -grad_avg
-
-        # Heeres et al. 2017 Supp. Eq. 24: discrepancy penalty enforcing the
-        # per-truncation fidelities agree with each other, not just each be
-        # individually high. Reuses the (F_k, grad_k) pairs already computed
-        # above for the Eq. 23 sum -- no extra propagation needed. Evaluated
-        # fresh (no staleness) on every objective call, exactly like F_avg.
-        if penalties['disc'] > 0:
-            Fs = [F for F, _ in results]
-            grads = [g_ for _, g_ in results]
-            disc_cost = 0.0
-            disc_grad = np.zeros_like(u)
-            for i in range(M):
-                for j in range(M):
-                    if i != j:
-                        delta = Fs[i] - Fs[j]
-                        disc_cost += delta ** 2
-                        disc_grad += 2.0 * delta * (grads[i] - grads[j])
-            cost += penalties['disc'] * disc_cost
-            g += penalties['disc'] * disc_grad
-
-        # Penalties (added to cost and gradient)
-        if penalties['deriv'] > 0:
-            g_d, gr_d = derivative_penalty(u)
-            cost += penalties['deriv'] * g_d
-            g += penalties['deriv'] * gr_d
-        if penalties['boundary'] > 0:
-            g_b, gr_b = boundary_penalty(u)
-            cost += penalties['boundary'] * g_b
-            g += penalties['boundary'] * gr_b
-        if penalties['amp'] > 0:
-            g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
-            cost += penalties['amp'] * g_a
-            g += penalties['amp'] * gr_a
-
-        # Chain rule for the reparametrization: dCost/dx = P(dCost/du).
-        # Valid because P is self-adjoint & idempotent (see fourier_cutoff.py).
-        if bandlimit:
-            g = project_bandlimit(g, dt, cav_band, tra_band)
-
-        return cost, g.ravel()
-
-    # Run optimization
-    res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
-                   options={'maxiter': maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
-
-    # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
-    u_final = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
-        else res.x.reshape(N, 4)
-
-    # Decide which pulse to return: final from minimizer or best bare-F seen during run
-    if best['u'] is not None and best['F'] > 0.5:   # only consider if reasonably good
-        # Re-evaluate bare F of final point on training set for fair comparison
-        def _bare_F(u):
-            results = Parallel(n_jobs=n_jobs)(
+            results = parallel(
                 delayed(evaluate_trunc)(u, H0_k, Hc_k, nc)
                 for H0_k, Hc_k, nc in zip(H0_list, Hc_list, trunc_list)
             )
-            return sum(F for F, _ in results) / len(trunc_list)
 
-        F_final_eval = _bare_F(u_final)
-        if best['F'] > F_final_eval:
-            u_opt = best['u'].copy()
-            if verbose:
-                print(f"Using best-seen pulse (bare F = {best['F']:.6f}) instead of final L-BFGS point (F = {F_final_eval:.6f})")
+            total_F = sum(F for F, _ in results)
+            total_grad = sum(g for _, g in results if g is not None)
+
+            M = len(trunc_list)
+            F_avg = total_F / M          # bare average fidelity across training truncations
+            grad_avg = total_grad / M
+
+            # Track best bare-F pulse seen so far
+            if F_avg > best['F']:
+                best['F'] = F_avg
+                best['u'] = u.copy()
+
+            cost = -F_avg
+            g = -grad_avg
+
+            # Heeres et al. 2017 Supp. Eq. 24: discrepancy penalty enforcing the
+            # per-truncation fidelities agree with each other, not just each be
+            # individually high. Reuses the (F_k, grad_k) pairs already computed
+            # above for the Eq. 23 sum -- no extra propagation needed. Evaluated
+            # fresh (no staleness) on every objective call, exactly like F_avg.
+            if penalties['disc'] > 0:
+                Fs = [F for F, _ in results]
+                grads = [g_ for _, g_ in results]
+                disc_cost = 0.0
+                disc_grad = np.zeros_like(u)
+                for i in range(M):
+                    for j in range(M):
+                        if i != j:
+                            delta = Fs[i] - Fs[j]
+                            disc_cost += delta ** 2
+                            disc_grad += 2.0 * delta * (grads[i] - grads[j])
+                cost += penalties['disc'] * disc_cost
+                g += penalties['disc'] * disc_grad
+
+            # Penalties (added to cost and gradient)
+            if penalties['deriv'] > 0:
+                g_d, gr_d = derivative_penalty(u)
+                cost += penalties['deriv'] * g_d
+                g += penalties['deriv'] * gr_d
+            if penalties['boundary'] > 0:
+                g_b, gr_b = boundary_penalty(u)
+                cost += penalties['boundary'] * g_b
+                g += penalties['boundary'] * gr_b
+            if penalties['amp'] > 0:
+                g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
+                cost += penalties['amp'] * g_a
+                g += penalties['amp'] * gr_a
+
+            # Chain rule for the reparametrization: dCost/dx = P(dCost/du).
+            # Valid because P is self-adjoint & idempotent (see fourier_cutoff.py).
+            if bandlimit:
+                g = project_bandlimit(g, dt, cav_band, tra_band)
+
+            return cost, g.ravel()
+
+        # Run optimization
+        res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
+                       options={'maxiter': maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
+
+        # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
+        u_final = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
+            else res.x.reshape(N, 4)
+
+        # Decide which pulse to return: final from minimizer or best bare-F seen during run
+        if best['u'] is not None and best['F'] > 0.5:   # only consider if reasonably good
+            # Re-evaluate bare F of final point on training set for fair comparison
+            def _bare_F(u):
+                results = parallel(
+                    delayed(evaluate_trunc)(u, H0_k, Hc_k, nc)
+                    for H0_k, Hc_k, nc in zip(H0_list, Hc_list, trunc_list)
+                )
+                return sum(F for F, _ in results) / len(trunc_list)
+
+            F_final_eval = _bare_F(u_final)
+            if best['F'] > F_final_eval:
+                u_opt = best['u'].copy()
+                if verbose:
+                    print(f"Using best-seen pulse (bare F = {best['F']:.6f}) instead of final L-BFGS point (F = {F_final_eval:.6f})")
+            else:
+                u_opt = u_final
         else:
             u_opt = u_final
-    else:
-        u_opt = u_final
 
     if save_path:
         np.save(save_path, u_opt)
@@ -271,6 +288,7 @@ def refine_pulse(
     cav_band=None,
     tra_band=None,
     hard_amp_limit=40.0,
+    parallel_backend='loky',
     verbose=True
 ):
     """
@@ -308,6 +326,9 @@ def refine_pulse(
         Forwarded to optimize_multi_state_pulse; true hard L-BFGS-B bound
         on the raw variable, decoupled from penalties['amp_max'] (which
         only sets the soft amplitude_penalty threshold).
+    parallel_backend : str
+        Forwarded to optimize_multi_state_pulse (joblib backend for the
+        per-truncation Parallel evaluation).
     verbose : bool
         Print progress and results.
     """
@@ -366,6 +387,7 @@ def refine_pulse(
         cav_band=cav_band,
         tra_band=tra_band,
         hard_amp_limit=hard_amp_limit,
+        parallel_backend=parallel_backend,
         verbose=verbose
     )
 
@@ -409,6 +431,7 @@ def refine_pulse_dt(
     cav_band=None,
     tra_band=None,
     hard_amp_limit=40.0,
+    parallel_backend='loky',
     verbose=True
 ):
     """
@@ -499,6 +522,7 @@ def refine_pulse_dt(
         cav_band=cav_band,
         tra_band=tra_band,
         hard_amp_limit=hard_amp_limit,
+        parallel_backend=parallel_backend,
         verbose=verbose
     )
 

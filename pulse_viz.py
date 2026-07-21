@@ -178,25 +178,45 @@ def simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t):
 
 
 def plot_photon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
-                            n_plot=None, title="Photon Number Trajectory",
+                            n_plot=None, sig_threshold=1e-3, sig_margin=2,
+                            title="Photon Number Trajectory",
                             save_path=None, show=True):
     """
     Plot the cavity photon-number population P(n,t) (heatmap) with <n>(t)
     overlaid, one panel per initial state in psi_i_list (e.g. the two
     logical basis states a gate is optimized against).
+
+    n_plot : int or None
+        Number of Fock levels shown on the vertical axis. If None (default),
+        it's chosen automatically: all trajectories are simulated first, and
+        the axis is set to cover every Fock level that reaches at least
+        `sig_threshold` population at ANY point during the drive in ANY of
+        the panels (plus `sig_margin` levels of padding), floored at 6 so
+        near-trivial (cavity-idle) gates still render a readable panel.
+        Pass an explicit int to override.
     """
     H0, Hc = make_hamiltonian(n_t, n_c)
 
     if labels is None:
         labels = [f"Input {i+1}" for i in range(len(psi_i_list))]
-    n_plot = n_plot or min(n_c, 17)
+
+    # Simulate every trajectory up front so the y-axis can be sized to
+    # whatever is actually populated, instead of a fixed guessed cutoff.
+    trajectories = [simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t) for psi_i in psi_i_list]
+
+    if n_plot is None:
+        max_sig = 0
+        for _, _, P, _ in trajectories:
+            significant = np.where(np.any(P >= sig_threshold, axis=1))[0]
+            if significant.size > 0:
+                max_sig = max(max_sig, int(significant.max()))
+        n_plot = max(6, min(n_c, max_sig + sig_margin + 1))
 
     fig, axes = plt.subplots(len(psi_i_list), 1, figsize=(10, 4.5 * len(psi_i_list)),
                               sharex=True, squeeze=False)
     axes = axes[:, 0]
 
-    for ax, psi_i, label in zip(axes, psi_i_list, labels):
-        times, n_mean, P, _ = simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t)
+    for ax, (times, n_mean, P, _), label in zip(axes, trajectories, labels):
         t_ns = times * 1000  # convert to ns
 
         im = ax.pcolormesh(t_ns, np.arange(n_plot), P[:n_plot, :], cmap='Blues', shading='nearest')
@@ -238,16 +258,22 @@ def analyze_pulse(pulse_path, name="Pulse", dt=0.002, out_dir="figures", show=Fa
 
 # filename (in pulses/) -> (label, get_state_pairs factory, per-pair trajectory labels)
 PULSE_GATE_MAP = {
-    "u_opt_mt.npy": ("U_opt", get_g6_state_pairs, ["|g,0⟩ → |g,6⟩"]),
-    "u_enc_mt.npy": ("U_enc", get_encode_state_pairs, ["|g,0⟩ → |+Z_L⟩", "|e,0⟩ → |-Z_L⟩"]),
-    "u_dec_mt.npy": ("U_dec", get_decode_state_pairs, ["|+Z_L⟩ → |g,0⟩", "|-Z_L⟩ → |e,0⟩"]),
-    "u_X_mt.npy":   ("U_X",   get_logical_X_state_pairs, ["|+Z_L⟩ → |-Z_L⟩", "|-Z_L⟩ → |+Z_L⟩"]),
-    "u_Y_mt.npy":   ("U_Y",   get_logical_Y_state_pairs, ["|+Z_L⟩ → -i|-Z_L⟩", "|-Z_L⟩ → +i|+Z_L⟩"]),
-    "u_Z_mt.npy":   ("U_Z",   get_logical_Z_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → -|-Z_L⟩"]),
-    "u_H_mt.npy":   ("U_H",   get_logical_H_state_pairs, ["|+Z_L⟩ → (|+Z_L⟩+|-Z_L⟩)/√2", "|-Z_L⟩ → (|+Z_L⟩-|-Z_L⟩)/√2"]),
-    "u_T_mt.npy":   ("U_T",   get_logical_T_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → e^{iπ/4}|-Z_L⟩"]),
-    "u_I_mt.npy":   ("U_I",   get_identity_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → |-Z_L⟩"]),
+    "u_opt_eq23eq24_coldstart.npy": ("U_opt", get_g6_state_pairs, ["|g,0⟩ → |g,6⟩"]),
+    "u_enc_eq23eq24_coldstart.npy": ("U_enc", get_encode_state_pairs, ["|g,0⟩ → |+Z_L⟩", "|e,0⟩ → |-Z_L⟩"]),
+    "u_dec_eq23eq24_coldstart.npy": ("U_dec", get_decode_state_pairs, ["|+Z_L⟩ → |g,0⟩", "|-Z_L⟩ → |e,0⟩"]),
+    "u_X_eq23eq24_coldstart.npy":   ("U_X",   get_logical_X_state_pairs, ["|+Z_L⟩ → |-Z_L⟩", "|-Z_L⟩ → |+Z_L⟩"]),
+    "u_Y_eq23eq24_coldstart.npy":   ("U_Y",   get_logical_Y_state_pairs, ["|+Z_L⟩ → -i|-Z_L⟩", "|-Z_L⟩ → +i|+Z_L⟩"]),
+    "u_Z_eq23eq24_coldstart.npy":   ("U_Z",   get_logical_Z_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → -|-Z_L⟩"]),
+    "u_H_eq23eq24_coldstart.npy":   ("U_H",   get_logical_H_state_pairs, ["|+Z_L⟩ → (|+Z_L⟩+|-Z_L⟩)/√2", "|-Z_L⟩ → (|+Z_L⟩-|-Z_L⟩)/√2"]),
+    "u_T_eq23eq24_coldstart.npy":   ("U_T",   get_logical_T_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → e^{iπ/4}|-Z_L⟩"]),
+    "u_I_eq23eq24_coldstart.npy":   ("U_I",   get_identity_state_pairs, ["|+Z_L⟩ → |+Z_L⟩", "|-Z_L⟩ → |-Z_L⟩"]),
 }
+
+# Simulation basis size for the trajectory plots: comfortably above the
+# training trunc_list (max 26) so the auto-sized y-axis in
+# plot_photon_trajectory can show, if present, any population approaching
+# that boundary rather than being cut off by the plotting basis itself.
+PLOT_N_C = 30
 
 # Example usage
 if __name__ == "__main__":
@@ -260,9 +286,9 @@ if __name__ == "__main__":
         analyze_pulse(pulse_path, name=label)
 
         u = np.load(pulse_path)
-        psi_i_list = [p[0] for p in factory(n_c=24, n_t=3)]
+        psi_i_list = [p[0] for p in factory(n_c=PLOT_N_C, n_t=3)]
         plot_photon_trajectory(
-            u, psi_i_list, labels=pair_labels, n_c=24, n_t=3,
+            u, psi_i_list, labels=pair_labels, n_c=PLOT_N_C, n_t=3,
             title=f"{label} — Photon Number Trajectory",
             save_path=os.path.join("figures", f"{label}_photon_trajectory.png"),
             show=False,

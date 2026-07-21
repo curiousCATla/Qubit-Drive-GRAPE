@@ -63,50 +63,125 @@ def basis_state (n_t, n_c, t_level, c_level):
     v[t_level * n_c + c_level] = 1.0   # ordering: transmon (x) cavity
     return v
 
-def fidelity_grad(u, H0, Hc, psi_i, psi_f, dt,want_grad=True):
-    #u: [N,4] 2D array of real controls
-    N = u.shape[0] # N is the number of rows in the array
-    phi = [psi_i.copy()]
-    Ws, Vs, Us = [], [], []
-    psi= psi_i.copy() # psi is the current state of the system, initialized to the initial state psi_i
-    for k in range(N):
-        Uk, w, V = step_data(H0, Hc, u[k], dt) 
-        psi = Uk @ psi # update the state of the system by applying the propagator Uk
-        phi.append(psi) # store the state of the system
-        Us.append(Uk); Ws.append(w); Vs.append(V) 
-    v = np.vdot(psi_f, psi) # inner product <f|U|i>  (complex scalar)
-    F = np.abs(v)**2 # fidelity is the squared magnitude of the inner product
+_EIGH_CHUNK = 256  # bound peak memory of the batched eigh call (see below)
+
+
+def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
+    """
+    Shared batched core for fidelity_grad/fidelity_multi_state.
+
+    Uk and its eigendecomposition (w, V) depend only on (H0, Hc, u[k]) --
+    NOT on which state is being transferred -- so instead of propagating
+    each of the M state pairs through its own independent call to
+    step_data (as fidelity_grad historically did once per state), every
+    per-step quantity that's state-independent (eigh, and the gradient
+    basis rotation V^dagger @ Hc[j] @ V) is computed exactly once per
+    timestep and reused across all M states. The only per-state work left
+    in the inner loop is cheap (n,M)-shaped matmuls/contractions.
+
+    The eigh itself is additionally batched: the (N,n,n) stack of step
+    Hamiltonians is diagonalized via np.linalg.eigh on chunks of
+    _EIGH_CHUNK steps at a time (rather than one Python-level call per
+    step), trading a bounded amount of extra peak memory for far fewer,
+    larger LAPACK dispatches -- this is what makes refine_pulse_dt (which
+    multiplies N by the dt-refinement factor s) scale better.
+
+    Returns
+    -------
+    F : (M,) real array, F[m] = |<psi_f_m| U |psi_i_m>|^2
+    grad : (N, 4, M) real array, the PER-STATE (unaveraged, unsummed)
+        gradient of F[m] w.r.t. u -- mirrors what M independent
+        fidelity_grad calls would have returned, stacked along a new last
+        axis -- or None if want_grad is False.
+    """
+    N = u.shape[0]
+    n = H0.shape[0]
+    M = len(psi_i_list)
+
+    Hc_stack = np.stack(Hc, axis=0)  # (4, n, n)
+    Hk_stack = H0[None, :, :] + np.tensordot(u, Hc_stack, axes=([1], [0]))  # (N, n, n)
+
+    Psi_i = np.stack(psi_i_list, axis=1)  # (n, M)
+    Psi_f = np.stack(psi_f_list, axis=1)  # (n, M)
+
     if not want_grad:
+        # Lean path: diagnostics/validation calls only need the final
+        # overlap, so there's no need to keep the eigenvector/trajectory
+        # history around once each step's contribution has been applied.
+        psi = Psi_i.copy()
+        for start in range(0, N, _EIGH_CHUNK):
+            end = min(start + _EIGH_CHUNK, N)
+            w_c, V_c = np.linalg.eigh(Hk_stack[start:end])
+            for k in range(end - start):
+                Vk = V_c[k]
+                Uk = (Vk * np.exp(-1j * dt * w_c[k])[None, :]) @ Vk.conj().T
+                psi = Uk @ psi
+        v = np.sum(Psi_f.conj() * psi, axis=0)  # (M,)
+        F = np.abs(v) ** 2
         return F, None
-    # backward costates: lambda_k = U_{k+1}^dag ... U_N^dag |f>
-    lam = [None]*(N+1) #creates a list containing N+1 None values. 
-    lam[N] = psi_f.copy()
-    for k in range(N-1, -1, -1):
-        lam[k] = Us[k].conj().T @ lam[k+1]
-    
-    grad = np.zeros((N, 4))
+
+    w_stack = np.empty((N, n))
+    V_stack = np.empty((N, n, n), dtype=complex)
+    for start in range(0, N, _EIGH_CHUNK):
+        end = min(start + _EIGH_CHUNK, N)
+        w_stack[start:end], V_stack[start:end] = np.linalg.eigh(Hk_stack[start:end])
+    ew_stack = np.exp(-1j * dt * w_stack)  # (N, n)
+
+    # Forward pass: propagate all M states together, one matmul per step.
+    phi = np.empty((N + 1, n, M), dtype=complex)
+    phi[0] = Psi_i
     for k in range(N):
-        w, V = Ws[k], Vs[k]
-        
-        p = V.conj().T @ phi[k] # project |phi_{k-1}> onto the eigenbasis of Hk
-        q = V.conj().T @ lam[k+1] #  project <lambda_k| onto the eigenbasis of Hk
+        Vk = V_stack[k]
+        Uk = (Vk * ew_stack[k][None, :]) @ Vk.conj().T
+        phi[k + 1] = Uk @ phi[k]
 
-        #∂U_k/∂u_j = V · ( Φ ∘ (V† H_j V) ) · V†
+    v = np.sum(Psi_f.conj() * phi[N], axis=0)  # (M,) <f_m|U|i_m>
+    F = np.abs(v) ** 2
 
-        ew = np.exp(-1j*dt*w)
-        dw = w[:,None] - w[None,:] # w_m - w_n for all pairs of eigenvalues, as an (n.n) matrix
-        near =np.abs(dw) < 1e-10 # boolean array indicating where the differences are near zero
-        #H0 is the drift in the rotating frame, not the lab frame; it subtracts exactly one ℏωC per photon
-        #|g,0⟩ and |g,1⟩ are degenerate, so we need to handle the case where dw is near zero to avoid division by zero in the calculation of Phi.
-        dw_safe = np.where(near, 1.0, dw) # replace near-zero differences with 1.0 to avoid division by zero
-        Phi = (ew[:,None] - ew[None,:]) / dw_safe # off-diagonal difference quotients
-        Phi = np.where(near, (-1j*dt*ew)[:,None], Phi) # fill the diagonal of Phi with the true derivative for near-zero differences
-        qc = q.conj()
-        for j in range(4):
-            X = V.conj().T @ Hc[j] @ V # Hj in eigenbasis
-            dv = qc @ ((Phi * X) @ p) # <lam_k| dUk |phi_{k-1}>
-            grad[k, j] = 2.0 * np.real(np.conj(v)* dv) # gradient of fidelity with respect to control u_j at time step k
+    # Backward costates: lambda_k = U_{k+1}^dag ... U_N^dag |f>, batched.
+    lam = np.empty((N + 1, n, M), dtype=complex)
+    lam[N] = Psi_f
+    for k in range(N - 1, -1, -1):
+        Vk = V_stack[k]
+        Uk_dag = (Vk * np.exp(1j * dt * w_stack[k])[None, :]) @ Vk.conj().T
+        lam[k] = Uk_dag @ lam[k + 1]
+
+    grad = np.zeros((N, 4, M))
+    for k in range(N):
+        w, V = w_stack[k], V_stack[k]
+        ew = ew_stack[k]
+
+        p = V.conj().T @ phi[k]      # (n, M) project states onto Hk's eigenbasis
+        q = V.conj().T @ lam[k + 1]  # (n, M)
+
+        # ∂U_k/∂u_j = V · ( Φ ∘ (V† H_j V) ) · V†
+        dw = w[:, None] - w[None, :]
+        near = np.abs(dw) < 1e-10
+        dw_safe = np.where(near, 1.0, dw)
+        Phi = (ew[:, None] - ew[None, :]) / dw_safe
+        Phi = np.where(near, (-1j * dt * ew)[:, None], Phi)
+
+        # X_all[j] = V† Hc[j] V for all 4 control channels in one shot --
+        # state-independent, computed once per step and shared below. Uses
+        # broadcasted @ (BLAS gemm per slice), NOT np.einsum: plain
+        # np.einsum without optimize=True falls back to a non-BLAS
+        # contraction and is ~50x slower here for these small matrices.
+        VH = V.conj().T
+        X_all = VH[None, :, :] @ (Hc_stack @ V)  # (4, n, n)
+        PhiX = Phi[None, :, :] * X_all  # (4, n, n)
+
+        qc = q.conj()  # (n, M)
+        tmp = PhiX @ p[None, :, :]  # <dUk|phi_{k-1}> per channel, (4, n, M)
+        dv = np.sum(qc[None, :, :] * tmp, axis=1)  # <lam_k| dUk |phi_{k-1}>, (4, M)
+        grad[k] = 2.0 * np.real(np.conj(v)[None, :] * dv)
+
     return F, grad
+
+
+def fidelity_grad(u, H0, Hc, psi_i, psi_f, dt, want_grad=True):
+    F, grad = _fidelity_core(u, H0, Hc, [psi_i], [psi_f], dt, want_grad=want_grad)
+    return F[0], (grad[:, :, 0] if grad is not None else None)
+
 
 def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     """
@@ -114,18 +189,9 @@ def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     Uses the simple average of |<f|U|i>|^2 (more stable for optimization).
     """
     M = len(psi_i_list)
-    total_F = 0.0
-    total_grad = np.zeros_like(u)
-    
-    for psi_i, psi_f in zip(psi_i_list, psi_f_list):
-        F_i, grad_i = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt, want_grad=want_grad)
-        total_F += F_i
-        if want_grad and grad_i is not None:
-            total_grad += grad_i
-    
-    F_avg = total_F / M
-    grad_avg = total_grad / M if want_grad else None
-
+    F, grad = _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=want_grad)
+    F_avg = np.sum(F) / M
+    grad_avg = np.sum(grad, axis=2) / M if want_grad else None
     return F_avg, grad_avg
 
 def leakage_grad(u, H0, Hc, psi_i, dt, n_c, n_t, N_cut, leak_tol=1e-5, want_grad=True):
