@@ -547,3 +547,227 @@ def refine_pulse_dt(
             print(f"Saved refined pulse to: {save_path}")
 
     return u_refined, info
+
+
+# ============================================================
+# LIGHTWEIGHT DT REFINEMENT (single-truncation training)
+# ============================================================
+
+def refine_pulse_dt_light(
+    get_state_pairs,
+    initial_pulse,
+    s,
+    dt=0.002,
+    n_c=24,
+    n_t=3,
+    extra_maxiter=2000,
+    penalties=None,
+    penalty_scale=1.0,
+    save_path=None,
+    cav_band=None,
+    tra_band=None,
+    hard_amp_limit=40.0,
+    validation_trunc_range=range(18, 31, 2),
+    verbose=True
+):
+    """
+    Lightweight dt refinement for a pulse whose fidelity already converges
+    as n_c increases (e.g. the output of refine_pulse_dt / refine_pulse
+    with a multi-truncation trunc_list). Upsamples the time grid exactly
+    like refine_pulse_dt, but trains on a SINGLE fixed truncation n_c
+    instead of a trunc_list -- no joblib Parallel pool, no per-iteration
+    state-pair rebuild, no Eq. 24 discrepancy penalty, since the pulse is
+    assumed to already be truncation-robust going in.
+
+    Cross-truncation drift is instead only *checked*, not trained against:
+    a sanity sweep over validation_trunc_range runs once at roughly the
+    optimization's halfway point (via a scipy minimize callback, so the
+    single L-BFGS-B run is never interrupted/restarted) and once more at
+    the end.
+
+    Parameters
+    ----------
+    get_state_pairs : callable
+        Factory function returning state pairs for a given n_c (see
+        refine_pulse_dt).
+    initial_pulse : np.ndarray
+        Previously optimized pulse to warm-start from (shape: (N, 4)).
+    s : int
+        Integer factor to shrink dt by (see refine_pulse_dt).
+    dt : float
+        Original step size (in us) of initial_pulse. new_dt = dt / s.
+    n_c : int
+        Single cavity truncation to train against.
+    extra_maxiter : int
+        L-BFGS-B iteration budget. The halfway sanity check fires at
+        iteration ~extra_maxiter // 2.
+    penalties : dict or None
+        Base penalty dictionary (deriv/boundary/amp/amp_max). Same
+        defaults as refine_pulse_dt.
+    penalty_scale : float or dict
+        Scaling factor(s) applied to penalties (see refine_pulse_dt).
+    save_path : str or None
+        Path to save the refined pulse. If None, does not save.
+    cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
+        Hard frequency cutoff on the cavity/transmon drives (see
+        optimize_multi_state_pulse's docstring). Both or neither.
+    hard_amp_limit : float
+        L-BFGS-B box constraint on the raw variable, in rad/us.
+    validation_trunc_range : range or list
+        Truncations swept by the mid-run and final sanity checks.
+    verbose : bool
+        Print progress and results.
+    """
+    if (cav_band is None) != (tra_band is None):
+        raise ValueError("cav_band and tra_band must both be given or both be None")
+    bandlimit = cav_band is not None and tra_band is not None
+
+    if verbose:
+        print("\n" + "=" * 70)
+        print("LIGHT DT REFINEMENT STARTED")
+        print("=" * 70)
+        print(f"Original: N={initial_pulse.shape[0]}, dt={dt}")
+
+    u0 = refine_dt(initial_pulse, s)
+    new_dt = dt / s
+    N_new = u0.shape[0]
+
+    if verbose:
+        print(f"Refined:  N={N_new}, dt={new_dt} (duration unchanged: "
+              f"{initial_pulse.shape[0]*dt:.4f} us)")
+        print(f"Training truncation  : n_c={n_c}")
+        print(f"Extra maxiter        : {extra_maxiter}")
+        print(f"Penalty scale        : {penalty_scale}")
+
+    # --- Prepare base penalties (same defaults/scaling logic as refine_pulse_dt) ---
+    if penalties is None:
+        penalties = {
+            'deriv': 0.00001,
+            'boundary': 0.00002,
+            'amp': 0.00008,
+            'amp_max': 40.0
+        }
+
+    penalties = penalties.copy()
+
+    if isinstance(penalty_scale, dict):
+        for key, scale in penalty_scale.items():
+            if key in penalties and key != 'amp_max':
+                penalties[key] *= scale
+                if verbose:
+                    print(f"  Scaled '{key}' by {scale} → {penalties[key]:.2e}")
+    elif penalty_scale != 1.0:
+        for key in ['deriv', 'boundary', 'amp']:
+            if key in penalties:
+                penalties[key] *= penalty_scale
+        if verbose:
+            print(f"  Applied uniform scale {penalty_scale} to regularization penalties")
+
+    # --- Build the single training Hamiltonian + state pairs once ---
+    # (get_state_pairs depends only on n_c/n_t, not on u, so unlike
+    # optimize_multi_state_pulse's per-call rebuild -- needed there to
+    # support joblib multiprocess workers across several truncations --
+    # a single in-process truncation only needs this built once.)
+    H0, Hc = make_hamiltonian(n_t, n_c)
+    state_pairs = get_state_pairs(n_c=n_c, n_t=n_t)
+    psi_i_list = [p[0] for p in state_pairs]
+    psi_f_list = [p[1] for p in state_pairs]
+
+    def to_physical(x):
+        u_raw = x.reshape(N_new, 4)
+        return project_bandlimit(u_raw, new_dt, cav_band, tra_band) if bandlimit else u_raw
+
+    def objective(x):
+        u = to_physical(x)
+
+        F, grad = fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, new_dt, want_grad=True)
+        cost = -F
+        g = -grad
+
+        if penalties['deriv'] > 0:
+            g_d, gr_d = derivative_penalty(u)
+            cost += penalties['deriv'] * g_d
+            g += penalties['deriv'] * gr_d
+        if penalties['boundary'] > 0:
+            g_b, gr_b = boundary_penalty(u)
+            cost += penalties['boundary'] * g_b
+            g += penalties['boundary'] * gr_b
+        if penalties['amp'] > 0:
+            g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
+            cost += penalties['amp'] * g_a
+            g += penalties['amp'] * gr_a
+
+        if bandlimit:
+            g = project_bandlimit(g, new_dt, cav_band, tra_band)
+
+        return cost, g.ravel()
+
+    # --- Midpoint sanity check, fired once via callback (no restart) ---
+    halfway_iter = extra_maxiter // 2
+    check_state = {'count': 0, 'fired': False}
+
+    def callback(xk):
+        check_state['count'] += 1
+        if not check_state['fired'] and check_state['count'] >= halfway_iter:
+            check_state['fired'] = True
+            u_mid = to_physical(xk)
+            if verbose:
+                print(f"\n[Halfway check @ iteration {check_state['count']}]")
+            validate_pulse_truncations(
+                u=u_mid,
+                get_targets_func=get_state_pairs,
+                trunc_range=validation_trunc_range,
+                n_t=n_t,
+                dt=new_dt,
+                title="Halfway Cross-Truncation Sanity Check"
+            )
+
+    x0 = u0.ravel()
+    bounds = [(-hard_amp_limit, hard_amp_limit)] * (N_new * 4)
+
+    if verbose:
+        print("\n--- Running light refinement optimization on finer grid ---\n")
+
+    res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
+                   callback=callback,
+                   options={'maxiter': extra_maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
+
+    u_refined = to_physical(res.x)
+
+    F_final, _ = fidelity_multi_state(u_refined, H0, Hc, psi_i_list, psi_f_list, new_dt, want_grad=False)
+
+    if save_path:
+        np.save(save_path, u_refined)
+        if verbose: print(f"Saved refined pulse to {save_path}")
+
+    if verbose:
+        print(f"\nFinished: {res.message}")
+        print(f"Bare fidelity at training n_c={n_c}: {F_final:.6f}")
+        print("\n--- Post-Refinement Validation ---")
+
+    validate_pulse_truncations(
+        u=u_refined,
+        get_targets_func=get_state_pairs,
+        trunc_range=validation_trunc_range,
+        n_t=n_t,
+        dt=new_dt,
+        title="Final Cross-Truncation Sanity Check"
+    )
+
+    info = {
+        'message': res.message,
+        'success': res.success,
+        'iterations': res.nit,
+        'final_fidelity': F_final,
+        'n_c': n_c,
+        'dt': new_dt,
+    }
+
+    if verbose:
+        print("\n" + "=" * 70)
+        print("LIGHT DT REFINEMENT COMPLETE")
+        print("=" * 70)
+        if save_path:
+            print(f"Saved refined pulse to: {save_path}")
+
+    return u_refined, info

@@ -46,9 +46,11 @@ from qutip_grape_optimizer import (
 )
 
 PULSE_DIR = "pulses"
+TABLE_DIR = "tables"
 DT = DT_DEFAULT         # microseconds, matches grape_core.dt
 N_T = 3                 # transmon levels every pulse was trained with
-TRUNC_LIST = [22, 24, 26, 28]   # 22/24/26 = trained on; 28 = generalization check
+TRAINED_TRUNC = (22, 24, 26)
+TRUNC_LIST = [22, 24, 26, 28, 30, 32, 34, 36, 38, 40]   # 22/24/26 = trained on; rest = generalization check
 
 # filename -> (label, get_state_pairs factory) -- same factories the
 # optimizer and compare_pulses.py use, so the *targets* are shared, but the
@@ -67,7 +69,7 @@ PULSE_MAP = {
 }
 
 
-def validate_pulse(filename, label, factory):
+def validate_pulse(filename, label, factory, rows):
     path = os.path.join(PULSE_DIR, filename)
     u = np.load(path)
     print(f"\n{'='*60}")
@@ -90,8 +92,13 @@ def validate_pulse(filename, label, factory):
 
         diff = abs(F_gc - F_qt)
         max_diff = max(max_diff, diff)
-        marker = " (trained)" if n_c in (22, 24, 26) else " (held out)"
+        trained = n_c in TRAINED_TRUNC
+        marker = " (trained)" if trained else " (held out)"
         print(f"{n_c:>4}  {F_gc:>14.6f}  {F_qt:>10.6f}  {diff:>10.2e}{marker}")
+        rows.append({
+            "label": label, "n_c": n_c, "F_gc": float(F_gc), "F_qt": float(F_qt),
+            "diff": float(diff), "trained": trained,
+        })
 
     return max_diff
 
@@ -99,12 +106,13 @@ def validate_pulse(filename, label, factory):
 def main():
     print("QuTiP cross-check of every saved *_mt.npy pulse against grape_core's own propagator.")
     summary = []
+    rows = []
     for filename, (label, factory) in PULSE_MAP.items():
         path = os.path.join(PULSE_DIR, filename)
         if not os.path.exists(path):
             print(f"\n[SKIP] {label}: {path} not found")
             continue
-        max_diff = validate_pulse(filename, label, factory)
+        max_diff = validate_pulse(filename, label, factory, rows)
         summary.append((label, max_diff))
 
     print(f"\n{'='*60}")
@@ -113,6 +121,14 @@ def main():
     for label, max_diff in summary:
         flag = "  <-- CHECK THIS" if max_diff > 1e-4 else ""
         print(f"  {label:14s} {max_diff:.2e}{flag}")
+
+    os.makedirs(TABLE_DIR, exist_ok=True)
+    csv_path = os.path.join(TABLE_DIR, "qutip_validation.csv")
+    with open(csv_path, "w") as f:
+        f.write("label,n_c,F_gc,F_qt,diff,trained\n")
+        for r in rows:
+            f.write(f"{r['label']},{r['n_c']},{r['F_gc']!r},{r['F_qt']!r},{r['diff']!r},{r['trained']}\n")
+    print(f"\nWrote per-truncation data: {csv_path}")
 
 
 if __name__ == "__main__":
