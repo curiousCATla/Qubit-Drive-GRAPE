@@ -119,7 +119,7 @@ Convergence was restored by implementing the full Heeres recipe with a cold star
 - **Eqs. 23 and 24, recomputed at every iteration.** `optimize_multi_state_pulse` optionally applies a discrepancy penalty $\sum_{k_1 \neq k_2} (F_{k_1} - F_{k_2})^2$ (`penalties['disc']`, default `0.0`), constructed from the same per-truncation fidelity evaluations used for the averaged objective—without additional propagation or stale penalty terms.
 - **Cold start rather than warm start.** Because L-BFGS-B is a local method, refinement of a wall-exploiting pulse tends to remain in that basin. Optimization from random initialization yielded qualitatively different solutions; for `U_Z` and `U_T` in particular, nearly pure-phase gates driven primarily through the transmon with negligible cavity amplitude, consistent with the paper's own T and I controls (Supplementary Figure 4).
 
-All eight logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_T`, `U_I`) were retrained under this protocol (`trunc_list=[22,24,26]`, saved as `pulses/u_*_eq23eq24_coldstart.npy`). The five previously non-convergent gates now exhibit flat fidelity from $n_c=18$ to $n_c=40$ at 0.995–0.9998. `U_opt` was already truncation-convergent and was not retrained. The retired max-truncation module has been removed; only `pulses/u_opt_mt.npy` remains from that procedure.
+All eight logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_T`, `U_I`) were retrained under this protocol (`trunc_list=[22,24,26]`, saved as `pulses/u_*_main.npy`). The five previously non-convergent gates now exhibit flat fidelity from $n_c=18$ to $n_c=40$ at 0.995–0.9998. `U_opt` was already truncation-convergent and was not retrained. The retired max-truncation module has been removed; only `pulses/u_opt_mt.npy` remains from that procedure.
 
 ### Validation
 
@@ -133,18 +133,18 @@ All eight logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_
 
 Results are summarized in tabular form via `pandas`.
 
-`qutip_validate.py` provides an independent cross-check. Most of this repository, including the optimizer, relies on a common hand-implemented eigendecomposition propagator; an error in that path could still yield self-consistently high fidelity. The validation script reconstructs operators and Hamiltonians independently with QuTiP (without importing `grape_core.make_ops`) and evolves each saved pulse with `qutip.sesolve`, using zero-order-hold coefficients to preserve the piecewise-constant control convention. Agreement at the level of $\lesssim 10^{-5}$ (within solver tolerance) supports correctness of the physical model, not merely internal consistency of the codebase.
+`QuTip/qutip_validate.py` provides an independent cross-check. Most of this repository, including the optimizer, relies on a common hand-implemented eigendecomposition propagator; an error in that path could still yield self-consistently high fidelity. The validation script reconstructs operators and Hamiltonians independently with QuTiP (without importing `grape_core.make_ops`) and evolves each saved pulse with `qutip.sesolve`, using zero-order-hold coefficients to preserve the piecewise-constant control convention. Agreement at the level of $\lesssim 10^{-5}$ (within solver tolerance) supports correctness of the physical model, not merely internal consistency of the codebase.
 
 ### Decoherence simulation
 
-`decoherence.py` re-propagates an optimized pulse under the **Lindblad master equation** to estimate decoherence-limited fidelity. Jump operators include cavity relaxation ($\kappa$), transmon relaxation ($\gamma$), and transmon pure dephasing ($\gamma_\phi$), with rates set by $T_1^C$, $T_1^T$, and $T_\phi$ (specified in seconds and converted to the simulation's microsecond time base).
+`analysis/decoherence.py` re-propagates an optimized pulse under the **Lindblad master equation** to estimate decoherence-limited fidelity. Jump operators include cavity relaxation ($\kappa$), transmon relaxation ($\gamma$), and transmon pure dephasing ($\gamma_\phi$), with rates set by $T_1^C$, $T_1^T$, and $T_\phi$ (specified in seconds and converted to the simulation's microsecond time base).
 
 The density matrix is vectorized to dimension $d^2$ and evolved with `scipy.sparse.linalg.expm_multiply`, which applies $e^{\mathcal{L}\,dt}$ to the state vector without forming the dense $d^2 \times d^2$ matrix exponential at each step.
 
 ```python
 import numpy as np
-from grape_core import basis_state
-from decoherence import simulate_with_decoherence, compute_fidelity
+from core.grape_core import basis_state
+from analysis.decoherence import simulate_with_decoherence, compute_fidelity
 
 u = np.load("pulses/u_opt.npy")
 psi0 = basis_state(n_t=3, n_c=24, t_level=0, c_level=0)      # |g,0⟩
@@ -158,22 +158,24 @@ print(compute_fidelity(rho_final, psi_target))
 
 | File | Description |
 |------|-------------|
-| `grape_core.py` | Hamiltonian construction, propagation, fidelity, gradients, and penalties |
-| `cat_code.py` | Cat-state generation, encode/decode and logical-gate targets, truncation validation |
-| `fourier_cutoff.py` | Hard frequency-band projection of controls and gradients (Heeres Supplementary Eq. 22) |
-| `optimizer.py` | `optimize_multi_state_pulse()`, `refine_pulse()` — averaged fidelity (Eq. 23), optional Eq. 24 discrepancy penalty |
-| `test_grape_core_perf.py` | Regression suite for the batched fidelity core: pre-refactor equivalence, finite-difference gradients, optimizer smoke tests |
-| `truncation_convergence.py` | Truncation sweep of bare fidelity (Eqs. 23–24 validity criterion) |
-| `logical_gate_analysis.py` | Standalone encode-optimization script |
-| `logical_gate_analysis1.py` | Gate-optimization examples and encode/decode round-trip checks |
-| `refine_and_compare.py` | Pulse refinement with pre-/post-refinement fidelity comparison |
-| `validate_logical_gates.py` | Five-tier validation suite for logical-gate pulses |
-| `qutip_validate.py` | Independent fidelity cross-check via `qutip.sesolve` |
-| `qutip_grape_optimizer.py` | Pedagogical GRAPE implementation on QuTiP `Qobj` physics — adjoint/L-BFGS-B structure as in `optimizer.py`, without band limiting, discrepancy penalty, or joblib |
-| `pulse_analysis.py` | Trajectory simulation, Fock populations, and basic optimization demonstration |
-| `decoherence.py` | Lindblad evolution with $T_1$/$T_\phi$; decoherence-limited fidelity |
-| `pulse_viz.py` | I/Q waveforms and complex-envelope FFT spectra |
-| `wigner_viz.py` | Wigner tomography of Fock states, cat states, and pulse-propagated states |
+| `core/grape_core.py` | Hamiltonian construction, propagation, fidelity, gradients, and penalties |
+| `core/cat_code.py` | Cat-state generation, encode/decode and logical-gate targets, truncation validation |
+| `core/fourier_cutoff.py` | Hard frequency-band projection of controls and gradients (Heeres Supplementary Eq. 22) |
+| `core/optimizer.py` | `optimize_multi_state_pulse()`, `refine_pulse()` — averaged fidelity (Eq. 23), optional Eq. 24 discrepancy penalty |
+| `core/compare_pulses.py` | Shared pulse-comparison table (fidelity + shape metrics) reused by visualization/validation scripts |
+| `validation/test_grape_core_perf.py` | Regression suite for the batched fidelity core: pre-refactor equivalence, finite-difference gradients, optimizer smoke tests |
+| `validation/truncation_convergence.py` | Truncation sweep of bare fidelity (Eqs. 23–24 validity criterion) |
+| `validation/validate_logical_gates.py` | Five-tier validation suite for logical-gate pulses |
+| `analysis/logical_gate_analysis.py` | Standalone encode-optimization script |
+| `analysis/logical_gate_analysis1.py` | Gate-optimization examples and encode/decode round-trip checks |
+| `analysis/refine_dt_and_compare.py` | Pulse refinement with pre-/post-refinement fidelity comparison |
+| `QuTip/qutip_validate.py` | Independent fidelity cross-check via `qutip.sesolve` |
+| `QuTip/qutip_grape_optimizer.py` | Pedagogical GRAPE implementation on QuTiP `Qobj` physics — adjoint/L-BFGS-B structure as in `optimizer.py`, without band limiting, discrepancy penalty, or joblib |
+| `analysis/pulse_analysis.py` | Trajectory simulation, Fock populations, and basic optimization demonstration |
+| `analysis/decoherence.py` | Lindblad evolution with $T_1$/$T_\phi$; decoherence-limited fidelity |
+| `visualization/pulse_viz.py` | I/Q waveforms and complex-envelope FFT spectra |
+| `visualization/wigner_viz.py` | Wigner tomography of Fock states, cat states, and pulse-propagated states |
+| `visualization/plot_qutip_validation.py` | Small-multiples figure of the QuTiP cross-check results per gate |
 | `pulses/` | Saved control sequences (`u_*.npy`, shape $(N, 4)$) |
 | `figures/` | Generated waveform and spectrum figures |
 | `wigner/` | Generated Wigner-function figures |
@@ -183,14 +185,14 @@ print(compute_fidelity(rho_final, psi_target))
 ```bash
 pip install -r requirements.txt
 pip install joblib matplotlib pandas   # analysis scripts
-pip install qutip                      # qutip_validate.py
+pip install qutip                      # QuTip/qutip_validate.py
 ```
 
-**Logical-gate optimization** (from `logical_gate_analysis1.py`):
+**Logical-gate optimization** (from `analysis/logical_gate_analysis1.py`):
 
 ```python
-from cat_code import get_logical_X_state_pairs, validate_pulse_truncations
-from optimizer import optimize_multi_state_pulse
+from core.cat_code import get_logical_X_state_pairs, validate_pulse_truncations
+from core.optimizer import optimize_multi_state_pulse
 
 u_X, info = optimize_multi_state_pulse(
     get_state_pairs=get_logical_X_state_pairs,
@@ -203,26 +205,26 @@ validate_pulse_truncations(u_X, get_logical_X_state_pairs)
 **Refine and compare** an existing pulse:
 
 ```bash
-# Set GATE in refine_and_compare.py, then:
-python refine_and_compare.py
+# Set INPUT_PULSE_PATH / GET_STATE_PAIRS in analysis/refine_dt_and_compare.py, then, from the repo root:
+python analysis/refine_dt_and_compare.py
 ```
 
 **Full validation suite** on pulses in `pulses/`:
 
 ```bash
-python validate_logical_gates.py
+python validation/validate_logical_gates.py
 ```
 
 **Independent QuTiP cross-check** of all saved pulses:
 
 ```bash
-python qutip_validate.py
+python QuTip/qutip_validate.py
 ```
 
 **Pulse visualization**:
 
 ```python
-from pulse_viz import plot_pulse_waveforms, plot_pulse_spectrum
+from visualization.pulse_viz import plot_pulse_waveforms, plot_pulse_spectrum
 import numpy as np
 
 u = np.load("pulses/u_enc_v2.npy")
@@ -233,7 +235,7 @@ plot_pulse_spectrum(u, title="U_enc Spectrum")
 **Wigner tomography of a pulse-prepared state**:
 
 ```python
-from wigner_viz import plot_wigner_from_pulse
+from visualization.wigner_viz import plot_wigner_from_pulse
 
 # Transmon initial state is relevant when the output depends on it
 # (e.g. encode: |g,0> -> +Z_L, |e,0> -> -Z_L)
