@@ -56,7 +56,7 @@ EXTRA_MAXITER = 2000
 
 def evaluate_fidelity_on_truncations(u, dt, trunc_list, n_t=N_T):
     """Evaluate average fidelity over a list of truncations at a given dt."""
-    from grape_core import make_hamiltonian, fidelity_multi_state
+    from core.grape_core import make_hamiltonian, fidelity_multi_state
     results = {}
     for nc in trunc_list:
         pairs = GET_STATE_PAIRS(n_c=nc, n_t=n_t)

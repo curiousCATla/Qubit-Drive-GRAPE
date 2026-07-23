@@ -553,7 +553,7 @@ def optimize_grape_pulse(
 def crosscheck_vs_grape_core(u, n_t, n_c, dt):
     """Compare this file's F to grape_core.fidelity_grad on the same pulse."""
     try:
-        from grape_core import make_hamiltonian, fidelity_grad as gc_fid
+        from core.grape_core import make_hamiltonian, fidelity_grad as gc_fid
     except ImportError:
         print("  (grape_core not importable — skip cross-check)")
         return
@@ -680,7 +680,7 @@ def main(argv=None):
     # ---- 3) Cross-check vs grape_core (same F for same u) ----
     print("\n--- Cross-check vs grape_core on optimized pulse ---")
     try:
-        from grape_core import make_hamiltonian, fidelity_grad as gc_fid
+        from core.grape_core import make_hamiltonian, fidelity_grad as gc_fid
 
         nc = max(trunc_list)
         H0_qt, Hc_qt = hamiltonian_as_numpy(3, nc)

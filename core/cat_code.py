@@ -224,7 +224,7 @@ def validate_pulse_truncations(
     title : str
         Title to print in the report
     """
-    from grape_core import make_hamiltonian, fidelity_multi_state
+    from core.grape_core import make_hamiltonian, fidelity_multi_state
     import numpy as np
 
     print(f"\n{'='*55}")

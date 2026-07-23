@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     print("=" * 70)
 
-    from cat_code import get_identity_state_pairs
+    from core.cat_code import get_identity_state_pairs
 
    
 
