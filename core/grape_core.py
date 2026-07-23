@@ -66,7 +66,7 @@ def basis_state (n_t, n_c, t_level, c_level):
 _EIGH_CHUNK = 256  # bound peak memory of the batched eigh call (see below)
 
 
-def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
+def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True, return_raw=False):
     """
     Shared batched core for fidelity_grad/fidelity_multi_state.
 
@@ -86,6 +86,19 @@ def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     larger LAPACK dispatches -- this is what makes refine_pulse_dt (which
     multiplies N by the dt-refinement factor s) scale better.
 
+    return_raw : bool
+        If True, additionally return the raw complex overlap v (M,) --
+        v[m] = <psi_f_m|U|psi_i_m> before the |.|^2 -- and, when want_grad
+        is also True, dv_all (N, 4, M) -- the per-step, per-channel,
+        per-state contraction <lam_k|dUk|phi_{k-1}> *before* it is reduced
+        against conj(v[m]) into the per-state gradient. Both are exactly
+        what's needed to build fidelity metrics that combine the M states
+        *coherently* (i.e. that are sensitive to relative phase between
+        them) -- see coherent_fidelity_multi_state -- rather than the
+        per-state-independent reduction used by fidelity_multi_state
+        below. Default False keeps the existing (F, grad) return signature
+        for all current callers.
+
     Returns
     -------
     F : (M,) real array, F[m] = |<psi_f_m| U |psi_i_m>|^2
@@ -93,6 +106,7 @@ def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
         gradient of F[m] w.r.t. u -- mirrors what M independent
         fidelity_grad calls would have returned, stacked along a new last
         axis -- or None if want_grad is False.
+    v, dv_all : only returned when return_raw is True (see above).
     """
     N = u.shape[0]
     n = H0.shape[0]
@@ -118,6 +132,8 @@ def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
                 psi = Uk @ psi
         v = np.sum(Psi_f.conj() * psi, axis=0)  # (M,)
         F = np.abs(v) ** 2
+        if return_raw:
+            return F, None, v, None
         return F, None
 
     w_stack = np.empty((N, n))
@@ -147,6 +163,7 @@ def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
         lam[k] = Uk_dag @ lam[k + 1]
 
     grad = np.zeros((N, 4, M))
+    dv_all = np.empty((N, 4, M), dtype=complex) if return_raw else None
     for k in range(N):
         w, V = w_stack[k], V_stack[k]
         ew = ew_stack[k]
@@ -174,7 +191,11 @@ def _fidelity_core(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
         tmp = PhiX @ p[None, :, :]  # <dUk|phi_{k-1}> per channel, (4, n, M)
         dv = np.sum(qc[None, :, :] * tmp, axis=1)  # <lam_k| dUk |phi_{k-1}>, (4, M)
         grad[k] = 2.0 * np.real(np.conj(v)[None, :] * dv)
+        if return_raw:
+            dv_all[k] = dv
 
+    if return_raw:
+        return F, grad, v, dv_all
     return F, grad
 
 
@@ -193,6 +214,41 @@ def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     F_avg = np.sum(F) / M
     grad_avg = np.sum(grad, axis=2) / M if want_grad else None
     return F_avg, grad_avg
+
+
+def coherent_fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
+    """
+    Coherent (process) fidelity over multiple state transfers:
+        F = |sum_m <f_m|U|i_m>|^2 / M^2
+    Unlike fidelity_multi_state's per-state average -- which only requires
+    each output to match its own target up to an ARBITRARY, independent
+    global phase -- this reduction sums the raw complex overlaps v_m before
+    squaring, so it is only maximal when every branch matches its target
+    with the SAME global phase. That's exactly the property
+    fidelity_multi_state cannot see or enforce, and it's what a logical
+    gate's *relative* phase between its |+Z_L>/|-Z_L> training pairs
+    actually depends on (e.g. T's pi/4 relative phase, H's self-inverse
+    H^2=I property). Use this in place of fidelity_multi_state when
+    training gates whose correctness hinges on that relative phase.
+    """
+    M = len(psi_i_list)
+    if want_grad:
+        F, grad, v, dv_all = _fidelity_core(
+            u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True, return_raw=True
+        )
+        V = np.sum(v)
+        F_coh = np.abs(V) ** 2 / M ** 2
+        dv_sum = np.sum(dv_all, axis=2)  # (N, 4)
+        grad_coh = (2.0 / M ** 2) * np.real(np.conj(V) * dv_sum)
+        return F_coh, grad_coh
+    else:
+        F, _, v, _ = _fidelity_core(
+            u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=False, return_raw=True
+        )
+        V = np.sum(v)
+        F_coh = np.abs(V) ** 2 / M ** 2
+        return F_coh, None
+
 
 def leakage_grad(u, H0, Hc, psi_i, dt, n_c, n_t, N_cut, leak_tol=1e-5, want_grad=True):
     """

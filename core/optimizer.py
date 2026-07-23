@@ -34,9 +34,19 @@ def optimize_multi_state_pulse(
     tra_band=None,
     hard_amp_limit=50.0,
     parallel_backend='loky',
+    fidelity_fn=fidelity_multi_state,
     verbose=True
 ):
     """
+    fidelity_fn : callable(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad) -> (F, grad)
+        Per-truncation fidelity metric used inside evaluate_trunc, before
+        the cross-truncation averaging (Eq. 23) / discrepancy penalty
+        (Eq. 24) logic below -- which is agnostic to this choice. Defaults
+        to fidelity_multi_state (per-state average, blind to relative
+        phase between state pairs). Pass coherent_fidelity_multi_state
+        instead when training a gate whose correctness depends on the
+        relative phase between its state pairs (e.g. T, H) -- see
+        grape_core.coherent_fidelity_multi_state's docstring.
     cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
         Hard frequency cutoffs on the cavity (eps_C = C_I + i*C_Q) and
         transmon (eps_T = T_I + i*T_Q) drives, mirroring Heeres et al. 2017
@@ -120,7 +130,7 @@ def optimize_multi_state_pulse(
         state_pairs_k = get_state_pairs(n_c=nc, n_t=n_t)   # Rebuild states for this exact nc
         psi_i_list = [p[0] for p in state_pairs_k]
         psi_f_list = [p[1] for p in state_pairs_k]
-        return fidelity_multi_state(u, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=True)
+        return fidelity_fn(u, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=True)
 
     # One Parallel pool for the entire call (L-BFGS-B loop + best-vs-final
     # re-evaluation + diagnostics below) instead of a fresh Parallel(...)

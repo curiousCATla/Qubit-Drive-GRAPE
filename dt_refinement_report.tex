@@ -1,0 +1,374 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{siunitx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\emergencystretch=2em
+
+\title{Two-Stage Time-Step Refinement for GRAPE}
+\author{}
+\date{}
+
+\begin{document}
+\sloppy
+\maketitle
+
+\begin{abstract}
+I reduced the GRAPE time step by a factor of ten with a two-stage schedule.
+Stage~1 fits a multi-truncation pulse on the base grid $dt=2\,\mathrm{ns}$.
+Stage~2 warm-starts from that pulse, upsamples by $s=10$, and refines with
+\texttt{refine\_pulse\_dt\_light} on a single truncation $n_c=24$, with a
+halfway multi-truncation check. For $U_{\mathrm{opt}}$ and $U_{\mathrm{enc}}$,
+plateau fidelities rise to $\approx 0.999$ and $\approx 0.9997$ at
+$dt=0.2\,\mathrm{ns}$. This note documents the schedule, compares the two
+functions, and reports fidelity, photon trajectories, and cost.
+\end{abstract}
+
+%----------------------------------------------------------------------
+\section{Why shrink $dt$}
+\label{sec:intro}
+
+The pulses in this project are piecewise constant: $N$ steps of width $dt$.
+A smaller $dt$ is a better control approximation---less zero-order-hold error,
+more temporal freedom for L-BFGS-B. The total duration $T=N\,dt$ stays fixed,
+so shrinking $dt$ by an integer factor $s$ means
+\begin{equation}
+  N \;\leftarrow\; sN, \qquad dt \;\leftarrow\; dt/s.
+\end{equation}
+
+The catch is cost. Each fidelity and gradient evaluation diagonalizes a
+joint Hamiltonian at every time step, so
+\begin{equation}
+  T_{\mathrm{eval}} \;\propto\; N\,(n_t n_c)^3.
+  \label{eq:cost}
+\end{equation}
+A factor-of-ten finer grid costs about ten times more per evaluation. Multi-
+truncation training multiplies that again. Doing both on every iteration is
+expensive.
+
+The method I used is a two-stage split:
+\begin{enumerate}
+  \item \textbf{Stage~1.} Fit on the coarse grid with multi-truncation
+        training via \texttt{optimize\_multi\_state\_pulse}.
+  \item \textbf{Stage~2.} Upsample and re-optimize on a single truncation
+        via \texttt{refine\_pulse\_dt\_light}, checking truncation only at
+        halfway and at the end.
+\end{enumerate}
+I show results for two pulses: $U_{\mathrm{opt}}$
+($\lvert g,0\rangle\to\lvert g,6\rangle$) and $U_{\mathrm{enc}}$
+(cat-code encode).
+
+%----------------------------------------------------------------------
+\section{Two-stage schedule}
+\label{sec:schedule}
+
+\subsection{Stage 1: multi-truncation fit}
+
+Stage~1 calls \texttt{optimize\_multi\_state\_pulse} on the base grid
+$dt=2\,\mathrm{ns}$. Every iteration averages fidelity over a truncation
+list (e.g.\ $\{22,24,26\}$), optionally with the discrepancy penalty so the
+three truncations stay in agreement. The point is a pulse whose $F(n_c)$ is
+already flat---so Stage~2 does not inherit wall exploitation.
+
+Pulses used here:
+\begin{itemize}
+  \item \texttt{u\_opt\_main.npy}: shape $(250,4)$, $0.5\,\mu\mathrm{s}$.
+  \item \texttt{u\_enc\_main.npy}: shape $(550,4)$, $1.1\,\mu\mathrm{s}$.
+\end{itemize}
+
+\subsection{Stage 2: light $dt$ refinement}
+
+Stage~2 calls \texttt{refine\_pulse\_dt\_light} with $s=10$:
+\begin{enumerate}
+  \item \textbf{Upsample} by zero-order hold: each row of $u$ is repeated
+        $s$ times. Duration is unchanged; $dt$ becomes $0.2\,\mathrm{ns}$.
+  \item \textbf{Train} on a single truncation $n_c=24$ (one Hamiltonian,
+        no multi-trunc loop per iteration).
+  \item \textbf{Halfway check} at iteration $\approx\texttt{maxiter}/2$:
+        sweep $F$ over $n_c\in\{18,\ldots,30\}$ without restarting L-BFGS-B.
+  \item \textbf{Final check:} same sweep after optimization.
+\end{enumerate}
+Outputs: \texttt{u\_opt10x\_light.npy} ($N=2500$) and
+\texttt{u\_enc10x\_light.npy} ($N=5500$). Logs:
+\texttt{light\_refine\_10x\_run.log},
+\texttt{light\_refine\_enc10x\_run.log}.
+
+There is also a heavier path, \texttt{refine\_pulse\_dt}, which upsamples
+the same way but then runs full multi-truncation on the fine grid. That is
+correct but much more expensive. Everything below uses the light path.
+
+\subsection{How the two functions differ}
+
+Table~\ref{tab:functions} is the short version. They are complementary:
+Stage~1 finds a truncation-safe pulse; Stage~2 only polishes $dt$. The light
+refiner assumes the warm start already has convergent $F(n_c)$. If Stage~1
+failed that test, single-truncation fine training could reintroduce wall
+exploitation. The halfway sweep is a safety net, not a substitute for
+multi-truncation discovery.
+
+\begin{table}[h]
+\centering
+\caption{Stage~1 optimizer vs Stage~2 light refiner.}
+\label{tab:functions}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+& \texttt{optimize\_multi\_state\_pulse}
+& \texttt{refine\_pulse\_dt\_light} \\
+\midrule
+Role
+  & Truncation-robust fit on $(N,dt)$
+  & $dt$ polish of a robust warm start \\
+Time grid
+  & Caller sets $N$, $dt$
+  & Upsample by $s$: $N\!\to\!sN$, $dt\!\to\!dt/s$ \\
+Per-iteration trunc.
+  & Full \texttt{trunc\_list}
+  & Single $n_c$ \\
+Parallelism
+  & \texttt{joblib} over truncations
+  & None \\
+Discrepancy (Eq.~24)
+  & Optional
+  & Not used \\
+Trunc.\ monitoring
+  & Inside the objective
+  & Mid-run + final checks only \\
+Warm start
+  & Optional
+  & Required (ZOH-upsampled Stage~1) \\
+Cost per eval
+  & $\propto |\texttt{trunc\_list}|\,N\,n^3$
+  & $\propto s\,N\,n^3$ at one $n_c$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both paths share the batched fidelity core, which amortizes the per-step
+eigendecomposition across state pairs and batches \texttt{eigh} in chunks of
+256. That is what makes large-$N$ (large-$s$) evaluations practical.
+
+%----------------------------------------------------------------------
+\section{Fidelity vs cavity truncation}
+\label{sec:fidelity}
+
+Figure~\ref{fig:fidelity} and Table~\ref{tab:fidelity} compare Stage~1
+(\texttt{*\_main.npy}, $dt=2\,\mathrm{ns}$) with Stage~2
+(\texttt{*10x\_light.npy}, $dt=0.2\,\mathrm{ns}$) over
+$n_c\in\{18,20,\ldots,30\}$.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/dt_refine_fidelity_vs_nc.pdf}
+\caption{Fidelity vs cavity truncation. Dashed line: Stage~2 training
+truncation $n_c=24$.}
+\label{fig:fidelity}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Fidelity $F(n_c)$. $\Delta F=F_{\mathrm{light}}-F_{\mathrm{main}}$.}
+\label{tab:fidelity}
+\small
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{$U_{\mathrm{opt}}$}
+& \multicolumn{2}{c}{$U_{\mathrm{enc}}$} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+$n_c$ & $F_{\mathrm{main}}$ & $F_{\mathrm{light}}$ & $\Delta F$
+      & $F_{\mathrm{main}}$ & $F_{\mathrm{light}}$ \\
+\midrule
+18 & 0.9827 & 0.9724 & $-0.0103$ & 0.9955 & 0.9997 \\
+20 & 0.9832 & 0.9935 & $+0.0103$ & 0.9955 & 0.9997 \\
+22 & 0.9828 & 0.9985 & $+0.0157$ & 0.9955 & 0.9997 \\
+24 & 0.9826 & 0.9993 & $+0.0167$ & 0.9955 & 0.9997 \\
+26 & 0.9825 & 0.9992 & $+0.0166$ & 0.9955 & 0.9997 \\
+28 & 0.9825 & 0.9992 & $+0.0166$ & 0.9955 & 0.9997 \\
+30 & 0.9825 & 0.9992 & $+0.0166$ & 0.9955 & 0.9997 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{$U_{\mathrm{opt}}$.}
+Stage~1 already plateaus at $F\approx 0.983$---truncation-convergent, but
+limited by the coarse grid. Stage~2 lifts that to $F\gtrsim 0.999$ for
+$n_c\ge 22$ ($\Delta F\approx +0.017$). At $n_c=18$ the fine pulse is
+slightly worse ($0.972$ vs $0.983$); the halfway log check showed the same
+dip. That is low-truncation sensitivity, not wall exploitation (which would
+collapse just above the training truncation). At and above $n_c=24$, $F$ is
+flat and high.
+
+\paragraph{$U_{\mathrm{enc}}$.}
+Both stages are flat across the full sweep. Stage~2 gains a nearly constant
+$\Delta F\approx +4.3\times 10^{-3}$ ($0.9955\to 0.9997$). Halfway and final
+checks agree: $F\ge 0.9996$ at every $n_c$ tested.
+
+Both Stage~2 runs hit the 2000-iteration limit rather than a gradient
+tolerance, so these fidelities are lower bounds on a longer budget.
+
+%----------------------------------------------------------------------
+\section{Photon trajectories}
+\label{sec:trajectory}
+
+Figure~\ref{fig:traj} shows $\langle n\rangle(t)$ for both pulses at
+$n_c=24$, Stage~1 vs Stage~2 side by side (initial state $\lvert g,0\rangle$;
+encode uses the ground branch). Table~\ref{tab:traj} has the scalar metrics.
+Fock heatmaps $P(n,t)$ are in Appendix~\ref{app:fock}.
+
+\begin{figure}[h]
+\centering
+\begin{minipage}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/dt_refine_photon_trajectory_opt.pdf}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/dt_refine_photon_trajectory_enc.pdf}
+\end{minipage}
+\caption{Mean photon number $\langle n\rangle(t)$ at $n_c=24$.
+Left: $U_{\mathrm{opt}}$ (both stages end near $\langle n\rangle=6$).
+Right: $U_{\mathrm{enc}}$, $\lvert g,0\rangle$ branch.}
+\label{fig:traj}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Trajectory and amplitude metrics at $n_c=24$. Amplitudes in
+rad/$\mu\mathrm{s}$.}
+\label{tab:traj}
+\small
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Pulse & Stage & $N$ & peak $|u|$
+  & max $\langle n\rangle$ & final $\langle n\rangle$
+  & max $P_{\mathrm{tr.\,ex}}$ \\
+\midrule
+opt & main  &  250 & 36.69 & 7.89 & 6.024 & 0.807 \\
+opt & light & 2500 & 40.00 & 9.27 & 6.004 & 0.723 \\
+enc & main  &  550 & 20.63 & 3.68 & 3.228 & 0.581 \\
+enc & light & 5500 & 29.62 & 5.71 & 3.261 & 0.666 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For $U_{\mathrm{opt}}$, both stages finish at $\langle n\rangle\approx 6$.
+The light pulse uses a higher intermediate $\langle n\rangle$
+($\approx 9.3$ vs $\approx 7.9$) and hits the amplitude threshold
+($40\,\mathrm{rad}/\mu\mathrm{s}$). Final transmon leakage drops from
+$\sim 5\times 10^{-3}$ to $\sim 2\times 10^{-4}$.
+
+For $U_{\mathrm{enc}}$, Stage~2 again takes a higher intermediate path and
+finishes near the cat-code mean $\sim|\alpha|^2=3$. Final transmon excitation
+is $\sim 6\times 10^{-5}$. Photon support stays well below $n_c=24$---no
+pile-up at the Hilbert-space edge.
+
+%----------------------------------------------------------------------
+\section{Cost as $s$ scales}
+\label{sec:cost}
+
+With duration fixed, $N(s)=s\,N_0$, so $T_{\mathrm{eval}}\propto s$ at fixed
+Hilbert-space dimension. Full multi-truncation Stage~2 would multiply CPU
+work by roughly $\sum_k(n_{c,k}/n_c^*)^3$ again (about $3.2\times$ for
+$\{20,24,28\}$ relative to $n_c=24$ alone). Light refinement drops that
+factor from the training loop and only pays multi-trunc cost at the two
+checkpoint sweeps.
+
+From the logs ($s=10$, $n_c=24$, 2000 iterations):
+\begin{itemize}
+  \item $U_{\mathrm{opt}}$: $N'=2500$, wall clock $4143\,\mathrm{s}$
+        ($\approx 69\,\mathrm{min}$), $F_{24}=0.99926$.
+  \item $U_{\mathrm{enc}}$: $N'=5500$, wall clock $10472\,\mathrm{s}$
+        ($\approx 175\,\mathrm{min}$), $F_{24}=0.99973$.
+\end{itemize}
+The $N$ ratio is $2.2$; the wall-time ratio is $\approx 2.53$. The excess
+matches multi-state overhead ($M=2$ encode pairs vs $M=1$ Fock prep) plus
+line-search variability---not a breakdown of $T\propto N$. Under pure
+$T\propto s$ scaling, $s=2,5,10$ would cost $1:2.5:5$ relative to an
+$s=1$ warm-start refine at the same $n_c$. Only $s=10$ was run; the linear
+model is the design assumption.
+
+So the schedule puts multi-truncation on the cheap coarse grid, and the fine
+grid on a single truncation.
+
+%----------------------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
+
+The split works as intended:
+\begin{enumerate}
+  \item Stage~1 gives flat $F(n_c)$ on the coarse grid.
+  \item Stage~2 buys a clear fidelity gain at $dt/10$ without losing that
+        flatness near and above $n_c=24$.
+  \item Wall times at $s=10$ stay in the one-to-three-hour range for 2000
+        iterations.
+\end{enumerate}
+
+\texttt{refine\_pulse\_dt\_light} is a refinement tool, not a replacement for
+multi-truncation training. The halfway check is the operational safeguard:
+stable early for $U_{\mathrm{enc}}$; mild $n_c=18$ dip for $U_{\mathrm{opt}}$,
+with no collapse above $n_c=24$.
+
+Caveats worth flagging: both Stage~2 solves hit the iteration limit; peak
+amplitude grows on the fine grid (opt reaches $40\,\mathrm{rad}/\mu\mathrm{s}$);
+only opt and enc were refined at $s=10$, though the same schedule applies to
+the rest of the gate suite.
+
+%----------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+
+I reduced $dt$ by a factor of ten with multi-truncation fitting on
+$dt=2\,\mathrm{ns}$, then light single-truncation polish at $n_c=24$,
+$s=10$. Fidelity plateaus rise from $\approx 0.983$ to $\approx 0.999$
+($U_{\mathrm{opt}}$) and from $\approx 0.9955$ to $\approx 0.9997$
+($U_{\mathrm{enc}}$). Cost scales as expected with $N=sN_0$. Stage~1 buys
+truncation safety; Stage~2 spends it on a smaller $dt$.
+
+%----------------------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{heeres2017}
+R.~W. Heeres, P.~Reinhold, N.~Ofek, \emph{et al.},
+Implementing a universal gate set on a logical qubit encoded in an oscillator,
+\emph{Nat.\ Commun.} \textbf{8}, 94 (2017).
+
+\bibitem{khaneja2005}
+N.~Khaneja, T.~Reiss, C.~Kehlet, T.~Schulte-Herbr\"uggen, and S.~J. Glaser,
+Optimal control of coupled spin dynamics: design of NMR pulse sequences by
+gradient ascent algorithms,
+\emph{J.\ Magn.\ Reson.} \textbf{172}, 296--305 (2005).
+
+\end{thebibliography}
+
+%----------------------------------------------------------------------
+\appendix
+\section{Fock population heatmaps}
+\label{app:fock}
+
+Full $P(n,t)$ for Stage~1 vs Stage~2 at $n_c=24$. Red curve:
+$\langle n\rangle(t)$. These support the trajectory discussion in
+Sec.~\ref{sec:trajectory}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/dt_refine_fock_heatmap_opt.pdf}
+\caption{$P(n,t)$ for $U_{\mathrm{opt}}$. Stage~2 uses a slightly more
+aggressive intermediate photon path but still ends on $\lvert n=6\rangle$.}
+\label{fig:fock_opt}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/dt_refine_fock_heatmap_enc.pdf}
+\caption{$P(n,t)$ for $U_{\mathrm{enc}}$ ($\lvert g,0\rangle$ branch).
+Population spreads over the even-parity support of the four-component cat
+($\alpha=\sqrt{3}$).}
+\label{fig:fock_enc}
+\end{figure}
+
+\end{document}
