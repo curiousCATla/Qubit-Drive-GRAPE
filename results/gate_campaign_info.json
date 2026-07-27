@@ -31,72 +31,72 @@
       "Gate": "enc",
       "Pulse_file": "u_enc_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9954539804590773,
+      "Final_bare_F": 0.9969026095354213,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 9.17346947293396e-08,
+      "Max_pairwise_disc": 1.2692025435079302e-06,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "dec",
       "Pulse_file": "u_dec_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9958098670066375,
+      "Final_bare_F": 0.9979976698107668,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 1.1311018421888974e-06,
+      "Max_pairwise_disc": 1.0407565013137443e-06,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "X",
       "Pulse_file": "u_X_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9961245171789425,
+      "Final_bare_F": 0.9973682673100118,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 0.00013709435969389006,
+      "Max_pairwise_disc": 0.0001229620197381598,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "Y",
       "Pulse_file": "u_Y_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9962878072497655,
+      "Final_bare_F": 0.9976398517220133,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 0.00011418645104110947,
+      "Max_pairwise_disc": 2.131791086834589e-05,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "Z",
       "Pulse_file": "u_Z_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9997800408921201,
+      "Final_bare_F": 0.9992393425780621,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 3.3852920466870273e-12,
+      "Max_pairwise_disc": 8.403167051085347e-12,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "H",
       "Pulse_file": "u_H_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.996928978305406,
+      "Final_bare_F": 0.9983252714131737,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 2.6697859700774984e-07,
+      "Max_pairwise_disc": 1.9894700360900686e-05,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "T",
       "Pulse_file": "u_T_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9997851968319328,
+      "Final_bare_F": 0.9997908481734467,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 3.387401470433815e-12,
+      "Max_pairwise_disc": 4.906630657330879e-12,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "I",
       "Pulse_file": "u_I_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9997800408921201,
+      "Final_bare_F": 0.9995244216001288,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 3.3852920466870273e-12,
+      "Max_pairwise_disc": 2.119637798614349e-12,
       "Wall_clock_s": NaN
     }
   ]

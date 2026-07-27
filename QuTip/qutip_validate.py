@@ -48,6 +48,21 @@ from core.cat_code import (
 from QuTip.qutip_grape_optimizer import (
     DT_DEFAULT,
     qutip_multi_state_fidelity,
+    qutip_gate_logical_unitary,
+    qutip_enc_logical_unitary,
+    qutip_dec_logical_unitary,
+)
+# average_gate_fidelity/IDEAL_LOGICAL_U are a linear-algebra formula and a
+# static target lookup, not propagator code -- reusing them doesn't
+# compromise the "independent propagator" cross-check below (this file
+# already imports state-pair factories and fidelity_multi_state itself from
+# core/ for the *targets* side of the existing per-truncation comparison).
+from validation.validate_logical_gates import (
+    average_gate_fidelity,
+    IDEAL_LOGICAL_U,
+    tier3_gate_algebra,
+    tier4_enc_relative_phase,
+    tier4_dec_relative_phase,
 )
 
 PULSE_DIR = os.path.join(REPO_ROOT, "pulses")
@@ -72,6 +87,17 @@ PULSE_MAP = {
     "u_enc_main.npy": ("U_enc",       get_encode_state_pairs),
     "u_dec_main.npy": ("U_dec",       get_decode_state_pairs),
 }
+
+# filename -> gate code used to dispatch the relative-phase cross-check
+# below. u_opt_main.npy (a single-state Fock-state prep, not a two-branch
+# logical map) has no gate code and is skipped by that check.
+PHASE_CHECK_GATE = {
+    "u_X_main.npy": "X", "u_Y_main.npy": "Y", "u_Z_main.npy": "Z",
+    "u_H_main.npy": "H", "u_T_main.npy": "T", "u_I_main.npy": "I",
+    "u_enc_main.npy": "enc", "u_dec_main.npy": "dec",
+}
+PHASE_CHECK_N_C = 24   # matches tier3_gate_algebra/tier4_enc_relative_phase's own default
+PHASE_DIFF_FLAG_THRESHOLD = 1e-3   # looser than max_diff's 1e-4: F_avg_gate is a squared/combined quantity
 
 
 def validate_pulse(filename, label, factory, rows):
@@ -108,10 +134,44 @@ def validate_pulse(filename, label, factory, rows):
     return max_diff
 
 
+def qutip_phase_cross_check(gate, u, n_c=PHASE_CHECK_N_C, n_t=N_T, dt=DT):
+    """
+    Independent QuTiP-sesolve confirmation of F_avg_gate -- the relative-
+    branch-phase-sensitive check tier3_gate_algebra/tier4_enc_relative_phase/
+    tier4_dec_relative_phase compute using grape_core's own eigendecomposition
+    propagator. Building the *same* 2x2 U_log via a completely independent
+    ODE solver and comparing F_avg_gate from each rules out the possibility
+    that grape_core's propagator itself has a phase-convention bug that
+    happens to move F_avg_gate for reasons unrelated to the pulse -- unlike
+    validate_pulse/qutip_multi_state_fidelity above, which only ever compare
+    the phase-blind per-branch fidelity and would agree with each other even
+    if the underlying pulse had the wrong relative phase.
+
+    Returns (F_avg_gc, F_avg_qt) -- None, None if `gate` isn't one of the
+    eight two-branch gates this applies to (i.e. not in PHASE_CHECK_GATE).
+    """
+    if gate in IDEAL_LOGICAL_U:
+        F_avg_gc = tier3_gate_algebra(gate, u, n_c=n_c, n_t=n_t, dt=dt)["F_avg_gate"]
+        U_log_qt = qutip_gate_logical_unitary(u, n_t, n_c, dt=dt)
+        F_avg_qt = average_gate_fidelity(IDEAL_LOGICAL_U[gate], U_log_qt)
+    elif gate == "enc":
+        F_avg_gc = tier4_enc_relative_phase(u, n_c=n_c, n_t=n_t, dt=dt)["F_avg_gate"]
+        U_log_qt = qutip_enc_logical_unitary(u, n_t, n_c, dt=dt)
+        F_avg_qt = average_gate_fidelity(np.eye(2, dtype=complex), U_log_qt)
+    elif gate == "dec":
+        F_avg_gc = tier4_dec_relative_phase(u, n_c=n_c, n_t=n_t, dt=dt)["F_avg_gate"]
+        U_log_qt = qutip_dec_logical_unitary(u, n_t, n_c, dt=dt)
+        F_avg_qt = average_gate_fidelity(np.eye(2, dtype=complex), U_log_qt)
+    else:
+        return None, None
+    return float(F_avg_gc), float(F_avg_qt)
+
+
 def main():
     print("QuTiP cross-check of every saved *_mt.npy pulse against grape_core's own propagator.")
     summary = []
     rows = []
+    phase_rows = []
     for filename, (label, factory) in PULSE_MAP.items():
         path = os.path.join(PULSE_DIR, filename)
         if not os.path.exists(path):
@@ -120,12 +180,31 @@ def main():
         max_diff = validate_pulse(filename, label, factory, rows)
         summary.append((label, max_diff))
 
+        gate = PHASE_CHECK_GATE.get(filename)
+        if gate is not None:
+            u = np.load(path)
+            F_avg_gc, F_avg_qt = qutip_phase_cross_check(gate, u)
+            phase_diff = abs(F_avg_gc - F_avg_qt)
+            phase_rows.append({
+                "label": label, "F_avg_gc": F_avg_gc, "F_avg_qt": F_avg_qt, "diff": phase_diff,
+            })
+            print(f"  [{label}] F_avg_gate: grape_core={F_avg_gc:.6f}  qutip={F_avg_qt:.6f}  "
+                  f"|diff|={phase_diff:.2e}")
+
     print(f"\n{'='*60}")
     print("SUMMARY (max |grape_core F - qutip F| across truncations)")
     print(f"{'='*60}")
     for label, max_diff in summary:
         flag = "  <-- CHECK THIS" if max_diff > 1e-4 else ""
         print(f"  {label:14s} {max_diff:.2e}{flag}")
+
+    print(f"\n{'='*60}")
+    print("SUMMARY (relative-branch-phase check: |F_avg_gate(grape_core) - F_avg_gate(qutip)|)")
+    print(f"{'='*60}")
+    for r in phase_rows:
+        flag = "  <-- CHECK THIS" if r["diff"] > PHASE_DIFF_FLAG_THRESHOLD else ""
+        print(f"  {r['label']:14s} gc={r['F_avg_gc']:.6f}  qt={r['F_avg_qt']:.6f}  "
+              f"diff={r['diff']:.2e}{flag}")
 
     os.makedirs(TABLE_DIR, exist_ok=True)
     csv_path = os.path.join(TABLE_DIR, "qutip_validation.csv")
@@ -134,6 +213,13 @@ def main():
         for r in rows:
             f.write(f"{r['label']},{r['n_c']},{r['F_gc']!r},{r['F_qt']!r},{r['diff']!r},{r['trained']}\n")
     print(f"\nWrote per-truncation data: {csv_path}")
+
+    phase_csv_path = os.path.join(TABLE_DIR, "qutip_phase_validation.csv")
+    with open(phase_csv_path, "w") as f:
+        f.write("label,F_avg_gc,F_avg_qt,diff\n")
+        for r in phase_rows:
+            f.write(f"{r['label']},{r['F_avg_gc']!r},{r['F_avg_qt']!r},{r['diff']!r}\n")
+    print(f"Wrote relative-phase cross-check: {phase_csv_path}")
 
 
 if __name__ == "__main__":

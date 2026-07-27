@@ -98,8 +98,10 @@ def build_arg_parser():
     p.add_argument("--fidelity-fn", choices=["auto", "average", "coherent"],
                     default="auto",
                     help="Fidelity metric used for training. 'auto' uses the "
-                         "phase-sensitive coherent_fidelity_multi_state for H/T "
-                         "and the plain average otherwise.")
+                         "phase-sensitive coherent_fidelity_multi_state for "
+                         "every gate (all eight depend on relative branch "
+                         "phase); pass 'average' to force the plain "
+                         "per-branch objective instead.")
 
     # --- Optimization hyperparameters ---
     opt = p.add_argument_group("optimization parameters")
@@ -196,7 +198,15 @@ def resolve_fidelity_fn(gate, choice):
         return coherent_fidelity_multi_state
     if choice == "average":
         return fidelity_multi_state
-    return coherent_fidelity_multi_state if gate in ("H", "T") else fidelity_multi_state
+    # Every gate -- the six single-qubit logical gates AND enc/dec -- depends
+    # on the *relative* phase between its two training branches (X/Y/Z/enc/
+    # dec's correctness on superposition inputs, H's self-inverse property,
+    # T's pi/4 relative phase). fidelity_multi_state can't see or constrain
+    # that phase (see its docstring): validate_logical_gates.py's
+    # tier3_gate_algebra (X/Y/Z/H/T/I) and tier4_enc_dec_relative_phase
+    # (enc/dec) both confirmed all eight pulses had this defect when trained
+    # with it. 'auto' therefore always resolves to the phase-aware objective.
+    return coherent_fidelity_multi_state
 
 
 def run_plots(args, u_opt, factory, label):

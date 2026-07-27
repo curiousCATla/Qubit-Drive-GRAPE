@@ -221,6 +221,88 @@ def qutip_multi_state_fidelity(u, factory, n_t, n_c, dt=DT_DEFAULT):
     return float(np.mean(fids))
 
 
+def _ket_qt(psi, n_t, n_c):
+    return qt.Qobj(psi.reshape(-1, 1), dims=[[n_t, n_c], [1, 1]])
+
+
+def qutip_gate_logical_unitary(u, n_t, n_c, dt=DT_DEFAULT, alpha=np.sqrt(3.0)):
+    """
+    QuTiP-sesolve counterpart of validation.validate_logical_gates.
+    tier3_gate_algebra's U_log extraction, for the six single-qubit logical
+    gates (X/Y/Z/H/T/I). Propagates |+Z_L,g> and |-Z_L,g> via sesolve and
+    projects back onto the same basis, using the identical index convention
+    tier3_gate_algebra uses ([[U_pp,U_pm],[U_mp,U_mm]]) so the two 2x2 maps
+    are directly, entry-by-entry comparable -- see that function's docstring
+    in validation/validate_logical_gates.py for why this catches the
+    relative-branch-phase defect that qutip_multi_state_fidelity above
+    (like grape_core.fidelity_multi_state) cannot.
+    """
+    from core.cat_code import get_logical_cat_states, embed_in_joint_space
+
+    psi_p_cav, psi_m_cav = get_logical_cat_states(alpha=alpha, n_c=n_c)
+    psi_pg = embed_in_joint_space(psi_p_cav, n_t=n_t, n_c=n_c, t_level=0)
+    psi_mg = embed_in_joint_space(psi_m_cav, n_t=n_t, n_c=n_c, t_level=0)
+
+    psi_p_out = qutip_final_state(u, n_t, n_c, psi_pg, dt=dt)
+    psi_m_out = qutip_final_state(u, n_t, n_c, psi_mg, dt=dt)
+
+    psi_pg_qt = _ket_qt(psi_pg, n_t, n_c)
+    psi_mg_qt = _ket_qt(psi_mg, n_t, n_c)
+
+    U_pp = psi_pg_qt.overlap(psi_p_out)
+    U_pm = psi_mg_qt.overlap(psi_p_out)
+    U_mp = psi_pg_qt.overlap(psi_m_out)
+    U_mm = psi_mg_qt.overlap(psi_m_out)
+    return np.array([[U_pp, U_pm], [U_mp, U_mm]])
+
+
+def qutip_enc_logical_unitary(u_enc, n_t, n_c, dt=DT_DEFAULT, alpha=np.sqrt(3.0)):
+    """
+    QuTiP-sesolve counterpart of tier4_enc_relative_phase: {|g,0>,|e,0>} ->
+    {|+Z_L>,|-Z_L>}, same index convention as that function.
+    """
+    from core.cat_code import get_logical_cat_states, embed_in_joint_space
+
+    init_g = np.zeros(n_t * n_c, dtype=complex); init_g[0] = 1.0
+    init_e = np.zeros(n_t * n_c, dtype=complex); init_e[n_c] = 1.0
+    psi_p_cav, psi_m_cav = get_logical_cat_states(alpha=alpha, n_c=n_c)
+    psi_pg = embed_in_joint_space(psi_p_cav, n_t=n_t, n_c=n_c, t_level=0)
+    psi_mg = embed_in_joint_space(psi_m_cav, n_t=n_t, n_c=n_c, t_level=0)
+
+    out_g = qutip_final_state(u_enc, n_t, n_c, init_g, dt=dt)
+    out_e = qutip_final_state(u_enc, n_t, n_c, init_e, dt=dt)
+
+    psi_pg_qt = _ket_qt(psi_pg, n_t, n_c)
+    psi_mg_qt = _ket_qt(psi_mg, n_t, n_c)
+
+    return np.array([
+        [psi_pg_qt.overlap(out_g), psi_pg_qt.overlap(out_e)],
+        [psi_mg_qt.overlap(out_g), psi_mg_qt.overlap(out_e)],
+    ])
+
+
+def qutip_dec_logical_unitary(u_dec, n_t, n_c, dt=DT_DEFAULT, alpha=np.sqrt(3.0)):
+    """QuTiP-sesolve counterpart of tier4_dec_relative_phase: the reverse of qutip_enc_logical_unitary."""
+    from core.cat_code import get_logical_cat_states, embed_in_joint_space
+
+    init_g = np.zeros(n_t * n_c, dtype=complex); init_g[0] = 1.0
+    init_e = np.zeros(n_t * n_c, dtype=complex); init_e[n_c] = 1.0
+    psi_p_cav, psi_m_cav = get_logical_cat_states(alpha=alpha, n_c=n_c)
+    psi_pg = embed_in_joint_space(psi_p_cav, n_t=n_t, n_c=n_c, t_level=0)
+    psi_mg = embed_in_joint_space(psi_m_cav, n_t=n_t, n_c=n_c, t_level=0)
+
+    out_p = qutip_final_state(u_dec, n_t, n_c, psi_pg, dt=dt)
+    out_m = qutip_final_state(u_dec, n_t, n_c, psi_mg, dt=dt)
+
+    init_g_qt = _ket_qt(init_g, n_t, n_c)
+    init_e_qt = _ket_qt(init_e, n_t, n_c)
+
+    return np.array([
+        [init_g_qt.overlap(out_p), init_g_qt.overlap(out_m)],
+        [init_e_qt.overlap(out_p), init_e_qt.overlap(out_m)],
+    ])
+
+
 # ---------------------------------------------------------------------------
 # 3. Piecewise-constant propagator + GRAPE adjoint gradient
 #    (same math as grape_core.step_data / fidelity_grad)

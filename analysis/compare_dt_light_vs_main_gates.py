@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-compare_dt_light_vs_main.py
+compare_dt_light_vs_main_gates.py
 
-Compare Stage-1 coarse pulses (*_main.npy, dt=0.002 us) against Stage-2
-light dt-refined pulses (*10x_light.npy, dt=0.0002 us, s=10).
+Compare Stage-1 coarse pulses (u_dec_main.npy, u_H_main.npy, u_Y_main.npy,
+dt=0.002 us) against their Stage-2 light dt-refined counterparts
+(u_dec10x_light.npy, u_H10x_light.npy, u_Y10x_light.npy, dt=0.0002 us, s=10).
+
+Same protocol/analysis structure as compare_dt_light_vs_main.py (opt/enc),
+applied to the decode gate and the logical H, Y gates.
 
 Outputs:
-  tables/dt_refine_fidelity_comparison.csv
-  tables/dt_refine_trajectory_metrics.csv
-  tables/dt_refine_cost_summary.csv
-  figures/dt_refine_fidelity_vs_nc.pdf/.png
-  figures/dt_refine_photon_trajectory.pdf/.png   (opt | enc side by side)
-  figures/dt_refine_fock_heatmap.pdf/.png         (opt row, enc row; combined)
-  figures/dt_refine_waveform_opt.pdf/.png         (appendix: main vs light)
-  figures/dt_refine_waveform_enc.pdf/.png         (appendix: main vs light)
+  tables/dt_refine_fidelity_comparison_gates.csv
+  tables/dt_refine_trajectory_metrics_gates.csv
+  tables/dt_refine_cost_summary_gates.csv
+  figures/dt_refine_fidelity_vs_nc_gates.pdf/.png
+  figures/dt_refine_photon_trajectory_gates.pdf/.png
+  figures/dt_refine_waveform_dec.pdf/.png
+  figures/dt_refine_waveform_H.pdf/.png
+  figures/dt_refine_waveform_Y.pdf/.png
 """
 
 from __future__ import annotations
@@ -25,19 +29,19 @@ import csv
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from core.grape_core import (
-    make_hamiltonian,
-    fidelity_multi_state,
-    basis_state,
-    step_data,
+from core.grape_core import make_hamiltonian, fidelity_multi_state, step_data
+from core.cat_code import (
+    get_decode_state_pairs,
+    get_logical_H_state_pairs,
+    get_logical_Y_state_pairs,
+    get_logical_cat_states,
+    embed_in_joint_space,
 )
-from core.cat_code import get_encode_state_pairs
 
 FIG_DIR = os.path.join(REPO_ROOT, "figures")
 TAB_DIR = os.path.join(REPO_ROOT, "tables")
@@ -52,38 +56,42 @@ TRUNC_LIST = list(range(18, 31, 2))
 TRAJ_N_C = 24
 TWO_PI = 2 * np.pi
 
-# Obsolete per-pulse figure stems removed after combined figures are written
-OBSOLETE_STEMS = [
-    "dt_refine_photon_trajectory_opt",
-    "dt_refine_photon_trajectory_enc",
-    "dt_refine_fock_heatmap_opt",
-    "dt_refine_fock_heatmap_enc",
-]
 
-
-def get_g6_state_pairs(n_c, n_t=N_T):
-    return [(basis_state(n_t, n_c, 0, 0), basis_state(n_t, n_c, 0, 6))]
+def psi0_cat_plus(n_c):
+    """|g> ⊗ |+Z_L>, the shared input state for U_dec / logical H / logical Y."""
+    psi_plus_cav, _ = get_logical_cat_states(alpha=np.sqrt(3.0), n_c=n_c)
+    return embed_in_joint_space(psi_plus_cav, n_t=N_T, n_c=n_c, t_level=0)
 
 
 PULSE_SPECS = {
-    "opt": {
-        "label": r"$U_{\mathrm{opt}}$ ($|g,0\rangle\!\to\!|g,6\rangle$)",
-        "short": r"$U_{\mathrm{opt}}$",
-        "main_path": os.path.join(REPO_ROOT, "pulses", "u_opt_main.npy"),
-        "light_path": os.path.join(REPO_ROOT, "pulses", "u_opt10x_light.npy"),
-        "get_pairs": get_g6_state_pairs,
-        "psi0_fn": lambda n_c: basis_state(N_T, n_c, 0, 0),
-        "log_path": os.path.join(LOG_DIR, "light_refine_10x_run.log"),
+    "dec": {
+        "label": r"$U_{\mathrm{dec}}$ (cat-code decode)",
+        "short": r"$U_{\mathrm{dec}}$",
+        "main_path": os.path.join(REPO_ROOT, "pulses", "u_dec_main.npy"),
+        "light_path": os.path.join(REPO_ROOT, "pulses", "u_dec10x_light.npy"),
+        "get_pairs": get_decode_state_pairs,
+        "psi0_fn": psi0_cat_plus,
+        "log_path": os.path.join(LOG_DIR, "light_refine_dec10x_run.log"),
         "n_plot": 18,
     },
-    "enc": {
-        "label": r"$U_{\mathrm{enc}}$ (cat-code encode)",
-        "short": r"$U_{\mathrm{enc}}$",
-        "main_path": os.path.join(REPO_ROOT, "pulses", "u_enc_main.npy"),
-        "light_path": os.path.join(REPO_ROOT, "pulses", "u_enc10x_light.npy"),
-        "get_pairs": get_encode_state_pairs,
-        "psi0_fn": lambda n_c: basis_state(N_T, n_c, 0, 0),
-        "log_path": os.path.join(LOG_DIR, "light_refine_enc10x_run.log"),
+    "H": {
+        "label": r"$U_{H}$ (logical Hadamard)",
+        "short": r"$U_{H}$",
+        "main_path": os.path.join(REPO_ROOT, "pulses", "u_H_main.npy"),
+        "light_path": os.path.join(REPO_ROOT, "pulses", "u_H10x_light.npy"),
+        "get_pairs": get_logical_H_state_pairs,
+        "psi0_fn": psi0_cat_plus,
+        "log_path": os.path.join(LOG_DIR, "light_refine_H10x_run.log"),
+        "n_plot": 18,
+    },
+    "Y": {
+        "label": r"$U_{Y}$ (logical Y)",
+        "short": r"$U_{Y}$",
+        "main_path": os.path.join(REPO_ROOT, "pulses", "u_Y_main.npy"),
+        "light_path": os.path.join(REPO_ROOT, "pulses", "u_Y10x_light.npy"),
+        "get_pairs": get_logical_Y_state_pairs,
+        "psi0_fn": psi0_cat_plus,
+        "log_path": os.path.join(LOG_DIR, "light_refine_Y10x_run.log"),
         "n_plot": 18,
     },
 }
@@ -162,8 +170,9 @@ def _save(fig, stem):
 
 
 def plot_fidelity(fidelity_data):
-    fig, axes = plt.subplots(1, 2, figsize=(9.5, 3.6), sharey=False)
-    for ax, key in zip(axes, ("opt", "enc")):
+    keys = list(PULSE_SPECS.keys())
+    fig, axes = plt.subplots(1, len(keys), figsize=(4.6 * len(keys), 3.6), sharey=False)
+    for ax, key in zip(axes, keys):
         data = fidelity_data[key]
         nc = data["n_c"]
         ax.plot(nc, data["F_main"], "o-", color="#1f77b4", lw=1.8, ms=5,
@@ -179,13 +188,13 @@ def plot_fidelity(fidelity_data):
         ymin = min(min(data["F_main"]), min(data["F_light"]))
         ax.set_ylim(max(0.96, ymin - 0.01), 1.001)
     fig.tight_layout()
-    _save(fig, "dt_refine_fidelity_vs_nc")
+    _save(fig, "dt_refine_fidelity_vs_nc_gates")
 
 
 def plot_photon_trajectory_combined(trajectories):
-    """Single figure: opt | enc side by side."""
-    fig, axes = plt.subplots(1, 2, figsize=(9.8, 3.5), sharey=False)
-    for ax, key in zip(axes, ("opt", "enc")):
+    keys = list(PULSE_SPECS.keys())
+    fig, axes = plt.subplots(1, len(keys), figsize=(4.6 * len(keys), 3.5), sharey=False)
+    for ax, key in zip(axes, keys):
         traj_main, traj_light = trajectories[key]
         t_m, n_m, _, _ = traj_main
         t_l, n_l, _, _ = traj_light
@@ -199,58 +208,10 @@ def plot_photon_trajectory_combined(trajectories):
         ax.legend(fontsize=8, loc="best")
     axes[0].set_ylabel(r"Mean photon number $\langle n\rangle$")
     fig.tight_layout()
-    _save(fig, "dt_refine_photon_trajectory")
-
-
-def plot_fock_heatmap_combined(trajectories, n_plot=18):
-    """Single figure: two rows (opt, enc), two columns (main, light)."""
-    fig, axes = plt.subplots(2, 2, figsize=(10.5, 7.0), sharex=False, sharey=True)
-
-    # Global color scale across all four panels
-    vmax = 0.0
-    for key in ("opt", "enc"):
-        tm, tl = trajectories[key]
-        vmax = max(vmax, tm[2][:n_plot].max(), tl[2][:n_plot].max())
-    norm = Normalize(vmin=0.0, vmax=max(vmax, 1e-12))
-
-    im = None
-    for row, key in enumerate(("opt", "enc")):
-        traj_main, traj_light = trajectories[key]
-        for col, (traj, stage_title) in enumerate((
-            (traj_main, r"Stage 1 ($dt=2\,\mathrm{ns}$)"),
-            (traj_light, r"Stage 2 ($dt=0.2\,\mathrm{ns}$)"),
-        )):
-            t, n_mean, P, _ = traj
-            ax = axes[row, col]
-            t_ns = t * 1000
-            im = ax.pcolormesh(
-                t_ns, np.arange(n_plot), P[:n_plot, :],
-                cmap="Blues", shading="nearest", norm=norm,
-            )
-            ax.plot(t_ns, n_mean, color="red", lw=1.6, alpha=0.85,
-                    label=r"$\langle n\rangle(t)$")
-            if row == 1:
-                ax.set_xlabel("Time (ns)")
-            if col == 0:
-                ax.set_ylabel("Photon number $n$")
-            ax.set_title(
-                f"{PULSE_SPECS[key]['short']}: {stage_title}",
-                fontsize=10,
-            )
-            ax.legend(loc="upper right", fontsize=7)
-
-    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), pad=0.02, fraction=0.025)
-    cbar.set_label(r"$P(n,t)$")
-    fig.suptitle(r"Fock population $P(n,t)$ — Stage 1 vs Stage 2", y=1.01)
-    _save(fig, "dt_refine_fock_heatmap")
+    _save(fig, "dt_refine_photon_trajectory_gates")
 
 
 def plot_waveform_comparison(key, u_main, u_light, dt_main=DT_MAIN, dt_light=DT_LIGHT):
-    """
-    Appendix figure: Stage-1 vs Stage-2 control waveforms.
-    Two rows (cavity, transmon); I solid, Q dashed; stages overlaid.
-    Amplitudes in MHz (divide rad/us by 2π).
-    """
     t_m = np.arange(u_main.shape[0]) * dt_main * 1000  # ns
     t_l = np.arange(u_light.shape[0]) * dt_light * 1000
     u_m = u_main / TWO_PI
@@ -258,7 +219,6 @@ def plot_waveform_comparison(key, u_main, u_light, dt_main=DT_MAIN, dt_light=DT_
 
     fig, axes = plt.subplots(2, 1, figsize=(9.5, 5.2), sharex=True)
 
-    # Cavity
     ax = axes[0]
     ax.plot(t_m, u_m[:, 0], color="#1f77b4", lw=1.2, label=r"Stage 1 $C_I$")
     ax.plot(t_m, u_m[:, 1], color="#1f77b4", lw=1.0, ls="--", alpha=0.85,
@@ -272,7 +232,6 @@ def plot_waveform_comparison(key, u_main, u_light, dt_main=DT_MAIN, dt_light=DT_
     ax.grid(True, alpha=0.3)
     ax.legend(ncol=4, fontsize=7.5, loc="upper right")
 
-    # Transmon
     ax = axes[1]
     ax.plot(t_m, u_m[:, 2], color="#1f77b4", lw=1.2, label=r"Stage 1 $T_I$")
     ax.plot(t_m, u_m[:, 3], color="#1f77b4", lw=1.0, ls="--", alpha=0.85,
@@ -288,18 +247,6 @@ def plot_waveform_comparison(key, u_main, u_light, dt_main=DT_MAIN, dt_light=DT_
 
     fig.tight_layout()
     _save(fig, f"dt_refine_waveform_{key}")
-
-
-def cleanup_obsolete_figures():
-    removed = []
-    for stem in OBSOLETE_STEMS:
-        for ext in ("pdf", "png"):
-            path = os.path.join(FIG_DIR, f"{stem}.{ext}")
-            if os.path.exists(path):
-                os.remove(path)
-                removed.append(os.path.basename(path))
-    if removed:
-        print("Removed obsolete figures:", ", ".join(removed))
 
 
 def main():
@@ -382,22 +329,21 @@ def main():
             print(f"  Log wall clock: {log_info['wall_s']:.1f} s "
                   f"({log_info['wall_s']/60:.2f} min), F={log_info['final_F']}")
 
-    # CSVs
-    fid_csv = os.path.join(TAB_DIR, "dt_refine_fidelity_comparison.csv")
+    fid_csv = os.path.join(TAB_DIR, "dt_refine_fidelity_comparison_gates.csv")
     with open(fid_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["pulse", "n_c", "F_main", "F_light", "delta_F"])
         w.writeheader()
         w.writerows(fidelity_rows)
     print(f"\nSaved {fid_csv}")
 
-    traj_csv = os.path.join(TAB_DIR, "dt_refine_trajectory_metrics.csv")
+    traj_csv = os.path.join(TAB_DIR, "dt_refine_trajectory_metrics_gates.csv")
     with open(traj_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(traj_metrics[0].keys()))
         w.writeheader()
         w.writerows(traj_metrics)
     print(f"Saved {traj_csv}")
 
-    cost_csv = os.path.join(TAB_DIR, "dt_refine_cost_summary.csv")
+    cost_csv = os.path.join(TAB_DIR, "dt_refine_cost_summary_gates.csv")
     with open(cost_csv, "w", newline="") as f:
         fields = list(cost_rows[0].keys()) if cost_rows else [
             "pulse", "N_refined", "dt_us", "s", "n_c_train",
@@ -408,16 +354,13 @@ def main():
         w.writerows(cost_rows)
     print(f"Saved {cost_csv}")
 
-    # Figures
     print("\nPlotting figures...")
     plot_fidelity(fidelity_data)
     plot_photon_trajectory_combined(trajectories)
-    plot_fock_heatmap_combined(trajectories, n_plot=18)
-    for key in ("opt", "enc"):
+    for key in PULSE_SPECS:
         u_main, u_light = pulses[key]
         plot_waveform_comparison(key, u_main, u_light)
 
-    cleanup_obsolete_figures()
     print("\nDone.")
 
 

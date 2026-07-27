@@ -141,6 +141,8 @@ def simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t):
     - P(n,t): the cavity photon number distribution at each time step
     - <n>(t): the average cavity photon number vs time
     - transmon excited-state population
+    - P_t(level,t): the transmon level-population distribution at each time step
+    - <m>(t): the average transmon level vs time
     """
     N_steps = u.shape[0]  # number of time steps, rows in the control array
     psi = psi_i.copy().astype(complex)  # initialize the state vector
@@ -149,6 +151,8 @@ def simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t):
     n_mean = np.zeros(N_steps + 1)  # average cavity photon number
     P = np.zeros((n_c, N_steps + 1))  # P[n, time index]
     transmon_ex = np.zeros(N_steps + 1)
+    P_t = np.zeros((n_t, N_steps + 1))  # P_t[level, time index]
+    t_mean = np.zeros(N_steps + 1)  # average transmon level
 
     # Record initial condition
     for nc in range(n_c):
@@ -160,6 +164,9 @@ def simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t):
     n_mean[0] = np.sum(np.arange(n_c) * P[:, 0])  # average photon number at t=0
     prob_g = np.sum(np.abs(psi[0:n_c]) ** 2)  # probability of transmon in ground state
     transmon_ex[0] = 1 - prob_g  # probability of transmon in excited state
+    for nt in range(n_t):
+        P_t[nt, 0] = np.sum(np.abs(psi[nt * n_c:(nt + 1) * n_c]) ** 2)
+    t_mean[0] = np.sum(np.arange(n_t) * P_t[:, 0])
 
     for k in range(N_steps):
         # apply one time step
@@ -180,7 +187,12 @@ def simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t):
         prob_g = np.sum(np.abs(psi[0:n_c]) ** 2)
         transmon_ex[k + 1] = 1.0 - prob_g
 
-    return times, n_mean, P, transmon_ex
+        # Calculate transmon level population
+        for nt in range(n_t):
+            P_t[nt, k + 1] = np.sum(np.abs(psi[nt * n_c:(nt + 1) * n_c]) ** 2)
+        t_mean[k + 1] = np.sum(np.arange(n_t) * P_t[:, k + 1])
+
+    return times, n_mean, P, transmon_ex, P_t, t_mean
 
 
 def plot_photon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
@@ -212,7 +224,7 @@ def plot_photon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
 
     if n_plot is None:
         max_sig = 0
-        for _, _, P, _ in trajectories:
+        for _, _, P, _, _, _ in trajectories:
             significant = np.where(np.any(P >= sig_threshold, axis=1))[0]
             if significant.size > 0:
                 max_sig = max(max_sig, int(significant.max()))
@@ -222,7 +234,7 @@ def plot_photon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
                               sharex=True, squeeze=False)
     axes = axes[:, 0]
 
-    for ax, (times, n_mean, P, _), label in zip(axes, trajectories, labels):
+    for ax, (times, n_mean, P, _, _, _), label in zip(axes, trajectories, labels):
         t_ns = times * 1000  # convert to ns
 
         im = ax.pcolormesh(t_ns, np.arange(n_plot), P[:n_plot, :], cmap='Blues', shading='nearest')
@@ -233,6 +245,53 @@ def plot_photon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
 
         cbar = plt.colorbar(im, ax=ax, pad=0.02)
         cbar.set_label('P(n,t)')
+
+    axes[-1].set_xlabel('Time (ns)')
+    plt.suptitle(title)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+        print(f"Saved: {save_path}")
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+def plot_transmon_trajectory(u, psi_i_list, labels=None, dt=0.002, n_c=24, n_t=3,
+                              level_names=None, title="Transmon Population Trajectory",
+                              save_path=None, show=True):
+    """
+    Plot the transmon level-population distribution P_t(level,t) (one line per
+    level, e.g. g/e/f) with <m>(t) overlaid, one panel per initial state in
+    psi_i_list (e.g. the two logical basis states a gate is optimized against).
+    """
+    H0, Hc = make_hamiltonian(n_t, n_c)
+
+    if labels is None:
+        labels = [f"Input {i+1}" for i in range(len(psi_i_list))]
+
+    if level_names is None:
+        level_names = ['g', 'e', 'f'][:n_t] if n_t <= 3 else [f"level {i}" for i in range(n_t)]
+
+    trajectories = [simulate_trajectory(u, H0, Hc, psi_i, dt, n_c, n_t) for psi_i in psi_i_list]
+
+    fig, axes = plt.subplots(len(psi_i_list), 1, figsize=(10, 4.5 * len(psi_i_list)),
+                              sharex=True, squeeze=False)
+    axes = axes[:, 0]
+
+    for ax, (times, _, _, _, P_t, t_mean), label in zip(axes, trajectories, labels):
+        t_ns = times * 1000  # convert to ns
+
+        for level in range(n_t):
+            ax.plot(t_ns, P_t[level, :], linewidth=1.8, label=f'P_{level_names[level]}(t)')
+        ax.plot(t_ns, t_mean, color='black', linestyle='--', linewidth=2.2, alpha=0.8, label='⟨m⟩(t)')
+        ax.set_ylabel('Population')
+        ax.set_title(f'{label}   |   max ⟨m⟩ = {np.max(t_mean):.2f}')
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
 
     axes[-1].set_xlabel('Time (ns)')
     plt.suptitle(title)
@@ -297,5 +356,11 @@ if __name__ == "__main__":
             u, psi_i_list, labels=pair_labels, n_c=PLOT_N_C, n_t=3,
             title=f"{label} — Photon Number Trajectory",
             save_path=os.path.join("figures", f"{label}_photon_trajectory.png"),
+            show=False,
+        )
+        plot_transmon_trajectory(
+            u, psi_i_list, labels=pair_labels, n_c=PLOT_N_C, n_t=3,
+            title=f"{label} — Transmon Population Trajectory",
+            save_path=os.path.join("figures", f"{label}_transmon_trajectory.png"),
             show=False,
         )

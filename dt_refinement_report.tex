@@ -19,7 +19,7 @@
 \maketitle
 
 \begin{abstract}
-I reduced the GRAPE time step by a factor of ten with a two-stage schedule.
+The GRAPE time step is reduced by a factor of ten with a two-stage schedule.
 Stage~1 fits a multi-truncation pulse on the base grid $dt=2\,\mathrm{ns}$.
 Stage~2 warm-starts from that pulse, upsamples by $s=10$, and refines with
 \texttt{refine\_pulse\_dt\_light} on a single truncation $n_c=24$, with a
@@ -38,7 +38,7 @@ A smaller $dt$ is a better control approximation---less zero-order-hold error,
 more temporal freedom for L-BFGS-B. The total duration $T=N\,dt$ stays fixed,
 so shrinking $dt$ by an integer factor $s$ means
 \begin{equation}
-  N \;\leftarrow\; sN, \qquad dt \;\leftarrow\; dt/s.
+  N \;\rightarrow\; sN, \qquad dt \;\rightarrow\; dt/s.
 \end{equation}
 
 The catch is cost. Each fidelity and gradient evaluation diagonalizes a
@@ -51,15 +51,15 @@ A factor-of-ten finer grid costs about ten times more per evaluation. Multi-
 truncation training multiplies that again. Doing both on every iteration is
 expensive.
 
-The method I used is a two-stage split:
+The method used here is a two-stage split:
 \begin{enumerate}
-  \item \textbf{Stage~1.} Fit on the coarse grid with multi-truncation
+  \item \textbf{Stage~1.} Fit initial waveform on the coarse grid with multi-truncation
         training via \texttt{optimize\_multi\_state\_pulse}.
   \item \textbf{Stage~2.} Upsample and re-optimize on a single truncation
         via \texttt{refine\_pulse\_dt\_light}, checking truncation only at
         halfway and at the end.
 \end{enumerate}
-I show results for two pulses: $U_{\mathrm{opt}}$
+Results are shown for two pulses: $U_{\mathrm{opt}}$
 ($\lvert g,0\rangle\to\lvert g,6\rangle$) and $U_{\mathrm{enc}}$
 (cat-code encode).
 
@@ -71,7 +71,7 @@ I show results for two pulses: $U_{\mathrm{opt}}$
 
 Stage~1 calls \texttt{optimize\_multi\_state\_pulse} on the base grid
 $dt=2\,\mathrm{ns}$. Every iteration averages fidelity over a truncation
-list (e.g.\ $\{22,24,26\}$), optionally with the discrepancy penalty so the
+list (e.g.\ $\{22,24,26\}$), along with the discrepancy penalty so the
 three truncations stay in agreement. The point is a pulse whose $F(n_c)$ is
 already flat---so Stage~2 does not inherit wall exploitation.
 
@@ -149,9 +149,6 @@ Cost per eval
 \end{tabular}
 \end{table}
 
-Both paths share the batched fidelity core, which amortizes the per-step
-eigendecomposition across state pairs and batches \texttt{eigh} in chunks of
-256. That is what makes large-$N$ (large-$s$) evaluations practical.
 
 %----------------------------------------------------------------------
 \section{Fidelity vs cavity truncation}
@@ -216,20 +213,14 @@ tolerance, so these fidelities are lower bounds on a longer budget.
 \label{sec:trajectory}
 
 Figure~\ref{fig:traj} shows $\langle n\rangle(t)$ for both pulses at
-$n_c=24$, Stage~1 vs Stage~2 side by side (initial state $\lvert g,0\rangle$;
-encode uses the ground branch). Table~\ref{tab:traj} has the scalar metrics.
-Fock heatmaps $P(n,t)$ are in Appendix~\ref{app:fock}.
+$n_c=24$, Stage~1 vs Stage~2 (initial state $\lvert g,0\rangle$; encode uses
+the ground branch). Table~\ref{tab:traj} has the scalar metrics. Fock
+heatmaps $P(n,t)$ and Stage~1 vs Stage~2 waveform overlays are in
+Appendix~\ref{app:extra}.
 
 \begin{figure}[h]
 \centering
-\begin{minipage}[t]{0.48\textwidth}
-  \centering
-  \includegraphics[width=\linewidth]{figures/dt_refine_photon_trajectory_opt.pdf}
-\end{minipage}\hfill
-\begin{minipage}[t]{0.48\textwidth}
-  \centering
-  \includegraphics[width=\linewidth]{figures/dt_refine_photon_trajectory_enc.pdf}
-\end{minipage}
+\includegraphics[width=0.98\textwidth]{figures/dt_refine_photon_trajectory.pdf}
 \caption{Mean photon number $\langle n\rangle(t)$ at $n_c=24$.
 Left: $U_{\mathrm{opt}}$ (both stages end near $\langle n\rangle=6$).
 Right: $U_{\mathrm{enc}}$, $\lvert g,0\rangle$ branch.}
@@ -322,7 +313,7 @@ the rest of the gate suite.
 \section{Conclusion}
 \label{sec:conclusion}
 
-I reduced $dt$ by a factor of ten with multi-truncation fitting on
+The time step is reduced by a factor of ten with multi-truncation fitting on
 $dt=2\,\mathrm{ns}$, then light single-truncation polish at $n_c=24$,
 $s=10$. Fidelity plateaus rise from $\approx 0.983$ to $\approx 0.999$
 ($U_{\mathrm{opt}}$) and from $\approx 0.9955$ to $\approx 0.9997$
@@ -347,28 +338,37 @@ gradient ascent algorithms,
 
 %----------------------------------------------------------------------
 \appendix
-\section{Fock population heatmaps}
-\label{app:fock}
+\section{Fock heatmaps and waveforms}
+\label{app:extra}
 
-Full $P(n,t)$ for Stage~1 vs Stage~2 at $n_c=24$. Red curve:
-$\langle n\rangle(t)$. These support the trajectory discussion in
-Sec.~\ref{sec:trajectory}.
+Figure~\ref{fig:fock} shows $P(n,t)$ for Stage~1 vs Stage~2 at $n_c=24$
+(red: $\langle n\rangle(t)$). Figures~\ref{fig:wave_opt}
+and~\ref{fig:wave_enc} overlay the four control channels before and after
+Stage~2 (amplitudes in MHz).
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.98\textwidth]{figures/dt_refine_fock_heatmap_opt.pdf}
-\caption{$P(n,t)$ for $U_{\mathrm{opt}}$. Stage~2 uses a slightly more
-aggressive intermediate photon path but still ends on $\lvert n=6\rangle$.}
-\label{fig:fock_opt}
+\includegraphics[width=0.98\textwidth]{figures/dt_refine_fock_heatmap.pdf}
+\caption{Fock population $P(n,t)$ at $n_c=24$. Top row: $U_{\mathrm{opt}}$;
+bottom row: $U_{\mathrm{enc}}$ ($\lvert g,0\rangle$ branch). Left column:
+Stage~1; right column: Stage~2. Red curve: $\langle n\rangle(t)$.}
+\label{fig:fock}
 \end{figure}
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.98\textwidth]{figures/dt_refine_fock_heatmap_enc.pdf}
-\caption{$P(n,t)$ for $U_{\mathrm{enc}}$ ($\lvert g,0\rangle$ branch).
-Population spreads over the even-parity support of the four-component cat
-($\alpha=\sqrt{3}$).}
-\label{fig:fock_enc}
+\includegraphics[width=0.95\textwidth]{figures/dt_refine_waveform_opt.pdf}
+\caption{Control waveforms for $U_{\mathrm{opt}}$: Stage~1 ($dt=2\,\mathrm{ns}$)
+vs Stage~2 ($dt=0.2\,\mathrm{ns}$). Solid: $I$ channels; dashed: $Q$.}
+\label{fig:wave_opt}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/dt_refine_waveform_enc.pdf}
+\caption{Control waveforms for $U_{\mathrm{enc}}$: Stage~1 ($dt=2\,\mathrm{ns}$)
+vs Stage~2 ($dt=0.2\,\mathrm{ns}$). Solid: $I$ channels; dashed: $Q$.}
+\label{fig:wave_enc}
 \end{figure}
 
 \end{document}
