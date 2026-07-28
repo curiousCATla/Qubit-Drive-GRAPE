@@ -261,7 +261,7 @@ def tier3_gate_algebra(gate_name, u, n_c=24, n_t=N_T, dt=DT):
     psi_p_out = propagate_pulse(u, H0, Hc, psi_pg, dt)
     psi_m_out = propagate_pulse(u, H0, Hc, psi_mg, dt)
 
-    # Effective logical unitary matrix elements (in {|+Z_L>, |-Z_L>} basis)
+    # Effective logical unitary matrix elements (in {|+Z_L>, |-Z_L>} basis) (logical subspace)
     U_pp = np.vdot(psi_pg, psi_p_out)
     U_pm = np.vdot(psi_mg, psi_p_out)
     U_mp = np.vdot(psi_pg, psi_m_out)

@@ -50,7 +50,12 @@ $$
 F = \bigl|\langle f | U | i \rangle\bigr|^2.
 $$
 
-For multi-state gates, $F$ is averaged over all target pairs (e.g. both encoding branches, or both logical basis states).
+Every gate here (encode, decode, and the six single-qubit logical gates) is trained on two branches at once (e.g. `|+Z_L⟩`/`|-Z_L⟩`, or `|g,0⟩`/`|e,0⟩` for encode/decode), so `grape_core.py` provides two multi-state reductions of $F$:
+
+- **`fidelity_multi_state`** — the plain per-branch average, $F = \frac{1}{M}\sum_m |\langle f_m | U | i_m \rangle|^2$. This is blind to global phase: $|\langle f|e^{i\varphi} U|i\rangle|^2$ is independent of $\varphi$, so it can be maximal even when the *relative* phase between branches — the quantity a superposition input actually depends on — is wrong.
+- **`coherent_fidelity_multi_state`** — the phase-coherent (process) fidelity, $F = \bigl|\sum_m \langle f_m | U | i_m \rangle\bigr|^2 / M^2$, which sums the raw complex overlaps *before* squaring and is therefore only maximal when every branch matches its target under the *same* global phase.
+
+Every logical gate's correctness depends on that relative phase (e.g. $T$'s $\pi/4$ relative phase, $H$'s self-inverse $H^2=I$ property, and X/Y/Z/enc/dec's correctness on superposition inputs), so **production training uses `coherent_fidelity_multi_state` for all eight gates by default** (`main.py`'s `resolve_fidelity_fn`, `--fidelity-fn auto`; `optimize_multi_state_pulse`'s `fidelity_fn` parameter). This was not a design choice made up front but a fix for a real defect: all eight pulses were originally trained with the phase-blind `fidelity_multi_state`, and six of them (`U_X`, `U_Y`, `U_Z`, `U_I`, `U_enc`, `U_dec`) reached excellent per-branch fidelity ($F_{\text{mean}} \geq 0.996$) while their extracted 2×2 logical-gate fidelity `F_avg_gate` was as low as 0.335–0.980 — undetectable by checks that only ever propagate one branch/trajectory at a time (`U^2=I`, `tier4_enc_gate_dec_pipeline`). (`U_H`/`U_T` had already been retrained with the coherent objective earlier and were unaffected.) All six were retrained with `coherent_fidelity_multi_state` (`analysis/retrain_phase_coherent_gates.py`), recovering `F_avg_gate` to $\geq 0.9979$ for every gate. `validate_logical_gates.py`'s `tier3_gate_algebra` (X/Y/Z/H/T/I) and `tier4_enc_dec_relative_phase` (enc/dec) checks, both driven by `F_avg_gate`, now guard against this regressing silently again.
 
 ### Analytic gradients
 
