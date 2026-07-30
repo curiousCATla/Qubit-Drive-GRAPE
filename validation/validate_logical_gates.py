@@ -271,10 +271,10 @@ def tier2_logical_action_and_leakage(gate_name, get_state_pairs, u, n_c=24, n_t=
 def tier3_gate_algebra(gate_name, u, n_c=24, n_t=N_T, dt=DT):
     """
     Check fundamental relations:
-      - For X,Y,Z:  U_gate² ≈ Identity on logical subspace (fidelity of composed action)
-      - For H:      H² ≈ I   and   H X H ≈ Z   (conjugation, via effective logical unitaries)
-      - For T:      Check relative phase arg(U_mm) ≈ +π/4 on |-Z_L>
-      - For all:    Extract effective 2x2 logical unitary and check unitarity (U U† ≈ I)
+      - For X,Y,Z,I,H: U_gate² ≈ Identity on logical subspace (stored as involution_fid)
+      - For H:         also H X H ≈ Z is possible later (conjugation; not yet implemented)
+      - For T:         Check relative phase arg(U_mm) ≈ +π/4 on |-Z_L>
+      - For all:       Extract effective 2x2 logical unitary and check unitarity (U U† ≈ I)
     """
     print(f"\n{'='*70}")
     print(f"TIER 3: Gate Algebra & Unitarity Check — {gate_name}")
@@ -334,27 +334,21 @@ def tier3_gate_algebra(gate_name, u, n_c=24, n_t=N_T, dt=DT):
     involution_fid = np.nan
 
     # Gate-specific algebra checks
-    if gate_name in ["X", "Y", "Z", "I"]:
-        # Apply gate twice
-        psi_p2 = propagate_pulse(u, H0, Hc, psi_p_out, dt)
-        psi_m2 = propagate_pulse(u, H0, Hc, psi_m_out, dt)
-        fid_p = np.abs(np.vdot(psi_pg, psi_p2))**2
-        fid_m = np.abs(np.vdot(psi_mg, psi_m2))**2
-        avg_fid_sq = (fid_p + fid_m) / 2
-        print(f"  {gate_name}² fidelity to Identity: {avg_fid_sq:.6f}   (should be ~1.000)")
-        if avg_fid_sq < 0.99:
-            print("  ⚠️  Significant deviation from U² = I — possible leakage or optimization issue.")
-
-    if gate_name == "H":
-        # H² should be I
+    # Self-inverse gates (G² = I): store the double-application fidelity so the
+    # validation summary column Involution_fid matches what tier 3 prints.
+    # T is not an involution (T² = S); enc/dec are inverses of each other, not self-inverse.
+    if gate_name in ["X", "Y", "Z", "I", "H"]:
         psi_p2 = propagate_pulse(u, H0, Hc, psi_p_out, dt)
         psi_m2 = propagate_pulse(u, H0, Hc, psi_m_out, dt)
         fid_p = np.abs(np.vdot(psi_pg, psi_p2))**2
         fid_m = np.abs(np.vdot(psi_mg, psi_m2))**2
         involution_fid = (fid_p + fid_m) / 2
-        print(f"  H² fidelity to I: {involution_fid:.6f}")
+        print(f"  {gate_name}² fidelity to Identity: {involution_fid:.6f}   (should be ~1.000)")
         if involution_fid < 0.99:
-            print("  ⚠️  H is not self-inverse (H² should be ≈ I) — check optimization.")
+            if gate_name == "H":
+                print("  ⚠️  H is not self-inverse (H² should be ≈ I) — check optimization.")
+            else:
+                print("  ⚠️  Significant deviation from U² = I — possible leakage or optimization issue.")
 
         # Also check conjugation H X H ~ Z would require loading X pulse too — skipped for now
         # (can be added if all pulses present)
@@ -375,7 +369,7 @@ def tier3_gate_algebra(gate_name, u, n_c=24, n_t=N_T, dt=DT):
         'unitarity_err': unitarity_err,
         'det': det,
         'phase_err': phase_err,        # NaN except for T: |measured relative phase - pi/4|
-        'involution_fid': involution_fid,  # NaN except for H: H^2 fidelity to Identity
+        'involution_fid': involution_fid,  # NaN except X/Y/Z/I/H: G^2 fidelity to Identity
         'F_avg_gate': F_avg_gate,      # average gate fidelity vs. IDEAL_LOGICAL_U[gate_name]
     }
 
