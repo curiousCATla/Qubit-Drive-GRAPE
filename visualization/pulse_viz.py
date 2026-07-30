@@ -316,7 +316,7 @@ def analyze_pulse(pulse_path, name="Pulse", dt=0.002, out_dir="figures", show=Fa
 
     os.makedirs(out_dir, exist_ok=True)
     plot_pulse_waveforms(u, dt=dt, title=f"{name} - Waveforms",
-                         save_path=os.path.join(out_dir, f"{name}_waveforms.png"), show=show)
+                         save_path=os.path.join(out_dir, f"{name}_final_waveform.png"), show=show)
     plot_pulse_spectrum(u, dt=dt, title=f"{name} - Spectrum",
                         save_path=os.path.join(out_dir, f"{name}_spectrum.png"), show=show)
 
@@ -355,7 +355,7 @@ if __name__ == "__main__":
         plot_photon_trajectory(
             u, psi_i_list, labels=pair_labels, n_c=PLOT_N_C, n_t=3,
             title=f"{label} — Photon Number Trajectory",
-            save_path=os.path.join("figures", f"{label}_photon_trajectory.png"),
+            save_path=os.path.join("figures", f"{label}_cavity_trajectory.png"),
             show=False,
         )
         plot_transmon_trajectory(

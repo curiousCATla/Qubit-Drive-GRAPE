@@ -52,6 +52,18 @@ from core.cat_code import (
     validate_pulse_truncations,
 )
 from core.grape_core import make_hamiltonian, step_data
+# Phase 1c: the enc/dec relative-phase checks below delegate to this single
+# canonical route instead of re-deriving the 2x2 block from hand-assembled
+# overlaps. core/propagator.py deliberately does not import from validation/
+# (ideal targets are always arguments there), so this direction is cycle-free.
+from core.propagator import (
+    full_propagator,
+    cross_subspace_block,
+    encode_bases,
+    decode_bases,
+    pedersen_gate_fidelity,
+    leakage_L1,
+)
 
 # ============================================================
 # CONFIGURATION
@@ -94,18 +106,36 @@ IDEAL_LOGICAL_U = {
 
 def average_gate_fidelity(U_ideal, U_actual):
     """
-    Standard average gate fidelity (Nielsen 2002) between a d-dim ideal
-    unitary and an actual (possibly sub-unitary, if there's leakage) map:
-        F_avg = (|Tr(U_ideal^dagger U_actual)|^2 + d) / (d(d+1))
-    Reduces to 1 iff U_actual = U_ideal exactly. Leakage (U_actual having
-    less than unit operator norm because population left the 2D logical
-    subspace) also reduces F_avg, so this single number folds in both
-    coherent rotation error and leakage -- unlike the per-branch state
+    Pedersen (2007) average gate fidelity between a d-dim ideal unitary and an
+    actual (possibly sub-unitary, if there's leakage) map:
+
+        M     = U_ideal^dagger U_actual
+        F_avg = (|Tr(M)|^2 + Tr(M M^dagger)) / (d(d+1))
+
+    Reduces to 1 iff U_actual = U_ideal exactly. This single number folds in
+    both coherent rotation error and leakage -- unlike the per-branch state
     fidelities in Tier 2, which only see the diagonal.
+
+    The Tr(M M^dagger) term is how leakage enters, and it must be computed, not
+    assumed. This function previously carried a bare `+ d` in its place, which
+    is the value Tr(M M^dagger) takes only when U_actual is unitary -- i.e. the
+    old form silently assumed zero leakage and therefore over-reported every
+    leaky gate. For d=2 the inflation was exactly L1/3, where
+    L1 = 1 - Tr(U_actual^dagger U_actual)/d is the average leakage
+    (core.propagator.leakage_L1); at n_c=24 that is between 7e-5 (T) and
+    1.0e-3 (enc) for the current pulses. Note Tr(M M^dagger) =
+    Tr(U_actual^dagger U_actual) since U_ideal is unitary, which is how it is
+    evaluated below.
+
+    Callers pass the projected 2x2 logical map, so this correctly charges for
+    whatever population the projection dropped. See core/propagator.py for the
+    propagator-based extraction of that 2x2 and for the matching
+    pedersen_gate_fidelity / leakage_L1 pair.
     """
     d = U_ideal.shape[0]
     overlap = np.trace(U_ideal.conj().T @ U_actual)
-    return (np.abs(overlap) ** 2 + d) / (d * (d + 1))
+    leak_term = np.trace(U_actual.conj().T @ U_actual).real
+    return (np.abs(overlap) ** 2 + leak_term) / (d * (d + 1))
 
 # ============================================================
 # HELPER: Robust propagate (works with n_t=3)
@@ -261,11 +291,22 @@ def tier3_gate_algebra(gate_name, u, n_c=24, n_t=N_T, dt=DT):
     psi_p_out = propagate_pulse(u, H0, Hc, psi_pg, dt)
     psi_m_out = propagate_pulse(u, H0, Hc, psi_mg, dt)
 
-    # Effective logical unitary matrix elements (in {|+Z_L>, |-Z_L>} basis) (logical subspace)
-    U_pp = np.vdot(psi_pg, psi_p_out)
-    U_pm = np.vdot(psi_mg, psi_p_out)
-    U_mp = np.vdot(psi_pg, psi_m_out)
-    U_mm = np.vdot(psi_mg, psi_m_out)
+    # Effective logical unitary matrix elements (in {|+Z_L>, |-Z_L>} basis)
+    # (logical subspace). Convention: U_log[i, j] = <b_i| U |b_j>, i.e. COLUMN
+    # PER INPUT -- column j is where input basis state j goes. This is the
+    # convention IDEAL_LOGICAL_U above is written in (see its comment) and the
+    # one tier4_enc_relative_phase and core.propagator.logical_block use.
+    # This block previously assembled the transpose (row per propagated input).
+    # That happened to leave every number reported here unchanged, because
+    # |Tr(U_ideal^dag U_log)|, ||U_log||_F, det and arg(U_mm/U_pp) are all
+    # transpose-invariant for this particular gate set (I, X, Z, H, T are
+    # symmetric and Y^T = -Y) -- but only for this gate set: it breaks as soon
+    # as S, S^dag or any Rx(theta) is added, and the printed matrix below was
+    # showing the wrong off-diagonal element.
+    U_pp = np.vdot(psi_pg, psi_p_out)   # <+Z_L| U |+Z_L>
+    U_pm = np.vdot(psi_pg, psi_m_out)   # <+Z_L| U |-Z_L>
+    U_mp = np.vdot(psi_mg, psi_p_out)   # <-Z_L| U |+Z_L>
+    U_mm = np.vdot(psi_mg, psi_m_out)   # <-Z_L| U |-Z_L>
     U_log = np.array([[U_pp, U_pm],
                       [U_mp, U_mm]])
 
@@ -467,17 +508,12 @@ def tier4_enc_gate_dec_pipeline(gate_name, u_gate, u_enc=None, u_dec=None, n_c_l
     return results
 
 
-def _computational_basis_states(n_c, n_t):
-    init_g = np.zeros(n_t * n_c, dtype=complex); init_g[0] = 1.0
-    init_e = np.zeros(n_t * n_c, dtype=complex); init_e[n_c] = 1.0
-    return init_g, init_e
-
-
-def _logical_cat_basis_states(n_c, n_t):
-    psi_p_cav, psi_m_cav = get_logical_cat_states(alpha=ALPHA, n_c=n_c)
-    psi_pg = embed_in_joint_space(psi_p_cav, n_t=n_t, n_c=n_c, t_level=0)
-    psi_mg = embed_in_joint_space(psi_m_cav, n_t=n_t, n_c=n_c, t_level=0)
-    return psi_pg, psi_mg
+# Phase 1c removed the private helpers `_computational_basis_states` and
+# `_logical_cat_basis_states` that used to live here. They existed only to feed
+# the hand-assembled 2x2 extraction in the two functions below, and are now
+# `core.propagator.transmon_basis` / `logical_basis` -- which additionally
+# assert their own orthonormality. Rebuilding either here would recreate the
+# second, unverified route this phase exists to eliminate.
 
 
 def tier4_enc_relative_phase(u_enc, n_c=24, n_t=N_T, dt=DT):
@@ -489,33 +525,44 @@ def tier4_enc_relative_phase(u_enc, n_c=24, n_t=N_T, dt=DT):
     Extracts the effective 2x2 map {|g,0>,|e,0>} -> {|+Z_L>,|-Z_L>} and
     compares it to the identity (get_encode_state_pairs defines no extra
     relative phase between its two branches).
+
+    Phase 1c: this is a thin delegate to the canonical cross-subspace route in
+    core/propagator.py. It previously propagated |g,0>/|e,0> as state vectors
+    and assembled the four <cat_k|out_j> overlaps by hand -- the same number by
+    a second route, agreeing to ~1e-15 (analysis/check_tier4_agreement.py).
+    Encode maps the TRANSMON subspace to the CAT subspace, so the block is
+    off-diagonal, B_out != B_in; `logical_block` is the wrong projector here and
+    would report ~0.07 (validation/test_phase1b.py test d).
+
+    Returns 'U_log' and 'F_avg_gate' under their original names -- external
+    call sites and notebooks read those keys -- plus 'L1', the leakage the block
+    route yields for free and the old hand-assembled route discarded.
     """
     H0, Hc = make_hamiltonian(n_t, n_c)
-    init_g, init_e = _computational_basis_states(n_c, n_t)
-    psi_pg, psi_mg = _logical_cat_basis_states(n_c, n_t)
-
-    out_g = propagate_pulse(u_enc, H0, Hc, init_g, dt)
-    out_e = propagate_pulse(u_enc, H0, Hc, init_e, dt)
-    U_enc_log = np.array([
-        [np.vdot(psi_pg, out_g), np.vdot(psi_pg, out_e)],
-        [np.vdot(psi_mg, out_g), np.vdot(psi_mg, out_e)],
-    ])
-    return {'U_log': U_enc_log, 'F_avg_gate': average_gate_fidelity(np.eye(2, dtype=complex), U_enc_log)}
+    B_in, B_out, E_ideal = encode_bases(n_t, n_c)      # transmon -> cat
+    M = cross_subspace_block(full_propagator(u_enc, H0, Hc, dt), B_in, B_out)
+    return {
+        'U_log': M,
+        'F_avg_gate': pedersen_gate_fidelity(E_ideal, M),
+        'L1': leakage_L1(M),
+    }
 
 
 def tier4_dec_relative_phase(u_dec, n_c=24, n_t=N_T, dt=DT):
-    """Single-pulse half of tier4_enc_dec_relative_phase, for U_dec alone -- see tier4_enc_relative_phase."""
-    H0, Hc = make_hamiltonian(n_t, n_c)
-    init_g, init_e = _computational_basis_states(n_c, n_t)
-    psi_pg, psi_mg = _logical_cat_basis_states(n_c, n_t)
+    """
+    Single-pulse half of tier4_enc_dec_relative_phase, for U_dec alone -- see
+    tier4_enc_relative_phase, including the Phase 1c delegation note.
 
-    out_p = propagate_pulse(u_dec, H0, Hc, psi_pg, dt)
-    out_m = propagate_pulse(u_dec, H0, Hc, psi_mg, dt)
-    U_dec_log = np.array([
-        [np.vdot(init_g, out_p), np.vdot(init_g, out_m)],
-        [np.vdot(init_e, out_p), np.vdot(init_e, out_m)],
-    ])
-    return {'U_log': U_dec_log, 'F_avg_gate': average_gate_fidelity(np.eye(2, dtype=complex), U_dec_log)}
+    Decode is encode with the two subspaces swapped: in=cat, out=transmon.
+    """
+    H0, Hc = make_hamiltonian(n_t, n_c)
+    B_in, B_out, E_ideal = decode_bases(n_t, n_c)      # cat -> transmon
+    M = cross_subspace_block(full_propagator(u_dec, H0, Hc, dt), B_in, B_out)
+    return {
+        'U_log': M,
+        'F_avg_gate': pedersen_gate_fidelity(E_ideal, M),
+        'L1': leakage_L1(M),
+    }
 
 
 def tier4_enc_dec_relative_phase(u_enc, u_dec, n_c=24, n_t=N_T, dt=DT):
@@ -549,7 +596,7 @@ def tier4_enc_dec_relative_phase(u_enc, u_dec, n_c=24, n_t=N_T, dt=DT):
         r = results[label]
         print(f"\n  U_{label} extracted logical map (vs. identity):")
         print(np.round(r['U_log'], decimals=6))
-        print(f"  F_avg_gate: {r['F_avg_gate']:.6f}")
+        print(f"  F_avg_gate: {r['F_avg_gate']:.6f}   L1 (leakage): {r['L1']:.3e}")
         if r['F_avg_gate'] < 0.99:
             print(f"  ⚠️  U_{label} does not coherently preserve relative phase across its two branches.")
 

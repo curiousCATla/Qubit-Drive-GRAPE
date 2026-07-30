@@ -2,7 +2,17 @@ import os
 import numpy as np
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
-from core.grape_core import make_hamiltonian, smooth_initial_controls, derivative_penalty, boundary_penalty, amplitude_penalty, fidelity_multi_state, refine_dt
+from core.grape_core import (
+    make_hamiltonian,
+    smooth_initial_controls,
+    derivative_penalty,
+    boundary_penalty,
+    amplitude_penalty,
+    fidelity_multi_state,
+    coherent_fidelity_multi_state,
+    assert_coherent_inputs,
+    refine_dt,
+)
 from core.cat_code import validate_pulse_truncations
 from core.fourier_cutoff import project_bandlimit
 
@@ -39,14 +49,14 @@ def optimize_multi_state_pulse(
 ):
     """
     fidelity_fn : callable(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad) -> (F, grad)
-        Per-truncation fidelity metric used inside evaluate_trunc, before
+        Per-truncation training objective used inside evaluate_trunc, before
         the cross-truncation averaging (Eq. 23) / discrepancy penalty
         (Eq. 24) logic below -- which is agnostic to this choice. Defaults
         to fidelity_multi_state (per-state average, blind to relative
         phase between state pairs). Pass coherent_fidelity_multi_state
-        instead when training a gate whose correctness depends on the
-        relative phase between its state pairs (e.g. T, H) -- see
-        grape_core.coherent_fidelity_multi_state's docstring.
+        for the phase-aware process fidelity F_coh (the production
+        objective for logical gates). F_coh is the OPTIMIZER objective,
+        not the reported gate fidelity (that is pedersen_gate_fidelity).
     cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
         Hard frequency cutoffs on the cavity (eps_C = C_I + i*C_Q) and
         transmon (eps_T = T_I + i*T_Q) drives, mirroring Heeres et al. 2017
@@ -86,9 +96,15 @@ def optimize_multi_state_pulse(
     if (cav_band is None) != (tra_band is None):
         raise ValueError("cav_band and tra_band must both be given or both be None")
 
+    # Label the optimizer objective correctly: F_coh is process fidelity,
+    # never "gate fidelity" (Pedersen is reported separately by the caller).
+    use_coherent = fidelity_fn is coherent_fidelity_multi_state
+    obj_label = "F_coh (process)" if use_coherent else "F_mean (incoherent)"
+
     if verbose:
         print(f"\n{'='*60}")
         print(f"Optimizing pulse | Truncations: {trunc_list}")
+        print(f"Training objective: {obj_label} [{getattr(fidelity_fn, '__name__', fidelity_fn)}]")
         print(f"{'='*60}")
 
     # Build Hamiltonians once (for training truncations + main for final eval)
@@ -99,6 +115,16 @@ def optimize_multi_state_pulse(
         Hc_list.append(Hc_k)
 
     H0_main, Hc_main = make_hamiltonian(n_t, max(trunc_list))
+
+    # Seatbelt for the coherent objective: once per truncation at setup.
+    # Gram check must not live in the gradient hot path.
+    if use_coherent:
+        for nc in trunc_list:
+            pairs = get_state_pairs(n_c=nc, n_t=n_t)
+            psi_i_list = [p[0] for p in pairs]
+            assert_coherent_inputs(psi_i_list)
+        if verbose:
+            print(f"assert_coherent_inputs passed for trunc_list={list(trunc_list)}")
 
     # Initial controls
     if isinstance(warm_start, str) and os.path.exists(warm_start):
@@ -228,7 +254,10 @@ def optimize_multi_state_pulse(
             if best['F'] > F_final_eval:
                 u_opt = best['u'].copy()
                 if verbose:
-                    print(f"Using best-seen pulse (bare F = {best['F']:.6f}) instead of final L-BFGS point (F = {F_final_eval:.6f})")
+                    print(
+                        f"Using best-seen pulse ({obj_label} = {best['F']:.6f}) "
+                        f"instead of final L-BFGS point ({obj_label} = {F_final_eval:.6f})"
+                    )
             else:
                 u_opt = u_final
         else:
@@ -238,19 +267,19 @@ def optimize_multi_state_pulse(
         np.save(save_path, u_opt)
         if verbose: print(f"Saved optimized pulse to {save_path}")
 
-    # === Post-optimization diagnostics: explicit per-training-truncation fidelities ===
+    # === Post-optimization diagnostics: same objective used for training ===
     if verbose:
         print("\n" + "="*60)
-        print("Post-optimization bare fidelity per training truncation")
+        print(f"Post-optimization bare {obj_label} per training truncation")
         print("="*60)
         F_per_trunc = []
         for nc, H0_k, Hc_k in zip(trunc_list, H0_list, Hc_list):
             state_pairs_k = get_state_pairs(n_c=nc, n_t=n_t)
             psi_i_list = [p[0] for p in state_pairs_k]
             psi_f_list = [p[1] for p in state_pairs_k]
-            F_k, _ = fidelity_multi_state(u_opt, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=False)
+            F_k, _ = fidelity_fn(u_opt, H0_k, Hc_k, psi_i_list, psi_f_list, dt, want_grad=False)
             F_per_trunc.append(F_k)
-            print(f"  n_c={nc:2d}: F = {F_k:.6f}")
+            print(f"  n_c={nc:2d}: {obj_label} = {F_k:.6f}")
         if len(F_per_trunc) > 1:
             max_disc = max(F_per_trunc) - min(F_per_trunc)
             print(f"  max pairwise |F_i - F_j| across training truncations: {max_disc:.3e}")
@@ -260,19 +289,22 @@ def optimize_multi_state_pulse(
     final_pairs = get_state_pairs(n_c=max(trunc_list), n_t=n_t)
     psi_i_main = [p[0] for p in final_pairs]
     psi_f_main = [p[1] for p in final_pairs]
-    F_final, _ = fidelity_multi_state(u_opt, H0_main, Hc_main, psi_i_main, psi_f_main, dt, want_grad=False)
+    F_final, _ = fidelity_fn(u_opt, H0_main, Hc_main, psi_i_main, psi_f_main, dt, want_grad=False)
 
     if verbose:
         print(f"\nFinished: {res.message}")
-        print(f"Final reported Fidelity (at max trunc): {F_final:.6f}")
+        print(f"Final optimizer objective {obj_label} (at max trunc): {F_final:.6f}")
         if best['F'] > 0:
-            print(f"Best bare multi-trunc F seen during optimization: {best['F']:.6f}")
+            print(f"Best bare multi-trunc {obj_label} seen during optimization: {best['F']:.6f}")
+        if use_coherent:
+            print("Note: F_coh is the process objective; report Pedersen gate fidelity separately.")
 
     info = {
         'message': res.message,
         'success': res.success,
         'iterations': res.nit,
-        'final_fidelity': F_final,
+        'final_fidelity': F_final,  # optimizer objective (F_coh when coherent)
+        'objective_label': obj_label,
         'best_bare_F_during_opt': best['F'],
         'trunc_list': trunc_list,
         'disc_penalty_weight': penalties.get('disc', 0.0)

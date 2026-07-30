@@ -197,6 +197,78 @@ def get_identity_state_pairs(n_c=24, n_t=3, alpha=np.sqrt(3.0)):
     ]
 
 
+def get_coherent_state_pairs(gate, n_c=24, n_t=3, alpha=np.sqrt(3.0)):
+    """
+    Canonical, phase-consistent training targets for the six logical gates.
+
+    Both targets are derived from a single orthonormal logical basis B and a
+    single 2x2 repo-convention ideal U2 = IDEAL_LOGICAL_U[gate]:
+
+        psi_i_j = B[:, j]
+        psi_f_j = B @ U2[:, j]     # U2 acting on basis column j, re-expanded in B
+
+    This guarantees relative-phase consistency by construction. Hand-written
+    per-branch factories (get_logical_*_state_pairs) can accidentally assign
+    independent phases that score 1.0 on the incoherent average objective but
+    encode the wrong gate under coherent_fidelity_multi_state.
+
+    Parameters
+    ----------
+    gate : str
+        One of "I", "X", "Y", "Z", "H", "T". enc/dec use a different input
+        basis and are intentionally out of scope for this factory.
+    n_c, n_t, alpha
+        Truncation / embedding parameters. Pairs MUST be regenerated per n_c
+        inside the multi-truncation training loop (cats depend on n_c).
+
+    Returns
+    -------
+    psi_i_list, psi_f_list : lists of length 2 (complex vectors of dim n_t*n_c)
+
+    Import notes
+    ------------
+    logical_basis and IDEAL_LOGICAL_U are imported lazily to avoid the
+    cat_code <-> propagator / validation import cycles at module load time.
+    """
+    # Lazy imports: propagator imports cat_code at top level; validation does too.
+    from core.propagator import logical_basis
+    from validation.validate_logical_gates import IDEAL_LOGICAL_U
+
+    gate = str(gate)
+    if gate not in IDEAL_LOGICAL_U:
+        raise ValueError(
+            f"get_coherent_state_pairs supports the six logical gates "
+            f"{sorted(IDEAL_LOGICAL_U)}, got {gate!r} "
+            f"(enc/dec are a follow-up, not this pass)"
+        )
+
+    B = logical_basis(n_t, n_c, alpha=alpha)  # (D, 2), columns = |+Z_L,g>, |-Z_L,g>
+    U2 = IDEAL_LOGICAL_U[gate]                # 2x2, column-per-input repo convention
+
+    psi_i_list = [B[:, 0].copy(), B[:, 1].copy()]
+    # target for input j = U2 acting on basis column j, re-expanded in B
+    psi_f_list = [B @ U2[:, 0], B @ U2[:, 1]]
+    return psi_i_list, psi_f_list
+
+
+def make_coherent_gate_factory(gate):
+    """
+    Adapter: returns get_state_pairs(n_c, n_t, alpha=...) -> list of (psi_i, psi_f)
+    suitable for optimize_multi_state_pulse / main.GATE_FACTORIES.
+    """
+    def factory(n_c=24, n_t=3, alpha=np.sqrt(3.0)):
+        psi_i_list, psi_f_list = get_coherent_state_pairs(
+            gate, n_c=n_c, n_t=n_t, alpha=alpha
+        )
+        return list(zip(psi_i_list, psi_f_list))
+    factory.__name__ = f"coherent_{gate}_state_pairs"
+    factory.__doc__ = (
+        f"Canonical coherent-objective state pairs for logical gate {gate} "
+        f"(from IDEAL_LOGICAL_U via get_coherent_state_pairs)."
+    )
+    return factory
+
+
 def validate_pulse_truncations(
     u,
     get_targets_func,

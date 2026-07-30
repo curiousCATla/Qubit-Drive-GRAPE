@@ -216,11 +216,29 @@ def fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     return F_avg, grad_avg
 
 
+def assert_coherent_inputs(psi_i_list, d=2, tol=1e-9):
+    """
+    One-shot seatbelt for coherent_fidelity_multi_state training setup.
+
+    The /M^2 normalization equals the process-fidelity /d^2 factor only when
+    M == d (here d=2 logical cats). Call this once per gate per truncation
+    before the optimization loop -- NOT inside the gradient hot path. Inputs
+    are fixed for a training setup; the Gram check is cheap once, expensive
+    if repeated every L-BFGS evaluation.
+    """
+    M = len(psi_i_list)
+    assert M == d, f"coherent objective needs exactly d={d} inputs, got {M}"
+    G = np.array([[np.vdot(a, b) for b in psi_i_list] for a in psi_i_list])
+    assert np.allclose(G, np.eye(d), atol=tol), "coherent inputs not orthonormal"
+
+
 def coherent_fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_grad=True):
     """
     Coherent (process) fidelity over multiple state transfers:
-        F = |sum_m <f_m|U|i_m>|^2 / M^2
-    Unlike fidelity_multi_state's per-state average -- which only requires
+        F_coh = |sum_m <f_m|U|i_m>|^2 / M^2
+    This is the process / entanglement fidelity, NOT the reported gate
+    fidelity (that is pedersen_gate_fidelity from Phase 0). Unlike
+    fidelity_multi_state's per-state average -- which only requires
     each output to match its own target up to an ARBITRARY, independent
     global phase -- this reduction sums the raw complex overlaps v_m before
     squaring, so it is only maximal when every branch matches its target
@@ -230,7 +248,14 @@ def coherent_fidelity_multi_state(u, H0, Hc, psi_i_list, psi_f_list, dt, want_gr
     actually depends on (e.g. T's pi/4 relative phase, H's self-inverse
     H^2=I property). Use this in place of fidelity_multi_state when
     training gates whose correctness hinges on that relative phase.
+
+    Requires exactly d=2 orthonormal inputs (assert_coherent_inputs at setup).
+    The /M^2 factor equals /d^2 only when M == d.
     """
+    assert len(psi_i_list) == len(psi_f_list), (
+        f"coherent objective needs equal input/target counts, "
+        f"got {len(psi_i_list)} inputs and {len(psi_f_list)} targets"
+    )
     M = len(psi_i_list)
     if want_grad:
         F, grad, v, dv_all = _fidelity_core(

@@ -27,16 +27,12 @@ from core.grape_core import (
     make_hamiltonian,
     fidelity_multi_state,
     coherent_fidelity_multi_state,
+    assert_coherent_inputs,
 )
 from core.cat_code import (
-    get_logical_X_state_pairs,
-    get_logical_Y_state_pairs,
-    get_logical_Z_state_pairs,
-    get_logical_H_state_pairs,
-    get_logical_T_state_pairs,
-    get_identity_state_pairs,
     get_encode_state_pairs,
     get_decode_state_pairs,
+    make_coherent_gate_factory,
     validate_pulse_truncations,
 )
 from core.optimizer import optimize_multi_state_pulse
@@ -48,13 +44,19 @@ from visualization.pulse_viz import (
 from analysis.decoherence import simulate_with_decoherence, compute_fidelity
 
 
+# Six logical gates train on canonical IDEAL_LOGICAL_U-derived pairs so the
+# coherent process objective cannot encode a wrong relative phase.
+#
+# enc/dec are NOT in this tuple and never should be: they are not maps of the
+# cat subspace to itself, so IDEAL_LOGICAL_U does not apply to them and neither
+# does the logical_block projection used to report on this tuple. Their pairs
+# (from core.cat_code.get_encode_targets) are already canonical -- Phase 1b
+# fixed the basis column order to match the pair order -- and they are scored
+# with the cross-subspace projectors in report_cross_subspace_fidelity below.
+LOGICAL_GATES = ("I", "X", "Y", "Z", "H", "T")
+
 GATE_FACTORIES = {
-    "X": get_logical_X_state_pairs,
-    "Y": get_logical_Y_state_pairs,
-    "Z": get_logical_Z_state_pairs,
-    "H": get_logical_H_state_pairs,
-    "T": get_logical_T_state_pairs,
-    "I": get_identity_state_pairs,
+    **{g: make_coherent_gate_factory(g) for g in LOGICAL_GATES},
     "enc": get_encode_state_pairs,
     "dec": get_decode_state_pairs,
 }
@@ -97,11 +99,12 @@ def build_arg_parser():
                     help=GATE_HELP)
     p.add_argument("--fidelity-fn", choices=["auto", "average", "coherent"],
                     default="auto",
-                    help="Fidelity metric used for training. 'auto' uses the "
-                         "phase-sensitive coherent_fidelity_multi_state for "
-                         "every gate (all eight depend on relative branch "
-                         "phase); pass 'average' to force the plain "
-                         "per-branch objective instead.")
+                    help="Training objective. 'auto'/'coherent' use the "
+                         "phase-sensitive coherent process fidelity F_coh "
+                         "(NOT the reported Pedersen gate fidelity) for every "
+                         "gate; 'average' forces the plain per-branch "
+                         "objective (experiments only — incorrect for "
+                         "relative-phase-sensitive gates).")
 
     # --- Optimization hyperparameters ---
     opt = p.add_argument_group("optimization parameters")
@@ -194,18 +197,32 @@ def resolve_warm_start(warm_start):
 
 
 def resolve_fidelity_fn(gate, choice):
+    """
+    Select the training objective.
+
+    Phase 1: the six logical gates I/X/Y/Z/H/T always train with
+    coherent_fidelity_multi_state (process fidelity F_coh) on canonical
+    pairs from get_coherent_state_pairs. Do NOT rewrite this as a 6-state
+    average; that belongs to Phase-0 verification only.
+
+    'auto' also uses coherent for enc/dec: the relative phase between their two
+    branches is just as physical (an encode that puts a relative minus sign
+    between the |+Z_L> and |-Z_L> branches has encoded a logical Z), and
+    fidelity_multi_state is structurally blind to it -- see
+    validation/test_phase1b.py test (f), where flipping one encode target's sign
+    moves the incoherent objective by <1e-9 and the coherent one from 0.997 to 0.
+    Both enc and dec input sets are orthonormal, so assert_coherent_inputs
+    passes; the fact that their input and output subspaces are non-orthogonal
+    (<g,0|+Z_L> ~ 0.469) is irrelevant to this objective, which constrains
+    inputs only.
+
+    'average' remains an explicit override for ablation experiments.
+    """
     if choice == "coherent":
         return coherent_fidelity_multi_state
     if choice == "average":
         return fidelity_multi_state
-    # Every gate -- the six single-qubit logical gates AND enc/dec -- depends
-    # on the *relative* phase between its two training branches (X/Y/Z/enc/
-    # dec's correctness on superposition inputs, H's self-inverse property,
-    # T's pi/4 relative phase). fidelity_multi_state can't see or constrain
-    # that phase (see its docstring): validate_logical_gates.py's
-    # tier3_gate_algebra (X/Y/Z/H/T/I) and tier4_enc_dec_relative_phase
-    # (enc/dec) both confirmed all eight pulses had this defect when trained
-    # with it. 'auto' therefore always resolves to the phase-aware objective.
+    # 'auto': phase-aware process objective for every gate.
     return coherent_fidelity_multi_state
 
 
@@ -215,7 +232,7 @@ def run_plots(args, u_opt, factory, label):
     if args.plot_waveform:
         plot_pulse_waveforms(
             u_opt, dt=args.dt, title=f"{label} - Waveforms",
-            save_path=os.path.join(args.fig_dir, f"{label}_waveforms.png"),
+            save_path=os.path.join(args.fig_dir, f"{label}_final_waveform.png"),
             show=False,
         )
 
@@ -233,7 +250,7 @@ def run_plots(args, u_opt, factory, label):
         plot_photon_trajectory(
             u_opt, psi_i_list, dt=args.dt, n_c=n_c_plot, n_t=args.n_t,
             title=f"{label} - Photon Number Trajectory",
-            save_path=os.path.join(args.fig_dir, f"{label}_photon_trajectory.png"),
+            save_path=os.path.join(args.fig_dir, f"{label}_cavity_trajectory.png"),
             show=False,
         )
 
@@ -248,11 +265,13 @@ def run_plots(args, u_opt, factory, label):
         import matplotlib.pyplot as plt
         ncs = sorted(results)
         fs = [results[nc] for nc in ncs]
+        # validate_pulse_truncations still uses the incoherent multi-state
+        # metric; label the axis accordingly (not F_coh / not Pedersen).
         fig, ax = plt.subplots(figsize=(7, 5))
         ax.plot(ncs, fs, marker="o")
         ax.set_xlabel("Cavity truncation n_c")
-        ax.set_ylabel("Fidelity")
-        ax.set_title(f"{label} - Fidelity vs n_c")
+        ax.set_ylabel("F_mean (incoherent branch avg)")
+        ax.set_title(f"{label} - F_mean vs n_c")
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         fig.savefig(os.path.join(args.fig_dir, f"{label}_fidelity_vs_nc.png"), dpi=150)
@@ -292,6 +311,44 @@ def run_decoherence(args, u_opt, factory, label):
     print(f"Saved: {csv_path}")
 
 
+def report_pedersen_gate_fidelity(gate, u_opt, n_c, n_t, dt, alpha=np.sqrt(3.0)):
+    """Reported gate fidelity (Phase 0 Pedersen), distinct from optimizer F_coh."""
+    from core.propagator import (
+        full_propagator, logical_basis, logical_block, pedersen_gate_fidelity,
+    )
+    from validation.validate_logical_gates import IDEAL_LOGICAL_U
+
+    H0, Hc = make_hamiltonian(n_t, n_c)
+    U = full_propagator(u_opt, H0, Hc, dt)
+    B = logical_basis(n_t, n_c, alpha=alpha)
+    U_log = logical_block(U, B)
+    F_ped = pedersen_gate_fidelity(IDEAL_LOGICAL_U[gate], U_log)
+    return float(F_ped), U_log
+
+
+def report_cross_subspace_fidelity(gate, u_opt, n_c, n_t, dt, alpha=np.sqrt(3.0)):
+    """
+    Reported gate fidelity for enc/dec (Phase 1b), distinct from optimizer F_coh.
+
+    Same Pedersen formula as report_pedersen_gate_fidelity; the projectors
+    differ. enc/dec map one subspace to a DIFFERENT one, so the effective 2x2
+    map is the off-diagonal block B_out^dag U B_in. Do not substitute
+    logical_block here -- it would measure what the encode pulse does to cat
+    inputs and report ~0.07 for a pulse that is actually ~0.997.
+    """
+    from core.propagator import (
+        full_propagator, cross_subspace_block, encode_bases, decode_bases,
+        pedersen_gate_fidelity, leakage_L1,
+    )
+
+    bases_fn = {"enc": encode_bases, "dec": decode_bases}[gate]
+    H0, Hc = make_hamiltonian(n_t, n_c)
+    U = full_propagator(u_opt, H0, Hc, dt)
+    B_in, B_out, E_ideal = bases_fn(n_t, n_c, alpha=alpha)
+    M = cross_subspace_block(U, B_in, B_out)
+    return float(pedersen_gate_fidelity(E_ideal, M)), float(leakage_L1(M)), M
+
+
 def main():
     args = build_arg_parser().parse_args()
 
@@ -300,11 +357,24 @@ def main():
     factory = GATE_FACTORIES[args.gate]
     label = GATE_LABELS[args.gate]
     fidelity_fn = resolve_fidelity_fn(args.gate, args.fidelity_fn)
-    print(f"Using fidelity function: {fidelity_fn.__name__}")
+    if fidelity_fn is coherent_fidelity_multi_state:
+        print(f"Using training objective: F_coh (process) "
+              f"[{fidelity_fn.__name__}]")
+    else:
+        print(f"Using training objective: F_mean (incoherent branch avg) "
+              f"[{fidelity_fn.__name__}]")
     cav_band = resolve_band(args.cav_band)
     tra_band = resolve_band(args.tra_band)
     save_path = args.save_path or os.path.join("pulses", f"u_{args.gate}_opt.npy")
     os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+
+    # Seatbelt: once per truncation at setup (not per gradient call).
+    if fidelity_fn is coherent_fidelity_multi_state:
+        for nc in args.trunc_list:
+            pairs = factory(n_c=nc, n_t=args.n_t)
+            psi_i_list = [p[0] for p in pairs]
+            assert_coherent_inputs(psi_i_list)
+        print(f"assert_coherent_inputs passed for trunc_list={args.trunc_list}")
 
     penalties = {
         "deriv": args.lambda_deriv,
@@ -335,6 +405,29 @@ def main():
 
     print(f"\nGate: {label}")
     print(f"Optimization info: {info}")
+    if fidelity_fn is coherent_fidelity_multi_state:
+        print(f"  optimizer objective F_coh (process) = "
+              f"{info.get('final_fidelity', float('nan')):.6f}")
+
+    # Reported number is always Pedersen, never F_coh. Which projectors it uses
+    # depends on whether the operation preserves the cat subspace (logical
+    # gates) or maps between two different subspaces (enc/dec).
+    n_c_report = 24 if 24 in args.trunc_list else max(args.trunc_list)
+    if args.gate in LOGICAL_GATES:
+        F_ped, _ = report_pedersen_gate_fidelity(
+            args.gate, u_opt, n_c=n_c_report, n_t=args.n_t, dt=args.dt,
+        )
+        print(f"  reported gate fidelity (Pedersen, n_c={n_c_report}) = "
+              f"{F_ped:.6f}")
+        info["pedersen_gate_fidelity"] = F_ped
+    else:
+        F_ped, L1, _ = report_cross_subspace_fidelity(
+            args.gate, u_opt, n_c=n_c_report, n_t=args.n_t, dt=args.dt,
+        )
+        print(f"  reported gate fidelity (Pedersen, cross-subspace, "
+              f"n_c={n_c_report}) = {F_ped:.6f}   L1 = {L1:.3e}")
+        info["pedersen_gate_fidelity"] = F_ped
+        info["leakage_L1"] = L1
 
     run_plots(args, u_opt, factory, label)
 
