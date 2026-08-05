@@ -149,7 +149,7 @@ This is the most easily misread part of the setup. L-BFGS-B supports only **box 
 
 **They have the wrong shape.** With $H_c = [A + A^\dagger,\ i(A - A^\dagger),\ \ldots]$, the physical drive is $\varepsilon = u_0 - i u_1$, so Table I's $\varepsilon_{\max}/2\pi = 4$ MHz caps the *quadrature-pair norm* $\sqrt{u_0^2 + u_1^2} \le 25.13$ rad/μs. A per-element box at $\varepsilon_{\max}$ admits $|\varepsilon|$ up to $\sqrt2\,\varepsilon_{\max} \approx 35.5$.
 
-The consequence is measurable: at `hard_bound = 60`, a raw variable pinned at the box corner yields $|\varepsilon| = 84.9$ rad/μs, **3.4× the physical cap**. The box therefore never binds. What actually caps the waveform is $C_4$, a one-sided quadratic penalty on the pair norm:
+The consequence is measurable: at `hard_bound = 60`, a raw variable pinned at the box corner yields $|\varepsilon| = 84.9$ rad/μs, **3.4× the physical cap**. The box therefore never binds *on a cold start* — see below for the warm-start case, where it does. What actually caps the waveform is $C_4$, a one-sided quadratic penalty on the pair norm:
 
 $$
 C_4 = \Bigl\langle \max\bigl(|\varepsilon_C| - \varepsilon_{\max},\, 0\bigr)^2 + \max\bigl(|\varepsilon_T| - \varepsilon_{\max},\, 0\bigr)^2 \Bigr\rangle_t
@@ -158,6 +158,19 @@ $$
 Both trained pulses sit at 24.6–25.2 rad/μs, at the cap rather than at the box. Because $C_4$ is soft, it settles marginally *over* the cap where the penalty gradient balances the fidelity gradient — 0.2% over on 0.4–1.1% of steps for the EsT pulse — which is why `train_est.check_constraints` accepts a 1% tolerance. A hard guarantee would require either a larger $w_4$ or an explicit projection $\varepsilon \to \varepsilon\,\min(1, \varepsilon_{\max}/|\varepsilon|)$ as a fourth step in the chain.
 
 The Gaussian ramp similarly replaces a penalty with structure: because the envelope vanishes at both ends by construction, the root pipeline's `boundary_penalty` is redundant here.
+
+#### The box does bind on a warm start
+
+Warm-starting from a saved pulse inverts the constraint chain, and that turns the harmless box into a live constraint. `train_est.deramp` recovers a pre-image by dividing out the envelope, which is exact — a saved pulse is $\mathrm{env} \odot P(x)$, and $u/\mathrm{env} = P(x)$ is already band-limited, so re-projecting is idempotent (verified to $1.8\times10^{-14}$). But the envelope reaches $0.0066$ on the first and last steps, so the division amplifies by up to **151×** in the ramp windows. For `u_X_est` the recovered pre-image peaks at $81.0$, with 0.6% of its components above the default bound of 60.
+
+The pre-image coordinate system is thus *stretched by up to 151× in exactly the region where the box ends up binding*, and the largest excursions sit where the physical pulse is smallest: RMS $|x| = 28.6$ in the ramp windows against $12.6$ on the flat top, while RMS $|u|$ is $9.3$ against $12.6$. (The mechanism is this coordinate stretch, not gradient flatness — measured $\mathrm{RMS}|dC/dx|$ differs by only 1.3× between the two regions, because $P$ sits behind the ramp in the backward pass and its global FFT delocalizes the suppression.)
+
+Two consequences:
+
+* **scipy will not warn you.** L-BFGS-B silently projects an infeasible starting point into the box, so a warm start at the default bound would begin from an edge-truncated pulse while the log still reports the original filename. `train()` therefore raises rather than clipping, and records `max_abs_preimage` per stage so a run can be audited afterwards.
+* **`max|deramp(u)| > hard_bound` is not evidence of a bound violation.** $P$ is norm-1 in $L^2$ but not in sup-norm, so it can raise a signal's peak while strictly lowering its energy — a saturated $\pm 60$ vector projects to a peak of $66.7$. Since L-BFGS-B is a feasible-point method, its output always satisfies the box; only `max_abs_preimage`, recorded from $x$ itself, can establish binding.
+
+The cleanest fix is to stop discarding the raw variable. $x$ is feasible by construction and satisfies $\mathrm{constrain}(x) = \mathrm{constrain}(P(x))$, so saving it alongside the pulse would make warm starts exact, feasible at the default bound, and free of this entire issue. `save()` currently writes only the physical pulse.
 
 ### Weight schedule and truncation
 
@@ -169,6 +182,8 @@ Training runs in two stages, warm-starting the second from the first:
 | 2 | $(1,\ 0.1,\ 0,\ 1)$ | polish ordinary fidelity |
 
 The **Ord** control variant is the *same code path* with $w_2 = w_3 = 0$. Since the entire result is a comparison against it, it is important that it differ from EsT by weights alone rather than by a separate implementation.
+
+The whole two-stage schedule can also be re-entered from a finished pulse with `--init`, which is how the *EsT (warm)* result below was produced. Note what that means for stage 1: it re-imposes $w_3 = 7$ on a pulse that stage 2 had already released from it, so a warm restart does not resume where the previous run stopped — it re-traverses the fidelity-for-transparency trade from a better starting point.
 
 Training uses a **single** truncation $n_c = 20$, unlike the root pipeline's multi-truncation default. The measured cost is 2.65 s per gradient at one truncation versus 9.9 s at three — a 3.7× tax on every optimizer step. The root pipeline needs multi-truncation training because $\alpha=\sqrt3$ cat states carry population out to $n \sim 15$, where a pulse can exploit the Hilbert-space wall; the kitten code's highest code word is $|4\rangle$ and the drive is capped at 4 MHz, so the wall is far from the dynamics. Convergence is therefore **verified** on held-out truncations rather than trained in, with retraining at `--trunc 16 20 24` prescribed if the check fails. It has not: the measured spread over $n_c = 16\ldots28$ is $2\times10^{-7}$ (EsT) and $2\times10^{-8}$ (Ord).
 
@@ -211,23 +226,47 @@ One result corroborates the reconstruction. Under free Kerr evolution with no dr
 
 ## Results
 
-Trained X gate, $n_t = 3$, $n_c = 20$, $dt = 1$ ns, $N = 1000$, 600 iterations per stage, seed 0. Metrics are time-averaged over the six cardinal points; lower is better except for the two fidelities.
+Trained X gate, $n_t = 3$, $n_c = 20$, $dt = 1$ ns, $N = 1000$, seed 0. Metrics are time-averaged over the six cardinal points; lower is better except for the two fidelities. Two EsT runs are reported:
+
+* **EsT** — cold start from random controls, 600 iterations per stage.
+* **EsT (warm)** — restarted from the EsT pulse and rerun through *both* stages at 1000 iterations each (`--init pulses/est/u_X_est.npy`). 91 min total.
 
 | | $F_1$ | $F_{\mathrm{ET}}$ | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ | max active Fock |
 |---|---|---|---|---|---|---|
 | **EsT** | 0.99920 | 0.679 | $4.32\times10^{-2}$ | $2.08\times10^{-1}$ | $3.21\times10^{-1}$ | 9 |
+| **EsT (warm)** | 0.99904 | **0.736** | $4.65\times10^{-2}$ | $\mathbf{1.49\times10^{-1}}$ | $\mathbf{2.64\times10^{-1}}$ | 10 |
 | **Ord** | 0.99999 | 0.188 | $6.92\times10^{-2}$ | $4.54\times10^{-1}$ | $8.12\times10^{-1}$ | 8 |
-| ratio | — | **3.6×** | 1.60× | 2.18× | 2.53× | — |
+| ratio, Ord : EsT | — | 3.6× | 1.60× | 2.18× | 2.53× | — |
+| ratio, Ord : EsT (warm) | — | **3.9×** | 1.49× | **3.05×** | **3.07×** | — |
 
 The EsT pulse improves every transparency metric while giving up ordinary fidelity, $0.99920$ against $0.99999$. That trade is the expected behaviour rather than a defect: Ord optimizes $C_1$ alone and drives it as far as it can, while EsT spends part of that budget on transparency. Time-resolved curves are in `figures/est/fig1def_est_vs_ord.png`; summary metrics in `tables/est_fig1_metrics.csv`.
 
+The warm restart improves the two error-space metrics substantially — $\eta$ by 18% and $L$ by 29%, lifting both EsT : Ord ratios from ~2.2–2.5× to ~3.05× — at essentially no fidelity cost ($0.99920 \to 0.99904$). $\Delta_{\mathrm{QEC}}$ is the exception: it degrades 8%, the only transparency metric to move the wrong way, and its ratio falls from 1.60× to 1.49×. Note also that the restart did **not** merely polish the starting pulse: $\lVert u_{\mathrm{warm}} - u_{\mathrm{EsT}}\rVert / \lVert u_{\mathrm{EsT}}\rVert = 1.21$, so this is a different waveform, not a refinement of the old one.
+
+Reproduce with `python EST/compare_warmstart.py` → `tables/est_warmstart_comparison.csv`, `figures/est/warmstart_est_vs_stages.png`. (`diagnostics.py` scores only `u_X_est` and `u_X_ord`, so it does not pick the warm pulses up.)
+
+### What the second stage does
+
+Because the warm run saved both stages, the stage-1 → stage-2 transition can be read off directly. The stage-1 row *is* the warm-start point re-scored, so the first row below is also the cold EsT result:
+
+| | $F_1$ | $F_{\mathrm{ET}}$ | $C_3$ (vel. var.) | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ |
+|---|---|---|---|---|---|---|
+| start (= cold EsT) | 0.99920 | 0.679 | 0.1126 | $4.32\times10^{-2}$ | $2.08\times10^{-1}$ | 0.3213 |
+| after stage 1 | 0.96566 | **0.747** | **0.0072** | $3.99\times10^{-2}$ | $1.54\times10^{-1}$ | 0.2533 |
+| after stage 2 | **0.99904** | 0.736 | 0.1203 | $4.65\times10^{-2}$ | $1.49\times10^{-1}$ | 0.2644 |
+
+Stage 1 buys transparency with fidelity exactly as intended: infidelity worsens 43×, while $F_{\mathrm{ET}}$ climbs to 0.747 and velocity variance drops 16×. Stage 2 then recovers essentially all of the fidelity — infidelity $3.43\times10^{-2} \to 9.63\times10^{-4}$, a 36× improvement — and gives back only a small part of the transparency gain: $F_{\mathrm{ET}}$ falls 1.5% relative, $\eta$ rises 4.4%, $\Delta_{\mathrm{QEC}}$ rises 17%, while $L$ continues to *improve*.
+
+One caveat on the schedule as documented: `train_est.py`'s docstring says stage 2 moves the ET **and velocity** metrics by ~1%. That holds for $F_{\mathrm{ET}}$ but not for $C_3$, which regresses 17× ($0.0072 \to 0.1203$, back to Ord's 0.1208) because $w_3 = 0$ in stage 2 and nothing then holds uniform speed. Velocity uniformity is not a property of the delivered pulse; it is scaffolding that stage 1 uses to stop the optimizer parking the dynamics to cheat $C_2$.
+
 ### Known limitations
 
-1. **Neither pulse is converged.** All four stage-runs terminated on `maxiter`, not on a convergence criterion. Stage 1 reached $F_{\mathrm{ET}} = 0.704$ against the paper's $\approx 0.83$. This is the leading candidate for the weaker-than-published separation; a longer run is the first thing to try.
-2. **The comparison is not yet like-for-like.** Max active Fock level is 9 (EsT) against 8 (Ord). The paper's fair-comparison criterion matches on this quantity rather than on gate duration, so the ratios above should be regarded as provisional. `diagnostics.py` reports the mismatch automatically.
-3. **The $\Delta_{\mathrm{QEC}}$ endpoint is an artifact.** At $t = T$, $\Delta_{\mathrm{QEC}}$ is $8\times10^{-5}$ for Ord against $5.3\times10^{-3}$ for EsT — purely because Ord's terminal fidelity is higher, and a gate landing exactly on the ideal code words has zero KL violation by construction. Mid-gate, where transparency matters, EsT leads 1.9×.
-4. **Absolute transparency is weak.** $L = 0.21$ means roughly a fifth of the error state has left the instantaneous error space on average. The hierarchy is reproduced; the quality is not yet at the published level.
-5. **Scope.** Only the X gate is trained. H and T are parameter changes against the same pipeline. The **LE** control variant is not implemented — it requires an error-space terminal-fidelity term, which is a new cost function rather than a reweighting — and neither is the AQEC recovery pulse needed for the paper's Figs. 4–5.
+1. **No pulse is converged.** Every stage-run so far — four cold, two warm — terminated on `maxiter` rather than on a convergence criterion. The warm restart tested the obvious remedy of simply running longer, and the answer is that it helps but does not close the gap: stage 1 went from $F_{\mathrm{ET}} = 0.704$ (600 it) to $0.747$ (1000 it, warm), still short of the paper's $\approx 0.83$. Iteration count is therefore *a* factor in the weaker-than-published separation but not the whole story; the next suspects are the $C_2$ normalization choice and the box-bound artifact in item 3.
+2. **The comparison is not yet like-for-like, and the warm restart made it worse.** Max active Fock level is 9 (EsT), 10 (EsT warm) and 8 (Ord). The paper's fair-comparison criterion matches on this quantity rather than on gate duration, so the ratios above should be regarded as provisional — and the warm pulse's improved ratios are measured across a *wider* Fock mismatch than the cold pulse's. `diagnostics.py` reports the mismatch automatically.
+3. **The warm run trained against a binding box.** `max_abs_preimage` sat at exactly 120.0 — the `--hard-bound` value — at the end of both warm stages, so L-BFGS-B spent the whole run pressed against a constraint that has no physical meaning (see *Bounds versus penalties*). Side effects are visible but small: out-of-band energy rose from 0.50% to 0.70% on the cavity drive and the endpoint/mid amplitude ratio from 0.016 to 0.040, both indicating extra amplitude pushed into the 48 ns ramp windows. The amplitude cap is still satisfied (25.15 rad/μs, the same 0.2% $C_4$ overshoot as the cold pulse). A rerun at `--hard-bound 300` is the clean version of this experiment.
+4. **The $\Delta_{\mathrm{QEC}}$ endpoint is an artifact.** At $t = T$, $\Delta_{\mathrm{QEC}}$ is $8\times10^{-5}$ for Ord against $5.3\times10^{-3}$ for EsT — purely because Ord's terminal fidelity is higher, and a gate landing exactly on the ideal code words has zero KL violation by construction. Mid-gate, where transparency matters, EsT leads 1.9×.
+5. **Absolute transparency is weak.** $L = 0.21$ (cold) and $0.15$ (warm) mean that a fifth, respectively a seventh, of the error state has left the instantaneous error space on average. The hierarchy is reproduced and the warm restart narrows the gap; the quality is not yet at the published level.
+6. **Scope.** Only the X gate is trained. H and T are parameter changes against the same pipeline. The **LE** control variant is not implemented — it requires an error-space terminal-fidelity term, which is a new cost function rather than a reweighting — and neither is the AQEC recovery pulse needed for the paper's Figs. 4–5.
 
 ## Project layout
 
@@ -236,8 +275,9 @@ The EsT pulse improves every transparency metric while giving up ordinary fideli
 | `EST/device.py` | Table I constants, `make_hamiltonian_est`, Gaussian ramp envelope, band mask |
 | `EST/kitten_code.py` | Code and error bases, cardinal points, gate targets, per-gate control masks |
 | `EST/grape_jax.py` | Constraint chain, `expm` propagation, cost terms $C_1$–$C_4$, scipy-ready objective |
-| `EST/train_est.py` | Two-stage L-BFGS-B driver, constraint verification, JSON metadata |
+| `EST/train_est.py` | Two-stage L-BFGS-B driver, warm restart (`deramp`), constraint verification, JSON metadata |
 | `EST/diagnostics.py` | Eqs. 6–8, truncation scan, independent re-score, Fig. 1d–f figure |
+| `EST/compare_warmstart.py` | Cold vs. warm-restart comparison across both stages and both code paths |
 | `EST/test_grape_jax.py` | 22-test correctness suite |
 | `pulses/est/` | Trained pulses, `u_<gate>_<variant>.npy`, shape $(N,4)$ |
 | `figures/est/`, `tables/`, `logs/` | Generated figure, summary CSV, per-run metadata |
@@ -260,9 +300,21 @@ python EST/train_est.py --gate X --variant ord
 
 # Metrics, truncation scan, independent re-score, and the Fig. 1d-f figure
 python EST/diagnostics.py
+
+# Warm restart from a saved pulse, both stages at 1000 iterations (~1.5 h).
+# --tag keeps the rerun from clobbering the pulse it started from; --hard-bound
+# must exceed max|deramp(u)| or train() will refuse to start (see "The box does
+# bind on a warm start").
+python EST/train_est.py --gate X --variant est --maxiter 1000 \
+       --init pulses/est/u_X_est.npy --hard-bound 300 --tag warm
+
+# Cold vs. warm-stage-1 vs. warm-stage-2 vs. Ord, scored through both code paths
+python EST/compare_warmstart.py
 ```
 
-All commands are run from the repository root. Useful flags: `--maxiter` (default 600 per stage), `--trunc 16 20 24` for multi-truncation training, `--dt`, `--seed`, `--no-save`.
+All commands are run from the repository root. Useful flags: `--maxiter` (default 600 per stage), `--trunc 16 20 24` for multi-truncation training, `--init`/`--tag`/`--hard-bound` for warm restarts, `--dt`, `--seed`, `--no-save`.
+
+A warm restart writes `u_<gate>_<variant>_<tag>.npy` plus one `..._<tag>_stage<i>.npy` per stage, so the stage-1 → stage-2 delta stays measurable after the fact.
 
 ## Default parameters
 
