@@ -1,2 +1,13 @@
 numpy>=2.3.5
 scipy>=1.15.0
+
+# Hard imports that were already missing from this file.
+joblib>=1.3.0          # core/optimizer.py
+matplotlib>=3.7.0      # visualization/, analysis/, EST/diagnostics.py
+pandas>=2.0.0          # analysis/, validation/, EST/diagnostics.py
+
+# EST/ only (the error-semitransparent gate replication). The production
+# core/ pipeline stays pure numpy/scipy with hand-derived adjoint gradients;
+# jax supplies gradients for the new running-cost terms C2/C3, which have no
+# analytic adjoint written for them. See EST/grape_jax.py.
+jax>=0.4.30
