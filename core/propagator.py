@@ -34,7 +34,7 @@ import this module without creating a cycle.
 
 import numpy as np
 
-from core.grape_core import step_data, basis_state
+from core.grape_core import step_data, basis_state, make_ops
 from core.cat_code import get_logical_cat_states, embed_in_joint_space
 
 
@@ -127,6 +127,139 @@ def logical_basis(n_t, n_c, alpha=np.sqrt(3.0)):
         "state-fidelity interpretation of pedersen_gate_fidelity both assume it is"
     )
     return B
+
+
+def error_basis(n_t, n_c, alpha=np.sqrt(3.0), B=None):
+    """
+    Orthonormal basis of the single-photon-loss error subspace, and its norms.
+
+    The even cat code has one physically distinguished subspace outside itself:
+    the image of the code space under one cavity photon loss,
+
+        E = span{ a|+Z_L>, a|-Z_L> }.
+
+    A loss is supposed to be *detectable* (parity flips) and *correctable* (the
+    logical content survives inside E). This function makes E a first-class
+    probe subspace so both claims can be measured on a saved pulse, instead of
+    being sampled indirectly by the odd-Fock probes in group B of
+    `validation.outside_inputs.outside_input_list` --- those live in the odd
+    manifold, but they are not the states a real loss actually produces.
+
+    Returns
+    -------
+    E : (D, 2) complex ndarray, D = n_t * n_c.
+        Column j is a|j_L> renormalized, column order matched to
+        `logical_basis` (column 0 from |+Z_L>, column 1 from |-Z_L>).
+    nrm : (2,) float ndarray
+        The pre-normalization norms, ||a|j_L>||. Returned rather than discarded
+        because they carry the physics below and `knill_laflamme_residual` needs
+        their squares; recomputing them invites the two callers to disagree.
+
+    `n_t` is REQUIRED for the same reason as in `logical_basis`.
+
+    Both structural facts below are EXACT, not tolerances we are leaning on ---
+    the assertions are guards against a future change to the cat-state
+    construction, in the same spirit as `logical_basis`:
+
+      - E is orthonormal. |+Z_L> lives on Fock n = 0 (mod 4) and |-Z_L> on
+        n = 2 (mod 4), so a|+Z_L> lives on n = 3 (mod 4) and a|-Z_L> on
+        n = 1 (mod 4): disjoint supports, <e_0|e_1> = 0 identically.
+      - E is orthogonal to the code space, B† E = 0 identically, because the
+        cats are purely even and their loss images purely odd.
+
+    UNEQUAL NORMS --- read before reusing this for anything else. At
+    alpha=sqrt(3), ||a|+Z_L>|| = 1.8067 and ||a|-Z_L>|| = 1.6602, a ratio of
+    1.088. So `a` restricted to the code space is NOT proportional to an
+    isometry: it distorts superpositions. The concrete way to get this wrong is
+    to assume a|+X_L> renormalized is the error-space |+X> --- it is not, it is
+    tilted toward column 0. That is why this function returns a *basis* only and
+    there is deliberately no `error_cardinals` analogue here: for this code the
+    six error-space cardinal points are ambiguous and a caller must say which
+    construction it means. `EST/kitten_code.py:error_cardinals` is the mirror
+    image --- for the binomial kitten code the two norms are equal (both
+    sqrt(2)), so the construction is unambiguous there, and it carries a live
+    assertion pinning exactly that coincidence.
+
+    The same inequality is what makes this code only APPROXIMATELY correctable
+    for a single loss; see `knill_laflamme_residual`.
+    """
+    if B is None:
+        B = logical_basis(n_t, n_c, alpha=alpha)
+    A, _ = make_ops(n_t, n_c)
+
+    raw = A @ B
+    nrm = np.linalg.norm(raw, axis=0)
+    assert np.all(nrm > 1e-9), (
+        f"a|j_L> has vanishing norm at n_c={n_c} (norms {nrm}); the error "
+        "subspace is not well defined"
+    )
+    E = raw / nrm
+
+    orth_err = np.linalg.norm(E.conj().T @ E - np.eye(2))
+    assert orth_err < 1e-12, (
+        f"error basis is not orthonormal at n_c={n_c} "
+        f"(||E^dag E - I|| = {orth_err:.3e}); the projection E^dag U E and "
+        "leakage_L1 both assume it is"
+    )
+    cross = np.linalg.norm(B.conj().T @ E)
+    assert cross < 1e-12, (
+        f"error subspace is not orthogonal to the code space at n_c={n_c} "
+        f"(||B^dag E|| = {cross:.3e}); a loss would then be partly invisible to "
+        "the parity check, and L2_(E->C) below would not measure seepage"
+    )
+    return E, nrm
+
+
+def knill_laflamme_residual(B, n_t, n_c):
+    """
+    How exactly correctable is a single photon loss? Knill-Laflamme for E={I,a}.
+
+    A code corrects the error set {I, a} exactly iff
+
+        <i_L| a       |j_L> = 0                (I-vs-a cross term)
+        <i_L| a^dag a |j_L> = c * delta_ij     (a-vs-a term)
+
+    for a single constant c independent of i, j. The first condition and the
+    off-diagonal of the second are satisfied *identically* by the even cat code
+    (parity, and disjoint mod-4 supports). The DIAGONAL of the second is not:
+    the two cats carry different mean photon numbers, so there is no single c.
+
+    Returns
+    -------
+    dict with
+        n_bar_plus, n_bar_minus : <j_L| a^dag a |j_L>, i.e. ||a|j_L>||^2
+        n_offdiag               : |<+Z_L| a^dag a |-Z_L>|      (should be ~0)
+        a_block_norm            : ||B^dag a B||                (should be ~0)
+        rel_mismatch            : (n_bar_plus - n_bar_minus) / mean, the
+                                  fractional violation of the c*delta_ij
+                                  condition --- 0 for an exactly correctable
+                                  code, 0.169 for the alpha=sqrt(3) cat code.
+
+    Interpretation: the alpha=sqrt(3) four-component cat is an APPROXIMATE
+    single-loss code, not an exact one. `EST/kitten_code.py`'s binomial kitten
+    code is the exact version --- a|0_L> = sqrt(2)|3> and a|1_L> = sqrt(2)|1>
+    have equal weight, so rel_mismatch is 0 there by construction.
+
+    Measurement only, and deliberately independent of `EST/`:
+    `EST.diagnostics.delta_qec` is the time-resolved analogue on the EsT track
+    (it folds these same residuals, plus their values mid-pulse, into one
+    number). Importing it here would invert the track separation set up in
+    CLAUDE.md, so the two are cross-referenced in prose rather than shared.
+    """
+    A, _ = make_ops(n_t, n_c)
+    n_op = A.conj().T @ A
+    n_block = B.conj().T @ n_op @ B
+
+    n_bar_plus = float(n_block[0, 0].real)
+    n_bar_minus = float(n_block[1, 1].real)
+    mean = 0.5 * (n_bar_plus + n_bar_minus)
+    return {
+        "n_bar_plus": n_bar_plus,
+        "n_bar_minus": n_bar_minus,
+        "n_offdiag": float(abs(n_block[0, 1])),
+        "a_block_norm": float(np.linalg.norm(B.conj().T @ A @ B)),
+        "rel_mismatch": float((n_bar_plus - n_bar_minus) / mean),
+    }
 
 
 def logical_block(U_full, B):
