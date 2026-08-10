@@ -1,0 +1,3 @@
+label,extra_iters,reconverged,iters_used,elapsed_s,F_held_before,F_held_after,dF_held,F_min_before,F_min_after,spread_before,spread_after,BW_before,BW_after,dBW
+deriv=1e-05_boundary=2e-05_amp=8e-05_disc=0.5,750,False,750,511.0,0.996243,0.996819,0.0005760000000000209,0.987193,0.986429,0.01044,0.01203,8.756,8.137,-0.6189999999999998
+deriv=1e-06_boundary=2e-05_amp=8e-05_disc=0.5,750,False,750,523.0,0.998716,0.998669,-4.700000000001925e-05,0.994835,0.993828,0.00441,0.005515,14.81,13.603,-1.2070000000000007

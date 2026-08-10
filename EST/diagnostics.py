@@ -2,6 +2,7 @@
 Error-transparency diagnostics: the Fig. 1d-f replication target.
 
     python EST/diagnostics.py                 # EsT vs Ord, all metrics + figure
+    python EST/diagnostics.py --gate H        # same, for another trained gate
 
 Three time-resolved quantities from lossless unitary simulation (paper Eqs. 6-8):
 
@@ -240,8 +241,17 @@ def analyze(u, gate="X", n_t=N_T, n_c=20, dt=DT):
 # Figure
 # ---------------------------------------------------------------------------
 
-def plot_fig1(results, path):
-    """Three-panel Fig. 1d-f: EsT vs Ord for each metric."""
+def plot_fig1(results, path, scale="log"):
+    """
+    Three-panel Fig. 1d-f: EsT vs Ord for each metric.
+
+    `scale="log"` reproduces the paper's own axes and is the default; it is the
+    only view that resolves the near-zero EsT floor App. A predicts. `"linear"`
+    is the complementary view: for gates whose metrics sit at O(0.1) it shows the
+    EsT-vs-Ord GAP at its true relative size, which a decade grid compresses.
+    Each panel autoscales independently, so the narrow Delta_QEC channel stays
+    legible next to the wide eta channel.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -251,17 +261,22 @@ def plot_fig1(results, path):
               ("eta", r"$\eta_{E_j,\psi}(t)$", "f")]
     styles = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
               "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord")}
+    log = scale == "log"
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.6))
     for ax, (key, ylabel, tag) in zip(axes, panels):
         for variant, r in results.items():
-            ax.plot(r["t_us"], np.maximum(r[key], 1e-12),
-                    **styles.get(variant, dict(label=variant)))
-        ax.set_yscale("log")
+            # The 1e-12 floor exists only so a zero cannot drop off a log axis.
+            y = np.maximum(r[key], 1e-12) if log else r[key]
+            ax.plot(r["t_us"], y, **styles.get(variant, dict(label=variant)))
+        if log:
+            ax.set_yscale("log")
+        else:
+            ax.set_ylim(bottom=0.0)
         ax.set_xlabel(r"$t\ (\mu s)$")
         ax.set_ylabel(ylabel)
         ax.set_title(f"({tag})", loc="left", fontweight="bold")
-        ax.grid(alpha=0.25, which="both", lw=0.5)
+        ax.grid(alpha=0.25, which="both" if log else "major", lw=0.5)
     axes[0].legend(frameon=False)
     fig.tight_layout()
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -270,22 +285,23 @@ def plot_fig1(results, path):
     return path
 
 
-def main():
+def main(gate="X", scale="both"):
     import pandas as pd
 
     results, rows = {}, []
     for variant in ("est", "ord"):
-        p = os.path.join(PULSE_DIR, f"u_X_{variant}.npy")
+        p = os.path.join(PULSE_DIR, f"u_{gate}_{variant}.npy")
         if not os.path.exists(p):
-            print(f"[skip] {p} not found -- run EST/train_est.py --variant {variant}")
+            print(f"[skip] {p} not found -- run EST/train_est.py "
+                  f"--gate {gate} --variant {variant}")
             continue
         u = np.load(p)
-        r = analyze(u, gate="X")
+        r = analyze(u, gate=gate)
         results[variant] = r
 
-        conv = truncation_scan(u, "X")
+        conv = truncation_scan(u, gate)
         spread = max(conv.values()) - min(conv.values())
-        print(f"\n=== X / {variant} ===")
+        print(f"\n=== {gate} / {variant} ===")
         print(f"  C1 fidelity (eigh re-score, n_c=20) : {r['F1']:.6f}")
         print(f"  per-cardinal                        : "
               + " ".join(f"{v:.4f}" for v in r['F1_per_cardinal']))
@@ -297,7 +313,7 @@ def main():
         print(f"  time-averaged Delta_QEC / L / eta    : "
               f"{r['delta_qec'].mean():.4e}  {r['leakage'].mean():.4e}  {r['eta'].mean():.4e}")
 
-        rows.append({"variant": variant, "F1": r["F1"],
+        rows.append({"gate": gate, "variant": variant, "F1": r["F1"],
                      "max_active_fock": r["max_active_fock"],
                      "trunc_spread": spread,
                      "delta_qec_mean": r["delta_qec"].mean(),
@@ -316,13 +332,34 @@ def main():
                   "comparison matches these, so retune before quoting a ratio.")
 
     if results:
-        path = plot_fig1(results, os.path.join(FIG_DIR, "fig1def_est_vs_ord.png"))
-        print(f"\nfigure -> {path}")
+        # X keeps the unsuffixed names it has always written -- EST/README.md
+        # references figures/est/fig1def_est_vs_ord.png by that path. Other gates
+        # are suffixed so they cannot clobber it.
+        sfx = "" if gate == "X" else f"_{gate}"
+        print()
+        for s in (("log", "linear") if scale == "both" else (scale,)):
+            # The log figure keeps the unsuffixed name EST/README.md references.
+            tail = "" if s == "log" else f"_{s}"
+            path = plot_fig1(
+                results,
+                os.path.join(FIG_DIR, f"fig1def_est_vs_ord{sfx}{tail}.png"),
+                scale=s)
+            print(f"figure ({s:6s}) -> {path}")
         os.makedirs(TABLE_DIR, exist_ok=True)
-        csv = os.path.join(TABLE_DIR, "est_fig1_metrics.csv")
+        csv = os.path.join(TABLE_DIR, f"est_fig1_metrics{sfx}.csv")
         pd.DataFrame(rows).to_csv(csv, index=False)
         print(f"table  -> {csv}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--gate", default="X",
+                    choices=sorted(kitten_code.IDEAL_LOGICAL_U),
+                    help="which trained gate to score (default X)")
+    ap.add_argument("--scale", default="both", choices=("log", "linear", "both"),
+                    help="y-axis of the Fig. 1d-f panels (default both)")
+    args = ap.parse_args()
+    main(args.gate, args.scale)

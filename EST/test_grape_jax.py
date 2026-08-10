@@ -328,6 +328,158 @@ class DiagnosticsTest(unittest.TestCase):
             np.testing.assert_allclose(traj[k + 1], psi, rtol=1e-12, atol=1e-13)
 
 
+class SubspaceEvolutionTest(unittest.TestCase):
+    """
+    The Fig. 1a construction. `map_mismatch` and the photon-number curves are
+    this module's own definitions, so they are pinned against cases whose answer
+    is fixed by the code definition rather than by a reference number.
+    """
+
+    n_t, n_c, dt, N = 3, 12, 0.001, 60
+
+    def _pieces(self, H0, u):
+        from EST.subspace_evolution import (cardinal_states, subspace_blocks,
+                                            subspace_trajectories)
+        _, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        B = kitten_code.logical_basis(self.n_t, self.n_c)
+        E = kitten_code.error_basis(self.n_t, self.n_c)
+        tc, te = subspace_trajectories(u, H0, Hc, B, E, self.dt)
+        UL, UE = subspace_blocks(tc, te, B, E)
+        return cardinal_states(tc), cardinal_states(te), UL, UE
+
+    def test_initial_photon_numbers_are_fixed_by_the_code(self):
+        """
+        Every CODE cardinal starts at <n> = 2 exactly: both code words carry
+        <n> = 2 and <0_L|n|1_L> = 0, so no superposition of them can differ. The
+        ERROR cardinals split 3/1/2/2/2/2 because |0_E> = |3>, |1_E> = |1>.
+        Together these are the baselines the figure's curves depart from.
+        """
+        from EST.subspace_evolution import photon_numbers
+        A, _ = make_ops(self.n_t, self.n_c)
+        n_op = A.conj().T @ A
+        nb_c = photon_numbers(kitten_code.cardinals(self.n_t, self.n_c)[None], n_op)
+        nb_e = photon_numbers(
+            kitten_code.error_cardinals(self.n_t, self.n_c)[None], n_op)
+        np.testing.assert_allclose(nb_c[0], 2.0, atol=1e-12)
+        want = {"+Z": 3.0, "-Z": 1.0, "+X": 2.0, "-X": 2.0, "+Y": 2.0, "-Y": 2.0}
+        for m, name in enumerate(kitten_code.CARDINAL_ORDER):
+            self.assertAlmostEqual(nb_e[0, m], want[name], places=12, msg=name)
+
+    def test_loss_image_starts_on_the_error_cardinals(self):
+        """
+        At t = 0 the normalized photon-loss image of each code cardinal IS the
+        corresponding error cardinal, so the grey dashed curve must start on the
+        coloured one. Any gap at t = 0 would be a construction bug, not physics.
+        """
+        from EST.subspace_evolution import (loss_image_photon_numbers,
+                                            photon_numbers)
+        A, _ = make_ops(self.n_t, self.n_c)
+        n_op = A.conj().T @ A
+        code = kitten_code.cardinals(self.n_t, self.n_c)[None]
+        err = kitten_code.error_cardinals(self.n_t, self.n_c)[None]
+        np.testing.assert_allclose(loss_image_photon_numbers(code, A, n_op),
+                                   photon_numbers(err, n_op), atol=1e-12)
+
+    def test_photon_number_is_blind_to_the_kerr_obstruction(self):
+        """
+        The load-bearing caveat of this figure. H0 is a function of the number
+        operators alone, so [H0, n] = 0 and drift leaves all three photon-number
+        curves EXACTLY flat -- while it drives eta (Eq. 8) away from zero, which
+        DiagnosticsTest pins separately. <n>_E == <n>_loss is therefore necessary
+        for transparency and not sufficient, and the figure must never be read
+        without the mismatch panel beside it.
+        """
+        from EST.diagnostics import eta_mismatch
+        from EST.subspace_evolution import (loss_image_photon_numbers,
+                                            map_mismatch, photon_numbers)
+        A, _ = make_ops(self.n_t, self.n_c)
+        n_op = A.conj().T @ A
+        H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
+        code, err, UL, UE = self._pieces(H0, np.zeros((self.N, 4)))
+
+        for series in (photon_numbers(code, n_op), photon_numbers(err, n_op),
+                       loss_image_photon_numbers(code, A, n_op)):
+            np.testing.assert_allclose(
+                series, np.broadcast_to(series[0], series.shape), atol=1e-10)
+        self.assertGreater(eta_mismatch(code, err, A).max(), 1e-6,
+                           "but eta must see it")
+        self.assertGreater(map_mismatch(UL, UE).max(), 1e-6,
+                           "Kerr should already break code/error equality")
+
+    def test_drive_moves_photon_number_and_conserves_norm(self):
+        """A real drive must move <n>; unitarity must still hold column by column."""
+        from EST.subspace_evolution import photon_numbers
+        A, _ = make_ops(self.n_t, self.n_c)
+        n_op = A.conj().T @ A
+        H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
+        # At the physical cap EPS_MAX = 2pi*4 rad/us, over the 60 ns this class
+        # simulates. Small in absolute terms, but the drift case above is
+        # conserved to 1e-15, so the contrast is the point.
+        u = np.random.default_rng(7).uniform(-25.0, 25.0, size=(self.N, 4))
+        code, err, _, _ = self._pieces(H0, u)
+
+        np.testing.assert_allclose(np.sum(np.abs(code) ** 2, axis=1), 1.0,
+                                   atol=1e-10)
+        nb = photon_numbers(code, n_op)
+        self.assertGreater(abs(nb.max() - nb.min()), 1e-2,
+                           "a drive at the amplitude cap should move <n>")
+
+    def test_map_mismatch_endpoints(self):
+        """0 for a global phase, 1 for the maximally-distinguishable pair."""
+        from EST.subspace_evolution import map_mismatch
+        I = np.eye(2, dtype=complex)[None, :, :]
+        Z = np.diag([1.0, -1.0]).astype(complex)[None, :, :]
+        self.assertLess(map_mismatch(I, I)[0], 1e-14)
+        self.assertLess(map_mismatch(I, np.exp(0.7j) * I)[0], 1e-14)
+        self.assertAlmostEqual(map_mismatch(I, Z)[0], 1.0, places=12)
+
+    def test_no_drift_no_drive_is_the_identity_map(self):
+        """Nothing evolves: both blocks are the identity and agree exactly."""
+        from EST.subspace_evolution import map_mismatch, subspace_weight
+        H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
+        _, _, UL, UE = self._pieces(np.zeros_like(H0), np.zeros((self.N, 4)))
+        for U2 in (UL, UE):
+            np.testing.assert_allclose(U2, np.broadcast_to(np.eye(2), U2.shape),
+                                       atol=1e-12)
+            np.testing.assert_allclose(subspace_weight(U2), 1.0, atol=1e-12)
+        np.testing.assert_allclose(map_mismatch(UL, UE), 0.0, atol=1e-14)
+
+    def test_kerr_rotates_the_code_span_but_not_the_error_span(self):
+        """
+        Drift cannot move population out of the Fock {0,2,4} sector, yet the code
+        SPAN is still not drift-invariant: |0_L> = (|0>+|4>)/sqrt(2) has its two
+        components dephase against each other and rotate toward the orthogonal
+        combination. So r2 dips below 1 with nothing having escaped the code's
+        Fock support -- the reason the r2 panel must be read as "left the span",
+        not "left the physical code manifold". The error span {|3>, |1>} carries
+        no internal superposition and stays exactly invariant.
+        """
+        from EST.subspace_evolution import subspace_weight
+        H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
+        _, _, UL, UE = self._pieces(H0, np.zeros((self.N, 4)))
+        self.assertLess(subspace_weight(UL).min(), 1.0 - 1e-8,
+                        "Kerr should dephase |0> against |4> inside |0_L>")
+        np.testing.assert_allclose(subspace_weight(UE), 1.0, atol=1e-10)
+
+    def test_subspace_weight_is_the_surviving_span_population(self):
+        """
+        1 - r2 must equal the population that has left the code span, computed
+        directly from the propagated cardinals. This is what licenses reading the
+        r2 curve as population outside the span.
+        """
+        from EST.subspace_evolution import subspace_weight
+        H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
+        B = kitten_code.logical_basis(self.n_t, self.n_c)
+        u = np.random.default_rng(7).uniform(-8, 8, size=(self.N, 4))
+        code, _, UL, _ = self._pieces(H0, u)
+
+        direct = np.sum(np.abs(np.einsum('ik,tim->tkm', np.conj(B), code)) ** 2,
+                        axis=1)
+        np.testing.assert_allclose(subspace_weight(UL), direct, atol=1e-12)
+        self.assertLess(direct.min(), 0.999,
+                        "a random drive should leave the span measurably")
+
+
 class KittenCodeTest(unittest.TestCase):
     """The code definition itself -- cheap, and everything downstream assumes it."""
 
@@ -360,6 +512,76 @@ class KittenCodeTest(unittest.TestCase):
             C = kitten_code.cardinals(n_t, n_c)
             # Applying U2 in the logical block reproduces the targets exactly.
             np.testing.assert_allclose(T, B @ (U2 @ (B.conj().T @ C)), atol=1e-12)
+
+
+class PreimagePersistenceTest(unittest.TestCase):
+    """
+    The saved (u, x) pair and the constraint-chain inversion behind --init/--init-x.
+
+    Small N and no optimization, so this is cheap. What it pins is the invariant
+    that makes a warm start meaningful: the pulse on disk must be exactly what the
+    saved pre-image maps to.
+    """
+
+    # 200 ns at the default dt. Must exceed 2 * RAMP_NS = 96 ns or ramp_envelope
+    # refuses to build (no flat top); short enough that this class costs ~nothing.
+    N = 200
+
+    def _x(self, seed=3):
+        rng = np.random.default_rng(seed)
+        return 20.0 * rng.standard_normal(self.N * 4)
+
+    def test_saved_pulse_and_preimage_are_consistent(self):
+        """save() writes a u and an x that still satisfy u == constrain(x)."""
+        import json
+        import tempfile
+        from EST import train_est
+        from EST.grape_jax import build_gate_objective
+
+        _, _, constrain_np = build_gate_objective("X", self.N, trunc_list=[8])
+        x = self._x()
+        u = constrain_np(x)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            orig_pulse, orig_log = train_est.PULSE_DIR, train_est.LOG_DIR
+            train_est.PULSE_DIR = os.path.join(tmp, "pulses")
+            train_est.LOG_DIR = os.path.join(tmp, "logs")
+            try:
+                info = {"gate": "X", "N": self.N}
+                up, xp, jp = train_est.save(u, x.reshape(self.N, 4), info,
+                                            "X", "unittest")
+                u_l, x_l = np.load(up), np.load(xp)
+                with open(jp) as fh:
+                    self.assertEqual(json.load(fh)["N"], self.N)
+            finally:
+                train_est.PULSE_DIR, train_est.LOG_DIR = orig_pulse, orig_log
+
+        # Both land as (N,4), and the pair reloads self-consistently.
+        self.assertEqual(u_l.shape, (self.N, 4))
+        self.assertEqual(x_l.shape, (self.N, 4))
+        np.testing.assert_allclose(constrain_np(x_l.ravel()), u_l, atol=1e-12)
+
+    def test_deramp_inverts_the_chain_only_modulo_the_projection(self):
+        """
+        constrain(deramp(constrain(x))) == constrain(x), which is the identity
+        --init relies on -- NOT deramp(constrain(x)) == x, which is false. The
+        band-limit P is a projection and annihilates out-of-band components, so
+        the raw x is not recoverable from the pulse; only its image under P is.
+        This is precisely why x is saved rather than reconstructed.
+        """
+        from EST.train_est import deramp
+
+        constrain = make_constrainer(self.N, DT, ramp_ns=RAMP_NS)
+        x = self._x(seed=5).reshape(self.N, 4)
+        u = np.asarray(constrain(jnp.asarray(x)))
+
+        x_back, err = deramp(u, DT)
+        self.assertLess(err, 1e-10)
+        np.testing.assert_allclose(np.asarray(constrain(jnp.asarray(x_back))),
+                                   u, atol=1e-10)
+
+        # The out-of-band content really is gone: the roundtrip is not identity.
+        self.assertGreater(np.abs(x_back - x).max(), 1e-6)
 
 
 if __name__ == "__main__":

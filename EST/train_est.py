@@ -20,6 +20,13 @@ and ramp are applied inside the cost), which is the same caveat documented at
 core/optimizer.py:73-76; the physical amplitude cap is carried by the C4 penalty
 and verified after the fact by `check_constraints`.
 
+Each run saves both the physical pulse u_<gate>_<variant>.npy and the raw
+optimizer pre-image x_<gate>_<variant>.npy, per stage and at the end. Only u is
+physically meaningful, but only x can resume a run exactly: u = constrain(x), and
+inverting that (`deramp`) amplifies the pulse edges by up to ~151x, which is what
+pushes a warm start outside the default box. Use --init-x, not --init, whenever
+an x_*.npy exists.
+
 Outputs land in pulses/est/ and NOT in pulses/. Every consumer of pulses/ --
 validation/validate_logical_gates.py:77's GATE_PULSE_MAP, analysis/*.py -- hard-
 codes the u_<g>_main.npy name and assumes the alpha=sqrt(3) four-component cat
@@ -124,39 +131,72 @@ def check_constraints(u, dt=DT):
 
 def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
           w_amp=1.0, maxiter=600, seed=0, amp0=20.0, hard_bound=60.0,
-          verbose=True, init=None, stage_hook=None):
+          verbose=True, init=None, init_x=None, stage_hook=None):
     """
-    Run the two-stage schedule and return (u_physical, info).
+    Run the two-stage schedule and return (u_physical, x_preimage, info).
 
-    init : path to a saved (N,4) physical pulse to warm-start from, or None for
-           the cold random start. The pre-image is recovered exactly by `deramp`.
-    stage_hook : optional f(stage_index, u_physical, report) called after each
-           stage, for saving the intermediate pulse.
+    Both are returned because only `u` is physically meaningful but only `x` can
+    resume a run exactly: `u` is constrain(x), and inverting that map (`deramp`)
+    amplifies the pulse edges by up to ~151x, which is what pushes a warm start
+    outside the default box. See EST/README.md, "The box does bind on a warm
+    start".
+
+    init   : path to a saved (N,4) PHYSICAL pulse to warm-start from. The
+             pre-image is recovered by `deramp`, exactly but with that
+             amplification; needs a raised `hard_bound` in general.
+    init_x : path to a saved (N,4) raw PRE-IMAGE to warm-start from. This is the
+             exact route -- it is the vector L-BFGS-B stopped on, feasible in the
+             box it ran under by construction. Preferred over `init` when
+             available. Mutually exclusive with it.
+    stage_hook : optional f(stage_index, u_physical, x_preimage, report) called
+             after each stage, for saving the intermediate pulse and pre-image.
     """
     if variant not in SCHEDULES:
         raise KeyError(f"unknown variant {variant!r}; have {sorted(SCHEDULES)}")
+    if init is not None and init_x is not None:
+        raise ValueError("pass init or init_x, not both")
 
     N = n_steps(gate, dt)
     warm = None
-    if init is None:
+
+    def _check_box(x, source):
+        """L-BFGS-B silently projects an infeasible start into the box; refuse instead."""
+        if np.abs(x).max() > hard_bound:
+            raise ValueError(
+                f"warm-start pre-image reaches {np.abs(x).max():.1f} > hard_bound="
+                f"{hard_bound}. L-BFGS-B would clip it into the box and the run "
+                f"would not start from the {source} you asked for. Raise "
+                "--hard-bound (the box constrains the pre-image, not the physical "
+                "amplitude, which is carried by the C4 penalty)."
+            )
+
+    if init is None and init_x is None:
         rng = np.random.default_rng(seed)
         x = amp0 * rng.standard_normal(N * 4)
+    elif init_x is not None:
+        x0 = np.load(init_x)
+        if x0.shape != (N, 4):
+            raise ValueError(f"{init_x} has shape {x0.shape}, expected {(N, 4)}")
+        x = np.asarray(x0, dtype=np.float64).ravel()
+        # No roundtrip assertion here, and none is possible: x IS the pre-image,
+        # there is nothing to invert. The box check still applies -- an x saved
+        # under --hard-bound 300 would be clipped by a rerun at the default 60.
+        warm = {"path": os.path.abspath(init_x), "kind": "preimage",
+                "max_abs_preimage": float(np.abs(x).max())}
+        _check_box(x, "pre-image")
+        if verbose:
+            print(f"exact warm start from {init_x}: "
+                  f"max|x0| = {np.abs(x).max():.2f} (bound {hard_bound})")
     else:
         u0 = np.load(init)
         if u0.shape != (N, 4):
             raise ValueError(f"{init} has shape {u0.shape}, expected {(N, 4)}")
         x0, rt_err = deramp(u0, dt)
         x = x0.ravel()
-        warm = {"path": os.path.abspath(init), "roundtrip_err": rt_err,
+        warm = {"path": os.path.abspath(init), "kind": "pulse",
+                "roundtrip_err": rt_err,
                 "max_abs_preimage": float(np.abs(x).max())}
-        if np.abs(x).max() > hard_bound:
-            raise ValueError(
-                f"warm-start pre-image reaches {np.abs(x).max():.1f} > hard_bound="
-                f"{hard_bound}. L-BFGS-B would clip it into the box and the run "
-                "would not start from the pulse you asked for. Raise --hard-bound "
-                "(the box constrains the pre-image, not the physical amplitude, "
-                "which is carried by the C4 penalty)."
-            )
+        _check_box(x, "pulse")
         if verbose:
             print(f"warm start from {init}: roundtrip err {rt_err:.2e}, "
                   f"max|x0| = {np.abs(x).max():.2f} (bound {hard_bound})")
@@ -198,9 +238,12 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         })
 
         if stage_hook is not None:
-            stage_hook(i, constrain_np(x), rep)
+            stage_hook(i, constrain_np(x), x.reshape(N, 4), rep)
 
     u = constrain_np(x)
+    # (N,4) rather than the flat (4N,) L-BFGS-B works in, to mirror the pulse's
+    # layout on disk. train() and --init-x are the only places that ravel it.
+    x_out = np.asarray(x, dtype=np.float64).reshape(N, 4)
     info = {
         "gate": gate, "variant": variant, "n_t": n_t, "dt": dt, "N": N,
         "trunc_list": list(trunc_list), "w_amp": w_amp, "seed": seed,
@@ -211,7 +254,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "stages": stages,
         "constraints": check_constraints(u, dt),
     }
-    return u, info
+    return u, x_out, info
 
 
 def _print_report(label, rep):
@@ -222,15 +265,24 @@ def _print_report(label, rep):
           + f"   [F1={1-means['c1']:.5f}  F_ET={1-means['c2']:.5f}]")
 
 
-def save(u, info, gate, variant):
+def save(u, x, info, gate, variant):
+    """
+    Write the physical pulse, the raw pre-image, and the run metadata.
+
+    u and x go to SEPARATE .npy files rather than one .npz because every
+    downstream consumer -- EST/diagnostics.py, EST/compare_warmstart.py -- loads
+    u_<gate>_<variant>.npy with a plain np.load, and an archive would break them.
+    """
     os.makedirs(PULSE_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
     pulse_path = os.path.join(PULSE_DIR, f"u_{gate}_{variant}.npy")
+    x_path = os.path.join(PULSE_DIR, f"x_{gate}_{variant}.npy")
     json_path = os.path.join(LOG_DIR, f"est_{gate}_{variant}.json")
     np.save(pulse_path, u)
+    np.save(x_path, x)
     with open(json_path, "w") as fh:
         json.dump(info, fh, indent=2)
-    return pulse_path, json_path
+    return pulse_path, x_path, json_path
 
 
 def main():
@@ -257,8 +309,20 @@ def main():
                         "(which the C4 penalty carries). A warm start needs a "
                         "larger box than a cold one: the deramp amplifies the "
                         "pulse edges by up to ~150x.")
-    p.add_argument("--init", default=None,
-                   help="warm-start from a saved physical pulse (.npy)")
+    init_group = p.add_mutually_exclusive_group()
+    init_group.add_argument("--init", default=None,
+                            help="warm-start from a saved PHYSICAL pulse "
+                                 "(u_*.npy). The pre-image is recovered by "
+                                 "deramp, which amplifies the pulse edges by up "
+                                 "to ~151x, so this usually needs a raised "
+                                 "--hard-bound. Prefer --init-x when an x_*.npy "
+                                 "exists for the run.")
+    init_group.add_argument("--init-x", default=None,
+                            help="warm-start from a saved raw PRE-IMAGE "
+                                 "(x_*.npy). Exact: it is the vector L-BFGS-B "
+                                 "stopped on, feasible at the bound it ran under "
+                                 "by construction, so no deramp and no raised "
+                                 "--hard-bound are needed.")
     p.add_argument("--tag", default=None,
                    help="suffix for the output names, e.g. --tag warm writes "
                         "u_X_est_warm.npy; keeps a rerun from clobbering the "
@@ -268,28 +332,33 @@ def main():
 
     name = args.variant if args.tag is None else f"{args.variant}_{args.tag}"
 
-    def stage_hook(i, u_stage, rep):
-        """Save each stage's pulse, so the stage-1 -> stage-2 delta is measurable."""
+    def stage_hook(i, u_stage, x_stage, rep):
+        """
+        Save each stage's pulse AND pre-image, so the stage-1 -> stage-2 delta
+        stays measurable and either stage can be resumed from exactly.
+        """
         if args.no_save:
             return
         os.makedirs(PULSE_DIR, exist_ok=True)
-        path = os.path.join(PULSE_DIR, f"u_{args.gate}_{name}_stage{i}.npy")
-        np.save(path, u_stage)
-        print(f"    -> {path}")
+        for prefix, arr in (("u", u_stage), ("x", x_stage)):
+            path = os.path.join(PULSE_DIR,
+                                f"{prefix}_{args.gate}_{name}_stage{i}.npy")
+            np.save(path, arr)
+            print(f"    -> {path}")
 
-    u, info = train(gate=args.gate, variant=args.variant, n_t=args.n_t,
-                    dt=args.dt, trunc_list=args.trunc, w_amp=args.w_amp,
-                    maxiter=args.maxiter, seed=args.seed, amp0=args.amp0,
-                    hard_bound=args.hard_bound, init=args.init,
-                    stage_hook=stage_hook)
+    u, x, info = train(gate=args.gate, variant=args.variant, n_t=args.n_t,
+                       dt=args.dt, trunc_list=args.trunc, w_amp=args.w_amp,
+                       maxiter=args.maxiter, seed=args.seed, amp0=args.amp0,
+                       hard_bound=args.hard_bound, init=args.init,
+                       init_x=args.init_x, stage_hook=stage_hook)
 
     print("\n--- constraints on the saved pulse ---")
     for k, v in info["constraints"].items():
         print(f"  {k}: {v}")
 
     if not args.no_save:
-        pulse_path, json_path = save(u, info, args.gate, name)
-        print(f"\nsaved {pulse_path}\n      {json_path}")
+        pulse_path, x_path, json_path = save(u, x, info, args.gate, name)
+        print(f"\nsaved {pulse_path}\n      {x_path}\n      {json_path}")
 
 
 if __name__ == "__main__":
