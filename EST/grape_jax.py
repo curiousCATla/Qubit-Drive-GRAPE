@@ -231,16 +231,28 @@ def velocity_variance_cost(Psi_code_traj, dt, normalize=True):
     uniformly-paced one does not. It does not itself improve transparency, which
     is why the paper's stage-2 schedule drops it to zero.
 
-    NORMALIZATION -- a deviation from the printed equations, on evidence. The raw
-    variance of v = d_FS/dt carries units of (rad/us)^2 and is numerically huge:
-    measured on a 1 us X-gate trajectory at dt = 1 ns it is ~100, so with the
-    paper's w3 = 5-10 the C3 contribution would be ~700 against C1, C2 in [0, 1].
-    The fidelity terms would be numerically invisible and the optimizer would
-    minimize C3 alone. Dividing by mean(v)^2 -- the squared coefficient of
-    variation -- makes the term dimensionless and O(0.1-1), which is the only
-    reading under which the paper's stated weights (w1, w2, w3) = (1, 0.6-0.75,
-    5-10) form a sensible schedule. It is also dt-invariant, so refining the time
-    step does not silently reweight the objective.
+    NORMALIZATION -- a deviation from the printed equations, on evidence. Eqs.
+    (C6)-(C7) average over time steps and cardinals, which removes extensivity
+    but supplies no SCALE: the raw variance of v = d_FS/dt keeps units of
+    (rad/us)^2 and is unbounded above. Measured on the trained u_X_est at
+    dt = 1 ns, n_c = 20, it is 965, so with the paper's w3 = 5-10 the C3
+    contribution would be ~5e3-1e4 against C1, C2 in [0, 1]: the fidelity terms
+    would be numerically invisible and the optimizer would minimize C3 alone.
+
+    The 2/dt in Eq. (C5) is NOT the culprit -- d_FS shrinks proportionally, so
+    v -> 2*Delta_E(t) (Anandan-Aharonov) and both forms converge as dt -> 0
+    (raw variance moves 0.12% over a 16x refinement). v is simply large here:
+    mean(v) = 92 rad/us, of which 99.4% is drive-induced.
+
+    The load-bearing property is scale invariance. Under v -> lambda*v the raw
+    variance goes as lambda^2, so it penalizes SLOW motion as well as uneven
+    motion, and is globally minimized (exactly 0) by the zero-drive trajectory
+    -- the parking failure mode C3 exists to prevent. Dividing by mean(v)^2 --
+    the squared coefficient of variation -- is invariant under that rescaling,
+    dimensionless, unit-independent and O(0.1-1), which is the only reading
+    under which the paper's stated weights (w1, w2, w3) = (1, 0.6-0.75, 5-10)
+    form a sensible schedule. See EST/README.md, "Deviations from the published
+    equations", for the measured tables.
 
     Pass normalize=False for the literal Eqs. (C6)-(C7) form.
     """

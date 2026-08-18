@@ -45,6 +45,7 @@ def optimize_multi_state_pulse(
     hard_amp_limit=50.0,
     parallel_backend='loky',
     fidelity_fn=fidelity_multi_state,
+    snapshot_iters=None,
     verbose=True
 ):
     """
@@ -85,6 +86,20 @@ def optimize_multi_state_pulse(
         loky backend already caches its executor globally across calls
         with matching parameters) -- kept configurable in case that stops
         holding on a different joblib version/machine.
+    snapshot_iters : iterable of int, or None
+        Iteration numbers at which to record the pulse the run WOULD have
+        returned had `maxiter` been set to that number, exposed as
+        info['snapshots'] = {k: u_k}. Free instrumentation: an L-BFGS-B
+        callback that copies an array, no extra propagation.
+
+        What is stored is the *running best-bare-F* pulse, not the raw
+        iterate x_k, because that is what a truncated run actually returns:
+        best['F'] is a running max over every evaluated point, so it always
+        satisfies best['F'] >= F(x_k), and the best-vs-final rule below
+        therefore selects best['u'] except when the two coincide.
+
+        Snapshots are diagnostic only -- nothing here feeds the objective,
+        and leaving this None reproduces the previous behavior exactly.
     """
     if penalties is None:
         penalties = {'deriv': 0.00001, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
@@ -232,8 +247,31 @@ def optimize_multi_state_pulse(
 
             return cost, g.ravel()
 
+        # Optional mid-run snapshots (see snapshot_iters in the docstring).
+        # The callback fires once per accepted iteration, after that
+        # iteration's line search, so `best` already reflects every point
+        # evaluated up to and including iteration k.
+        snapshots = {}
+        callback = None
+        if snapshot_iters:
+            want = {int(k) for k in snapshot_iters}
+            counter = {'it': 0}
+
+            def callback(xk):
+                counter['it'] += 1
+                k = counter['it']
+                if k in want:
+                    if best['u'] is not None and best['F'] > 0.5:
+                        snapshots[k] = best['u'].copy()
+                    else:
+                        snapshots[k] = (
+                            project_bandlimit(xk.reshape(N, 4), dt, cav_band, tra_band)
+                            if bandlimit else xk.reshape(N, 4).copy()
+                        )
+
         # Run optimization
         res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
+                       callback=callback,
                        options={'maxiter': maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
 
         # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
@@ -307,7 +345,8 @@ def optimize_multi_state_pulse(
         'objective_label': obj_label,
         'best_bare_F_during_opt': best['F'],
         'trunc_list': trunc_list,
-        'disc_penalty_weight': penalties.get('disc', 0.0)
+        'disc_penalty_weight': penalties.get('disc', 0.0),
+        'snapshots': snapshots,
     }
 
     return u_opt, info

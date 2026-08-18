@@ -120,7 +120,53 @@ Two cost terms depart from the paper as printed. Both are deliberate, documented
 **1. $C_2$ normalization.** Eq. (C2) as printed divides the squared overlap by a single power of $N_{\mathrm{norm}} = \sqrt{\langle\psi_C|a^\dagger a|\psi_C\rangle}$, which does not bound $F_{\mathrm{ET}}$ in $[0,1]$. Dividing by $N_{\mathrm{norm}}^2$ does, via Cauchy–Schwarz:
 $|\langle\psi_E|a|\psi_C\rangle|^2 \le \langle\psi_C|a^\dagger a|\psi_C\rangle\,\langle\psi_E|\psi_E\rangle$ with $\psi_E$ of unit norm. The implementation uses $N_{\mathrm{norm}}^2$, so $F_{\mathrm{ET}}$ is a genuine fidelity.
 
-**2. $C_3$ normalization.** Eqs. (C4)–(C7) define $C_3$ as the raw variance of $v$, which carries units of $(\mathrm{rad}/\mu s)^2$. This is not a cosmetic issue. Measured on a 1 μs X-gate trajectory at $dt = 1$ ns, the raw variance is $\approx 100$, so with the paper's stated $w_3 = 5\text{–}10$ the $C_3$ contribution is $\approx 700$ against $C_1, C_2 \in [0,1]$: **the fidelity terms would be numerically invisible and the optimizer would minimize the regularizer alone.** Dividing by $\mathrm{mean}(v)^2$ — the squared coefficient of variation — yields 0.745, making the term dimensionless, $dt$-invariant, and comparable to the other two. This is the only reading under which the paper's stated weights $(1,\ 0.6\text{–}0.75,\ 5\text{–}10)$ form a coherent schedule. The literal form remains available via `normalize=False`, and three tests in `VelocityNormalizationTest` pin the argument in both directions.
+**2. $C_3$ normalization.** Eqs. (C4)–(C7) define $C_3$ as the raw variance of $v$; the implementation divides by $\mathrm{mean}(v)^2$. The rest of this subsection is the full argument, since this is the deviation most likely to be mistaken for a transcription error.
+
+*Why $C_3$ is not in $[0,1]$ even though C6–C7 look normalized.* C6 and C7 are **sample averages, not normalizations**. C6 takes a variance over the $N$ time steps and C7 a mean over the six cardinal points $j$; both divide by a *count*, which removes extensivity — $C_3$ does not grow when you add time steps or cardinals — but neither divides by any *scale*. An average of a dimensionful quantity is still dimensionful. $v$ carries $\mathrm{rad}/\mu s$, so $\mathrm{Var}_t(v)$ carries $(\mathrm{rad}/\mu s)^2$ and $C_3$ inherits it, with no upper bound of any kind. The $[0,1]$ boundedness of $C_1$ and $C_2$ comes from somewhere else entirely: both are built from squared overlaps of *unit-norm* states, capped at 1 by Cauchy–Schwarz. There is no analogous inequality available for a velocity variance, because there is nothing in Eqs. (C4)–(C7) that a velocity is measured *against*.
+
+*The $2/dt$ prefactor does not diverge.* This is the natural worry — $v_i = \tfrac{2}{dt}\arccos|\langle\psi_i|\psi_{i+1}\rangle|$ has $dt$ in a denominator — but the numerator cancels it exactly. For a smooth (here: band-limited) trajectory,
+
+$$
+|\langle\psi(t)|\psi(t+dt)\rangle| = 1 - \tfrac12(\Delta E\, dt)^2 + O(dt^4)
+\;\Longrightarrow\;
+2\arccos|\cdot| = 2\,\Delta E\, dt + O(dt^3),
+$$
+
+so $v_i \to 2\Delta E(t)$, the Anandan–Aharonov speed, with $\Delta E = \sqrt{\langle H^2\rangle - \langle H\rangle^2}$ the instantaneous energy uncertainty. The factor 2 in Eq. (C4) is precisely the convention that makes this identity hold. $v$ is therefore a well-defined continuum quantity and Eq. (C5) is a convergent finite-difference estimate of it, not a $dt$-amplified one — the Fubini–Study *distance* $d_{\mathrm{FS}}$ shrinks $\propto dt$ at exactly the rate the prefactor grows.
+
+Measured directly, by sub-dividing the trained `u_X_est.npy` into $r$ identical sub-steps (which leaves the *continuous* evolution untouched and only samples the trajectory more finely) at $n_c = 20$:
+
+| $r$ | $dt$ (ns) | $\mathrm{mean}(v)$ | $\mathrm{Var}(v)$ raw | $\mathrm{Var}/\mathrm{mean}^2$ | FS path length |
+|---|---|---|---|---|---|
+| 1 | 1.0 | 92.4116 | 964.70 | 0.11263 | 92.4116 |
+| 2 | 0.5 | 92.4380 | 965.58 | 0.11267 | 92.4380 |
+| 4 | 0.25 | 92.4447 | 965.81 | 0.11268 | 92.4447 |
+| 8 | 0.125 | 92.4464 | 965.86 | 0.11268 | 92.4464 |
+| 16 | 0.0625 | 92.4468 | 965.87 | 0.11268 | 92.4468 |
+
+The raw variance moves by 0.12% over a 16× refinement, converging from below as the $O(dt^2)$ term dies — it is not $dt$-sensitive at all. Pointwise, $v_i$ agrees with $2\Delta E(t_i)$ computed from the instantaneous $H_k$ to a max relative deviation of $2.0\times10^{-3}$ at $dt = 1$ ns. **So the answer to "is the problem the $2/dt$?" is no** — the printed $C_3$ is a perfectly well-posed continuum functional, $\langle\mathrm{Var}_t\, 2\Delta E_j(t)\rangle_j$. Any $dt$-invariance claimed for the normalized form is a property both forms already have.
+
+*The problem is that $v$ is physically large on this device.* $2\Delta E$ is set by the Hamiltonian, and on this chip the drives dominate it. On the trained X pulses at $dt=1$ ns, $n_c=20$:
+
+| | $\mathrm{mean}(v)$ (rad/μs) | $\mathrm{std}(v)$ | $\mathrm{Var}(v)$ raw | $\mathrm{Var}/\mathrm{mean}^2$ |
+|---|---|---|---|---|
+| `u_X_est` | 92.41 | 31.06 | 964.7 | 0.1126 |
+| `u_X_ord` | 85.29 | 29.65 | 878.9 | 0.1208 |
+
+$\mathrm{mean}(v) = 92.4\ \mathrm{rad}/\mu s$ is $2\pi \times 14.7$ MHz — the state sweeps ~92 rad of Fubini–Study path in the 1 μs gate. For contrast, $2\Delta E$ of the code cardinals under $H_0$ *alone* is $0.56\ \mathrm{rad}/\mu s$: **99.4% of the trajectory speed is drive-induced**, which is what one expects when $\varepsilon_{\max} = 25.13\ \mathrm{rad}/\mu s$ enters $H$ multiplied by $\sqrt{n}$ matrix elements. So $v \sim 10^2$ and $\mathrm{Var}(v) \sim 10^3$, and with the paper's $w_3 = 5\text{–}10$ the raw $C_3$ contribution to $C_{\mathrm{tot}}$ is $\approx 5\times10^3$ to $10^4$, against $C_1, C_2 \in [0,1]$. **The fidelity terms would be numerically invisible and the optimizer would minimize the regularizer alone.** (An earlier revision of this section quoted $\mathrm{Var} \approx 100$ and a normalized 0.745; those were measured on an untrained pulse at a different $N$ and $n_c$ and do not reproduce. The conclusion is unchanged and the margin is an order of magnitude wider than stated.)
+
+*A dimensionful term cannot carry a portable weight.* Because $\mathrm{Var}(v)$ has units of (time)$^{-2}$, its numerical value — and hence the meaning of $w_3$ — depends on the time unit. In rad/μs the raw variance is 965; write the identical physics in rad/ns and it is $9.7\times10^{-4}$, at which point $w_3 = 5\text{–}10$ is negligible rather than dominant. The unit that would make raw $C_3$ genuinely $O(1)$ is $\tau = 1/\mathrm{mean}(v) \approx 10.8$ ns, which is not a natural constant of anything — it is a property of this pulse. Supplying that scale from the trajectory itself is exactly what dividing by $\mathrm{mean}(v)^2$ does.
+
+*Scale invariance is the real reason, not just the magnitude.* Under a uniform slowdown $v \to \lambda v$, raw $\mathrm{Var} \to \lambda^2 \mathrm{Var}$ while $\mathrm{Var}/\mathrm{mean}^2$ is invariant. So the raw form penalizes *slow* motion as well as *uneven* motion, and its steepest descent direction is "turn the drives down." Scaling the trained pulse by $\lambda$:
+
+| $\lambda$ | 1.0 | 0.5 | 0.25 | 0.1 | 0.01 | 0.0 |
+|---|---|---|---|---|---|---|
+| $\mathrm{Var}(v)$ raw | 964.70 | 359.27 | 153.06 | 28.53 | 0.237 | **0.000** |
+| $\mathrm{Var}/\mathrm{mean}^2$ | 0.1126 | 0.1213 | 0.1761 | 0.2000 | 0.1399 | 0.000 |
+
+Raw $C_3$ falls by 4000× for a 100× amplitude reduction and reaches its **global minimum, exactly zero, at $\lambda = 0$** — the drift alone moves the code cardinals at a constant $0.57\ \mathrm{rad}/\mu s$, so the variance vanishes identically. The literal Eq. (C6)–(C7) term is therefore minimized by the parked trajectory, which is the precise failure mode $C_3$ was introduced to prevent, and with $w_3 \gg w_1$ that minimum is what the optimizer would find. The normalized form is flat in $\lambda$ over three decades (0.11–0.20), so it shapes the velocity *profile* and says nothing about its magnitude — which is the behaviour `velocity_variance_cost`'s docstring describes ("penalizes UNEVEN motion, not slow motion") and which is only literally true of the normalized form. Note the $\lambda = 0$ column is degenerate for both: with $v \equiv \mathrm{const}$ the numerator vanishes, so the normalized form is 0 there too via the $10^{-12}$ guard rather than being large. Its protection is against *near*-parking with any residual jitter, not against the measure-zero exactly-uniform case.
+
+*Summary.* Dividing by $\mathrm{mean}(v)^2$ — the squared coefficient of variation — makes the term dimensionless, unit-independent, scale-invariant, and $O(0.1\text{–}1)$, i.e. commensurate with $C_1$ and $C_2$. This is the only reading under which the paper's stated weights $(1,\ 0.6\text{–}0.75,\ 5\text{–}10)$ form a coherent schedule. The literal form remains available via `normalize=False`, and three tests in `VelocityNormalizationTest` pin the argument in both directions. One caveat on those tests: `test_normalized_form_is_dt_stable` regenerates band-limited white noise at each $N = T/dt$, so the two sides are different *physical* pulses and the test does not isolate discretization; the refinement table above is what actually establishes $dt$-convergence, and it does so for both forms.
 
 ### The constraint chain
 

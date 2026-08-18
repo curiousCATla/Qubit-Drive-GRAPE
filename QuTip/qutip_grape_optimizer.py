@@ -303,6 +303,42 @@ def qutip_dec_logical_unitary(u_dec, n_t, n_c, dt=DT_DEFAULT, alpha=np.sqrt(3.0)
     ])
 
 
+def qutip_full_propagator(u, n_t, n_c, dt=DT_DEFAULT):
+    """
+    Build the full D x D unitary by propagating the entire computational
+    basis through qutip.sesolve -- one sesolve call per basis vector, with
+    the time-dependent Hamiltonian (QobjEvo) built once and reused across
+    all D calls (qutip_final_state rebuilds it every call, which is fine
+    for a handful of states but wasteful at D=72).
+
+    Independent of core.propagator.full_propagator: different physics
+    engine (ODE integration, not eigendecomposition), same column-per-input
+    convention (column j is U|j>), so the result can be projected with the
+    exact same core.propagator.logical_block / pedersen_gate_fidelity /
+    leakage_L1 machinery used on grape_core's own propagator.
+    """
+    N = u.shape[0]
+    D = n_t * n_c
+    H0, Hc = build_qutip_hamiltonian(n_t, n_c)
+
+    tlist = np.arange(N + 1) * dt
+    terms = [H0]
+    for j in range(4):
+        vals = np.append(u[:, j], u[-1, j])
+        coeff = qt.coefficient(vals.astype(complex), tlist=tlist, order=0)
+        terms.append([Hc[j], coeff])
+    H = qt.QobjEvo(terms)
+
+    U = np.zeros((D, D), dtype=complex)
+    for j in range(D):
+        e_j = np.zeros((D, 1), dtype=complex)
+        e_j[j, 0] = 1.0
+        psi0_qt = qt.Qobj(e_j, dims=[[n_t, n_c], [1, 1]])
+        result = qt.sesolve(H, psi0_qt, tlist)
+        U[:, j] = result.states[-1].full().ravel()
+    return U
+
+
 # ---------------------------------------------------------------------------
 # 3. Piecewise-constant propagator + GRAPE adjoint gradient
 #    (same math as grape_core.step_data / fidelity_grad)

@@ -11,10 +11,11 @@ reasons, and they have different answers:
 
   * For the *fidelity ranking* -- if all configs are equally under-trained, the
     ranking may still be meaningful.
-  * For the *bandwidth budget* -- selection is "best fidelity subject to
-    bandwidth <= budget". If bandwidth is still drifting when the optimizer
-    stops, a config near the budget line could cross it with more iterations
-    and change the recommendation.
+  * For the *spectral-width budget* -- selection is "best fidelity subject to
+    each drive occupying at most BUDGET_FRAC of its own band mask". If the
+    occupied width is still drifting when the optimizer stops, a config near the
+    budget line could cross it with more iterations and change the
+    recommendation.
 
 This script answers both empirically: it reloads a cached pulse, continues
 optimizing it for `--extra` more iterations under the identical objective, and
@@ -104,6 +105,18 @@ def continue_config(gate, cfg, seed, maxiter, extra, eval_truncs, n_jobs=3):
         "F_min_after": s1["F_ped_heldout_min"],
         "spread_before": s0["robustness_spread"],
         "spread_after": s1["robustness_spread"],
+        # All three spectral statistics are reported: the budget is applied to
+        # `occ99_frac` (a fraction of each drive's own mask), so the continuation
+        # check has to be stated in that currency; `occ99_*` and `BW_*` keep
+        # continuity with the earlier tables.
+        "occ99_frac_before": m0["occ99_frac"],
+        "occ99_frac_after": m1["occ99_frac"],
+        "dfrac": m1["occ99_frac"] - m0["occ99_frac"],
+        "binding_before": m0["binding_drive"],
+        "binding_after": m1["binding_drive"],
+        "occ99_before": m0["occ99_MHz"],
+        "occ99_after": m1["occ99_MHz"],
+        "docc99": m1["occ99_MHz"] - m0["occ99_MHz"],
         "BW_before": m0["bandwidth_MHz"],
         "BW_after": m1["bandwidth_MHz"],
         "dBW": m1["bandwidth_MHz"] - m0["bandwidth_MHz"],
@@ -137,8 +150,14 @@ def main():
                               args.extra, ps.DEFAULT_EVAL_TRUNCS, n_jobs=args.n_jobs)
         rows.append(row)
         print(f"  F_held {row['F_held_before']:.6f} -> {row['F_held_after']:.6f} "
-              f"({row['dF_held']:+.2e}) | BW {row['BW_before']:.3f} -> "
-              f"{row['BW_after']:.3f} ({row['dBW']:+.3f} MHz) | "
+              f"({row['dF_held']:+.2e}) | W99 {row['occ99_frac_before']:.1%} -> "
+              f"{row['occ99_frac_after']:.1%} of own mask "
+              f"({row['dfrac']:+.1%}, binding {row['binding_before']}->"
+              f"{row['binding_after']}) | "
+              f"W99 {row['occ99_before']:.2f} -> {row['occ99_after']:.2f} MHz "
+              f"({row['docc99']:+.2f}) | "
+              f"BW {row['BW_before']:.3f} -> {row['BW_after']:.3f} "
+              f"({row['dBW']:+.3f} MHz) | "
               f"reconverged={row['reconverged']}", flush=True)
 
     df = pd.DataFrame(rows)

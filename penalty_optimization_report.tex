@@ -31,7 +31,7 @@
 \newcommand{\lamdisc}{\lambda_{\mathrm{disc}}}
 
 \title{Choosing the GRAPE Penalty Weights\\
-\large A Pareto Sweep Under a Hardware Bandwidth Budget}
+\large A Pareto Sweep Under a Hardware Spectral-Width Budget}
 \author{}
 \date{}
 
@@ -68,7 +68,7 @@ Hilbert-space truncation it was trained on. The training number goes up; the pul
 So the weights cannot be chosen by optimizing the same quantity the weights appear in. They have
 to be chosen against something training never sees. This report does that in three steps: it
 sweeps the weights, scores each candidate on the \emph{reported} gate fidelity over
-\emph{held-out} cavity truncations, and then picks a recipe subject to a hardware bandwidth
+\emph{held-out} cavity truncations, and then picks a recipe subject to a hardware spectral-width
 budget.
 
 \section{What is measured}
@@ -88,10 +88,154 @@ The distinction that matters throughout is between the \textbf{training objectiv
         \texttt{main.report\_pedersen\_gate\_fidelity}.
 \end{itemize}
 
-Alongside the fidelity, each candidate carries pulse-cost and robustness metrics:
-the RMS spectral bandwidth of the wider of the two drives, the peak drive amplitude, a
-per-step roughness (RMS first difference), the spread $\max - \min$ of $F_{\mathrm{held}}$
-across the held-out set, and the mean leakage $L_1$ out of the logical subspace.
+Alongside the fidelity, each candidate carries pulse-cost and robustness metrics: the
+\textbf{99\% occupied spectral width} $W_{99}$ of each drive, expressed as a share of that
+drive's own band mask; the peak drive amplitude; a per-step roughness (RMS first difference); the
+spread $\max - \min$ of $F_{\mathrm{held}}$ across the held-out set; and the mean leakage $L_1$
+out of the logical subspace. The scored cost is
+%
+\begin{equation}
+\label{eq:frac}
+\texttt{occ99\_frac} \;=\; \max\!\left(\frac{W_{99}^{C}}{\SI{54}{\mega\hertz}},\;
+\frac{W_{99}^{T}}{\SI{66}{\mega\hertz}}\right),
+\end{equation}
+%
+the share of its own allowance consumed by the worse drive, and the budget is a percentage of it.
+Section~\ref{sec:width} derives why $W_{99}$, and not the RMS spectral width the sweep originally
+scored, is the defensible statistic, and why the two drives are normalised separately.
+
+\subsection{The spectral cost statistic}
+\label{sec:width}
+
+For a complex drive $\epsilon$ with normalized power spectrum
+$p(f) = |\hat\epsilon(f)|^2 / \sum_{f'} |\hat\epsilon(f')|^2$, define
+%
+\begin{equation}
+\label{eq:w99}
+W_{99} \;=\; \min_{[a,b]}\,(b-a)
+\qquad \text{subject to} \qquad
+\sum_{a \leq f \leq b} p(f) \;\geq\; 0.99 .
+\end{equation}
+%
+This is the narrowest window carrying 99\% of the power. It is computed by
+\texttt{analysis.penalty\_sweep.occupied\_width} in $O(N \log N)$ (sort the \texttt{fftfreq} axis,
+cumulative-sum, one \texttt{searchsorted} per left edge), and its value is quantised to the FFT
+bin spacing $1/(N\,\mathrm{d}t) = \SI{0.909}{\mega\hertz}$.
+
+\paragraph{The metric it replaces was partly a gauge artifact.}
+The sweep originally scored \texttt{bandwidth\_MHz}, the second \emph{raw} moment of the power
+spectrum --- the RMS frequency about $f = 0$. By the K\"onig--Huygens identity this decomposes
+exactly as
+%
+\begin{equation}
+\label{eq:kh}
+\langle f^2 \rangle \;=\; \langle f \rangle^2 \;+\; \sigma_f^2 ,
+\end{equation}
+%
+so a quantity reported as a ``width'' in fact carries the spectral \emph{centroid} inside it. The
+centroid is not a property of the waveform. The lab-frame field is
+$\mathrm{Re}\bigl[\epsilon(t)\,e^{i\omega_{\mathrm{LO}} t}\bigr]$, and the pair
+$(\epsilon, \omega_{\mathrm{LO}})$ is redundant: the substitution
+%
+\begin{equation}
+\label{eq:gauge}
+\epsilon(t) \;\longmapsto\; \epsilon(t)\,e^{-2\pi i f_0 t},
+\qquad
+\omega_{\mathrm{LO}} \;\longmapsto\; \omega_{\mathrm{LO}} + 2\pi f_0
+\end{equation}
+%
+leaves the physical field identical while sending $\langle f\rangle \to \langle f\rangle - f_0$.
+Under Eq.~\eqref{eq:gauge}, $\sigma_f$ and $W_{99}$ are invariant and $\mathrm{BW}_{\mathrm{rms}}$
+is not. Measured on the two pulses at the centre of this study, $\langle f\rangle^2$ supplies
+\textbf{26\%} of $\langle f^2\rangle$ for the incumbent recipe and \textbf{51\%} for the
+$\lamd = 0$ control. Retuning the transmon drive LO by \SI{12}{\mega\hertz} --- routine, and free
+--- drops the control's reported bandwidth from \num{16.90} to \SI{15.59}{\mega\hertz}, and
+centring it exactly would give \SI{11.85}{\mega\hertz}, with no change whatever to the waveform.
+
+\paragraph{It also double-counted a constraint already enforced exactly.}
+The gauge-independent content of the RMS figure --- \emph{which} lab-frame frequencies carry power
+--- is the spectral support, and that is already pinned by the band-limit projection of
+\texttt{core/fourier\_cutoff.py} as a hard orthogonal projection: the measured power outside the
+mask is $\sim\!\num{6.5e-32}$ of the total. Charging for support a second time, softly, only
+creates something the optimizer can trade away.
+
+\paragraph{Why not simply the centroid-referred spread $\sigma_f$.}
+Eq.~\eqref{eq:kh} suggests dropping the $\langle f\rangle^2$ term and scoring $\sigma_f$, which is
+gauge-invariant and fixes the first defect. It does not fix the second: any $f^2$-weighted
+statistic is tail-dominated, and here the tails are exactly where the mask truncates. The fraction
+of the $f^2$ weight contributed by $|f| > \SI{20}{\mega\hertz}$ is \textbf{30.7\%} for the
+incumbent and \textbf{68.5\%} for the control, so the statistic is most sensitive precisely where
+it is least meaningful. $W_{99}$ weights each bin by its own power and nothing more.
+
+A ``99\% width symmetric about the centroid'' is likewise not usable. These spectra are strongly
+skewed (skewness $-1.05$ and $+0.70$), and a symmetric window measures \SI{82.29}{\mega\hertz} for
+the control's transmon drive --- wider than the \SI{66}{\mega\hertz} mask itself, because a window
+centred at $\langle f\rangle = -12.05$ spans $[-53, +29]$ and half of it is empty spectrum. The
+minimum-width construction of Eq.~\eqref{eq:w99} needs no centre at all.
+
+\paragraph{Two drives, two allowances.}
+The cavity and transmon drives do not share a spectral allowance: the hard masks are
+$\pm\SI{27}{\mega\hertz}$ and $\pm\SI{33}{\mega\hertz}$, so \SI{54}{\mega\hertz} against
+\SI{66}{\mega\hertz}. They are also separate hardware chains --- own LO, mixer, DAC channel and
+line --- so nothing in the apparatus experiences the maximum of the two widths. Scoring
+$\max(W_{99}^{C}, W_{99}^{T}) \leq \tau$ is therefore a conjunction of two constraints forced to
+share one threshold, and comparing the raw widths is comparing ``20 GB used'' on a 50 GB disk
+against ``25 GB used'' on a 100 GB disk.
+Normalising each width by its own allowance first, as in Eq.~\eqref{eq:frac}, restores the correct
+conjunction:
+%
+\begin{equation}
+\label{eq:conj}
+\max\!\left(\frac{x}{a},\, \frac{y}{b}\right) \leq t
+\qquad\Longleftrightarrow\qquad
+(x \leq ta) \;\wedge\; (y \leq tb).
+\end{equation}
+%
+This is not a distinction without a difference. Two grid configurations bind on the
+\emph{cavity}, and one of them is decisive: $\lamd = 0$, $\lamb = 6\times10^{-6}$ has its cavity
+drive at \textbf{87.5\%} of the cavity mask while its transmon drive sits at \textbf{66.1\%} of
+the transmon mask. A transmon-only rule at 70\%, or any rule comparing raw widths without asking
+what each drive was allowed, would have \emph{admitted} it --- and it is a $\lamd = 0$ negative
+control with the third-highest fidelity in the study ($F_{\mathrm{held}} = \num{0.999578}$), so
+admitting it would have handed it the recommendation. The per-drive rule rejects it for the
+correct reason: its cavity drive consumes 87.5\% of the cavity's own allowance.
+
+\paragraph{The budget is a percentage, not a bare number of MHz.}
+$W_{99}$ is bounded above by each drive's mask width by construction, so
+%
+\begin{equation}
+\texttt{occ99\_frac} \;\leq\; \texttt{BUDGET\_FRAC} = 0.70
+\quad\Longrightarrow\quad
+\SI{37.8}{\mega\hertz}\ \text{cavity},\quad \SI{46.2}{\mega\hertz}\ \text{transmon},
+\end{equation}
+%
+a self-documenting and dimensionless threshold. This form is deliberate. The candidate statistics
+live on different scales over this sweep (\texttt{bandwidth\_MHz} spans \numrange{5.02}{18.31},
+$\sigma_f$ \numrange{4.23}{14.30}, $W_{99}$ \numrange{17.27}{64.55} in MHz), so the old
+\SI{16}{\mega\hertz} threshold carried across to $\sigma_f$ would admit \emph{every}
+configuration and hand the recommendation to a $\lamd = 0$ negative control --- the exact
+configuration this study exists to reject. A percentage cannot be mis-ported that way.
+\texttt{validation/test\_pulse\_metrics.py} pins the gauge invariance, the conjunction
+equivalence of Eq.~\eqref{eq:conj}, that selection failure, and the fact that the binding drive is
+not always the transmon.
+
+\paragraph{The recommendation does not change.}
+Calibrated to equal strictness --- 28 of the 33 distinct configurations feasible --- all four
+statistics select the same recipe, $\lamd = 10^{-6}$ with the other weights at incumbent, at
+$F_{\mathrm{held}} = \num{0.999236}$ (seed-averaged over $n = 3$):
+\texttt{bandwidth\_MHz} $\leq 16.0$, $\sigma_f \leq 10.0$,
+$W_{99} \leq \SI{44.9}{\mega\hertz}$, and \texttt{occ99\_frac} $\leq 0.70$ all agree. Their rank
+correlations over the sweep are \num{0.99} (RMS--$\sigma_f$), \num{0.95} (RMS--$W_{99}$) and
+\num{0.96} ($\sigma_f$--$W_{99}$). This is a metric-correctness fix, not a result-changing one,
+and the same holds for the per-drive normalisation: at 70\% of each drive's own mask, 14 of the 15
+OFAT and 20 of the 25 grid configurations remain feasible and the two sweeps select
+$\lamd = 10^{-6}$ ($F = \num{0.999236}$) and $\lamd = 3\times10^{-6}$, $\lamb = 6\times10^{-5}$
+($F = \num{0.997947}$) exactly as before. Selection is also stable under replication: the same
+recipe is chosen seed-by-seed, even though Section~\ref{sec:replication} shows its margin over
+the incumbent is not separated from noise at $n = 3$. What changes is the \emph{margin} and the
+\emph{reason}: the nearest rejected configuration now misses by 9.1 percentage points of its own
+allowance rather than \SI{0.9}{\mega\hertz}, and one rejection is now attributed to the drive that
+actually causes it.
 
 \subsection{Experimental design}
 
@@ -101,13 +245,18 @@ $\pm\SI{33}{\mega\hertz}$ transmon), the amplitude limits (\num{40} rad/$\mu$s),
 $\mathrm{d}t = \SI{2}{\nano\second}$ --- is pinned in \texttt{analysis.penalty\_sweep.FIXED}.
 Two search modes are used: a one-factor-at-a-time (OFAT) ladder over each axis in turn with the
 others at their incumbent values, and a focused two-dimensional grid over $\lamd \times \lamb$.
-The OFAT axes are $\lamd$, $\lamb$, $\lamdisc$, and the amplitude \emph{threshold}
-$\epsilon_{\max}$; the reason $\epsilon_{\max}$ appears in place of the weight $\lama$ is given
-in Section~\ref{sec:inert}.
+The OFAT axes are $\lamd$, $\lamb$, and the amplitude \emph{threshold} $\epsilon_{\max}$; the
+reason $\epsilon_{\max}$ appears in place of the weight $\lama$ is given in
+Section~\ref{sec:inert}. A $\lamdisc$ ladder was run and then retired for the same reason, and
+its five rows are retained --- as the noise measurement of Section~\ref{sec:floors} rather than
+as an axis.
 
-Because L-BFGS-B on this landscape is non-convex, each configuration is trained from several
-random seeds and the figures carry the across-seed standard deviation. A fidelity gap smaller
-than that spread is not a ranking.
+Because L-BFGS-B on this landscape is non-convex, the two axes that carry claims ($\lamd$ and
+$\lamb$) are trained from three random seeds and the figures carry the across-seed standard
+deviation. A fidelity gap smaller than that spread is not a ranking. The seed replication is
+what the retired $\lamdisc$ ladder and the trimmed grid paid for: Section~\ref{sec:floors} shows
+that at a single seed, neither $\lamb$ nor the recommendation's margin can be separated from a
+reseed, so replication --- not more grid cells --- is where the compute belongs.
 
 \section{Results}
 \label{sec:results}
@@ -118,16 +267,17 @@ than that spread is not a ranking.
   \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{figures/penalty_ofat.pdf}
-    \caption{Response of the reported held-out fidelity (top row) and the RMS pulse bandwidth
-    (bottom row) as each penalty weight is varied with the other three held at the incumbent
-    recipe. The dotted vertical line marks the incumbent value; error bars are the standard
-    deviation across seeds. The leftmost point of each ladder is the $\lambda = 0$ negative
-    control. Fidelity and bandwidth are plotted on separate rows rather than a shared twin axis,
-    because the two scales are not commensurate.}
+    \caption{Response of the reported held-out fidelity (top row) and the 99\% occupied spectral
+    width $W_{99}$, as a share of the binding drive's own band mask (bottom row), as each penalty
+    weight is varied with the other three held at the
+    incumbent recipe. The dotted vertical line marks the incumbent value; error bars are the
+    standard deviation across seeds. The leftmost point of each ladder is the $\lambda = 0$
+    negative control. Fidelity and width are plotted on separate rows rather than a shared twin
+    axis, because the two scales are not commensurate.}
     \label{fig:ofat}
   \end{figure}
 }{\emph{[Figure \texttt{figures/penalty\_ofat.pdf} not found --- run the sweep and
-Section 3 of \texttt{penalty\_optimization.ipynb}.]}}
+Section 6 of \texttt{penalty\_optimization.ipynb}.]}}
 
 The $\lambda = 0$ rows are the control that makes the whole exercise meaningful. If removing a
 penalty raised the training fidelity without costing anything measurable in bandwidth,
@@ -157,9 +307,18 @@ observed peak --- in place of the dead $\lama$ ladder.
 At convergence the three training truncations already agree to $\sim 10^{-4}$
 ($F_{\mathrm{coh}} = 0.997287,\, 0.997404,\, 0.997410$ at $n_c = 22, 24, 26$), so the
 discrepancy cost is $\sum_{i \neq j}(F_i - F_j)^2 = \num{5.8e-8}$. Even at weight $5.0$ that
-contributes \num{2.9e-7} against an $O(1)$ fidelity term --- seven orders of magnitude down,
-which is why the measured response across $\lamdisc \in [0, 5]$ is $\sim 10^{-11}$, i.e.\
-numerical noise.
+contributes \num{2.9e-7} against an $O(1)$ fidelity term --- seven orders of magnitude down.
+The gradient share is no larger: $\sum_{i\neq j} 2(F_i - F_j)(g_i - g_j)$ with
+$|F_i - F_j| \sim 10^{-4}$ is some four orders below the fidelity gradient it is added to. The
+measured response of the \emph{training} objective across $\lamdisc \in [0,5]$ is
+correspondingly $\sim 10^{-11}$.
+
+The \emph{held-out} response is not $10^{-11}$; it is \num{1.03e-3}, and the gap between those
+two numbers is the most useful thing this ladder produced. A perturbation four orders below the
+gradient cannot systematically improve a pulse, but it is finite, so it does move a non-convex,
+non-converged L-BFGS-B trajectory into a different local basin --- and different basins differ
+in held-out fidelity at the $10^{-3}$ level. That makes the $\lamdisc$ ladder a calibrated null
+experiment rather than a wasted one; Section~\ref{sec:floors} uses it as such.
 
 It is worth being precise about why widening the \emph{scoring} range does not rescue $\lamdisc$.
 The held-out truncations are a scoring set; the discrepancy term is computed \emph{inside
@@ -173,6 +332,78 @@ under different settings. The conclusion is narrower and more useful --- as the 
 currently configured, tuning either weight is wasted effort, and the $\lama$ term could be
 removed from Eq.~\eqref{eq:cost} with no effect at all.
 
+\subsection{Two noise floors, and which one applies}
+\label{sec:floors}
+
+Every effect size below has to be read against a floor, and this study admits two. They differ by
+almost an order of magnitude, so which one is quoted decides whether a result is reported as
+decisive or as marginal.
+
+\begin{description}
+  \item[$\varepsilon_{\mathrm{bitwise}} = \num{1.5e-4}$.] Two configurations in this sweep are the
+    same recipe to one part in $10^{16}$ --- an OFAT rung computed as
+    $\texttt{BASELINE}\times\texttt{multiplier}$ landing on a value the grid typed as a literal.
+    The harness hashes the exact float, so both were trained. Their scores differ by
+    \num{1.5e-4}. This is reduction-order nondeterminism and nothing else: at $10^{-16}$ the two
+    trajectories are the same trajectory.
+  \item[$\varepsilon_{\mathrm{basin}} = \num{1.03e-3}$.] The retired $\lamdisc$ ladder spans
+    $\lamdisc \in \{0, 0.05, 0.15, 0.5, 1.5, 5.0\}$ --- a hundredfold range \emph{including
+    exactly zero} --- under a perturbation shown above to be dynamically null. Its held-out
+    fidelities nonetheless spread by \num{1.03e-3}, non-monotonically and with no trend. This is
+    the optimizer changing basins, and it is what a \emph{finite} change to any weight does.
+\end{description}
+
+$\varepsilon_{\mathrm{basin}}$ is the operative floor, because every comparison in this report is
+between two configurations whose weights differ finitely. Read against it:
+
+$\varepsilon_{\mathrm{basin}}$ was estimated before seeds were replicated, and replication has
+since checked it directly: the mean across-seed standard deviation over the fifteen OFAT
+configurations at $n = 3$ is \num{1.12e-3}, against the null ladder's \num{4.0e-4}. The null
+experiment was a good proxy for the reseed spread, and a conservative one.
+
+\subsection{What survives replication}
+\label{sec:replication}
+
+Because every configuration shares the same three seeds, the informative contrast is
+\emph{paired}: differencing two configurations seed-by-seed cancels the basin term they hold in
+common, which a comparison of two means with their own error bars does not.
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+Contrast & Per-seed differences & Mean & Paired $t(2)$ \\
+\midrule
+$\lamd = 10^{-4}$ vs.\ incumbent (control) & $-9.0, -7.2, -9.5$ & \num{-8.56e-3} & $-12.0$ \\
+Recommendation vs.\ incumbent              & $+2.5, +1.2, +0.8$ & \num{+1.48e-3} & $+2.9$ \\
+\bottomrule
+\end{tabular}\\[2pt]
+{\footnotesize Differences in units of $10^{-3}$. The two-tailed 5\% critical value at 2 dof is
+$4.30$.}
+\end{center}
+
+\paragraph{$\lamd$ is real.} Monotone over the full ladder, spread \num{1.04e-2}, and the
+positive control clears the bar by a factor of three. The method detects an effect of that size
+comfortably at $n = 3$.
+
+\paragraph{$\lamb$ is unidentified.} The range of its seed-means is \num{6.4e-4} --- smaller
+than the \num{1.29e-3} standard deviation of any \emph{single point} on the axis. At $n = 1$ it
+presented as a \num{2.2e-3} effect; replication shows that was basin noise. It is reported here
+as unidentified rather than weak, and the same applies to $\epsilon_{\max}$.
+
+\paragraph{The recommendation is directionally consistent but not established.} It wins on all
+three seeds, but at $t(2) = 2.9$ it does not clear the 5\% bar. The margin also \emph{shrank}
+under replication, from the \num{2.47e-3} measured at seed 42 alone to \num{1.48e-3}: seed 42 was
+the most favourable of the three, which is precisely the failure mode a single-seed study is
+exposed to. The defensible claim is that $\lamd$ should be reduced from its incumbent value and
+that the trend across the ladder supports it --- not that $10^{-6}$ specifically beats
+$10^{-5}$. Separating those two needs more seeds, not more axes: an effect $5.8\times$ larger
+cleared the bar at $n = 3$, so this one needs of order a decade more samples, or a design that
+pairs on something beyond the seed.
+
+This is the finding that redirected the compute budget from grid cells to seed replication, and
+it is the reason the trimmed design is not merely cheaper but more informative than the one it
+replaces.
+
 \subsection{The \texorpdfstring{$\lamd \times \lamb$}{deriv x boundary} grid}
 
 \IfFileExists{figures/penalty_grid_heatmap.pdf}{%
@@ -180,17 +411,26 @@ removed from Eq.~\eqref{eq:cost} with no effect at all.
     \centering
     \includegraphics[width=0.85\textwidth]{figures/penalty_grid_heatmap.pdf}
     \caption{Held-out Pedersen fidelity over the two-dimensional
-    $\lamd \times \lamb$ grid, with the RMS bandwidth annotated in each cell. The color ramp
-    is single-hue sequential: it encodes magnitude, not polarity.}
+    $\lamd \times \lamb$ grid, with the 99\% occupied width $W_{99}$ --- as a share of the
+    binding drive's own band mask --- annotated in each cell. The color ramp is single-hue
+    sequential: it encodes magnitude, not polarity.}
     \label{fig:grid}
   \end{figure}
 }{\emph{[Figure \texttt{figures/penalty\_grid\_heatmap.pdf} not found --- run the grid sweep.]}}
 
-The grid uses the two axes that measurably move the pulse. $\lamd$ controls waveform smoothness
+The grid uses the two axes that plausibly move the pulse. $\lamd$ controls waveform smoothness
 and therefore bandwidth; $\lamb$ controls how hard the drive is pinned to zero at the pulse
 edges, which constrains the same waveform through a different mechanism, so an interaction
 between them is plausible. A $\lamd \times \lamdisc$ grid was the original design, but by
 Section~\ref{sec:inert} it would be constant along the $\lamdisc$ axis.
+
+The grid shown is the full $5\times5$ as run. Its durable finding is that the response is
+effectively \emph{one}-dimensional: variation along $\lamd$ is \numrange{6.3e-3}{1.21e-2} at
+every fixed $\lamb$, while variation along $\lamb$ is \numrange{8.1e-4}{4.81e-3} --- straddling
+$\varepsilon_{\mathrm{basin}}$ and non-monotone in all five rows. Having established that, the
+harness's grid is trimmed to the low-$\lamd$ $3\times3$ corner that brackets the recommended
+$\lamd = 10^{-6}$; all nine of those cells are already trained, so the retained interaction check
+now costs nothing and the $5\times5$ need not be re-run.
 
 \subsection{Pareto front and the budgeted recommendation}
 
@@ -198,19 +438,24 @@ Section~\ref{sec:inert} it would be constant along the $\lamdisc$ axis.
   \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.85\textwidth]{figures/penalty_pareto.pdf}
-    \caption{Reported held-out fidelity against RMS pulse bandwidth. A configuration is on the
-    front when no other is simultaneously narrower in bandwidth and higher in fidelity. The
-    shaded region lies outside the bandwidth budget; the star marks the recommendation, and the
-    open diamond the incumbent recipe.}
+    \caption{Reported held-out fidelity against the 99\% occupied spectral width $W_{99}$,
+    expressed as a share of each drive's own band mask and maximised over the two drives. A
+    configuration is on the front when no other is simultaneously narrower and higher in
+    fidelity. The shaded region lies outside the 70\% budget; the star marks the recommendation,
+    and the open diamond the incumbent recipe.}
     \label{fig:pareto}
   \end{figure}
 }{\emph{[Figure \texttt{figures/penalty\_pareto.pdf} not found --- run the sweep.]}}
 
 The selection rule is deliberately simple and stated in advance, so it cannot be retrofitted to
-whatever the data happened to show: \emph{among configurations whose mean RMS bandwidth is within
-the budget, take the highest mean held-out Pedersen fidelity; break ties toward lower
-bandwidth.} The budget is a property of the control hardware, not of the optimization, which is
-why it enters as a constraint rather than as another term in Eq.~\eqref{eq:cost}.
+whatever the data happened to show: \emph{among configurations for which every drive occupies at
+most \texttt{BUDGET\_FRAC} of its own band mask, take the highest mean held-out Pedersen fidelity;
+break ties toward lower $W_{99}$.} By Eq.~\eqref{eq:conj} that per-drive conjunction is exactly the
+single filter \texttt{occ99\_frac} $\leq$ \texttt{BUDGET\_FRAC}. The
+budget is a property of the control hardware, not of the optimization, which is why it enters as a
+constraint rather than as another term in Eq.~\eqref{eq:cost}. Five of the 38 configurations are
+rejected by it, and all five have $\lamd = 0$: the constraint excludes exactly one recipe family
+rather than a scattering of outliers.
 
 \subsection{Summary table}
 
@@ -220,12 +465,17 @@ why it enters as a constraint rather than as another term in Eq.~\eqref{eq:cost}
     \small
     \input{tables/penalty_sweep_summary.tex}
     \caption{Penalty configurations ranked by held-out Pedersen fidelity, budget-feasible rows
-    first. $\lambda_{\mathrm{d}}, \lambda_{\mathrm{b}}, \lambda_{\mathrm{a}}$ abbreviate the
-    derivative, boundary, and amplitude weights. Generated by
-    \texttt{visualization.penalty\_viz.summary\_table}.}
+    first, under the budget \penaltybudget. $\lambda_{\mathrm{d}}, \lambda_{\mathrm{b}}$
+    abbreviate the derivative and boundary weights. $W_{99}^{C}$ and $W_{99}^{T}$ are the cavity
+    and transmon occupied widths as shares of their own \SI{54}{\mega\hertz} and
+    \SI{66}{\mega\hertz} masks; \emph{binding} names the drive the budget is taken from.
+    $\sigma_f$, $\langle f\rangle_T$ and $\bar n_{\mathrm{drv}}$ are reported diagnostics and are
+    not scored on (Section~\ref{sec:width}). Generated by
+    \texttt{visualization.penalty\_viz.summary\_table}, which also defines
+    \texttt{\textbackslash penaltybudget} so this caption cannot drift out of date.}
     \label{tab:summary}
   \end{table}
-}{\emph{[Table \texttt{tables/penalty\_sweep\_summary.tex} not found --- run Section 6 of the
+}{\emph{[Table \texttt{tables/penalty\_sweep\_summary.tex} not found --- run Section 11 of the
 notebook.]}}
 
 \section{Caveats}
@@ -240,17 +490,27 @@ failure this sweep exists to detect --- but the absolute value of $F_{\mathrm{he
 be quoted as ``the gate fidelity.'' The per-truncation breakdown in the manifest JSON is the
 honest view.
 
-\paragraph{Bandwidth here is a cost proxy, not a hardware specification.}
-\texttt{bandwidth\_MHz} is an RMS spectral width, useful for ranking candidates against each
-other. It is not an occupied-bandwidth or $-\SI{3}{\decibel}$ figure. The genuinely hard
-frequency constraint is the band-limit projection inside the optimizer
-(\texttt{core/fourier\_cutoff.py}), which is enforced by construction and is never violated
-regardless of the penalty weights.
+\paragraph{The scored width \emph{is} an occupied-bandwidth figure.}
+An earlier version of this report warned that the scored statistic was an RMS spectral width,
+useful for ranking but ``not an occupied-bandwidth or $-\SI{3}{\decibel}$ figure.'' That caveat
+is now discharged in the reader's favour: the scored statistic is $W_{99}$ of Eq.~\eqref{eq:w99},
+which is exactly an occupied-bandwidth figure at a 99\% power criterion; it is invariant under the
+drive-LO gauge freedom of Eq.~\eqref{eq:gauge}; and it is charged per drive against that drive's
+own allowance. It remains a \emph{soft} budget applied after training. The hard and the soft limit
+are both per-drive and they are not the same limit: the band-limit projection
+(\texttt{core/fourier\_cutoff.py}) fixes where power may exist at all, is applied to the controls
+and the gradient at every iteration, and is never violated regardless of the penalty weights;
+$W_{99}$ measures how much of that allowance a converged pulse actually consumes, which the
+projection cannot express.
 
 \paragraph{Seed variance is part of the result.}
 The optimizer is non-convex and warm-started randomly. Differences in held-out fidelity smaller
 than the across-seed standard deviation reported in Table~\ref{tab:summary} do not establish that
-one recipe beats another.
+one recipe beats another, and by Section~\ref{sec:floors} that threshold is
+$\sim\!\num{1e-3}$, not $\sim\!\num{1e-4}$. Seeds are replicated across the OFAT ladders; the
+grid remains single-seed, so its cells carry no error bar and the one-dimensionality it
+establishes rests on the consistency of the $\lamd$ ordering across its five rows rather than on
+any individual cell.
 
 \paragraph{The recommendation is per-gate.}
 The sweep is run for one logical gate at a time. A recipe selected on $X$ is a reasonable
@@ -260,20 +520,52 @@ starting point for the other gates, not a validated setting for them.
 \label{sec:repro}
 
 \begin{lstlisting}
-# OFAT ladder over all four penalties
+# OFAT ladder, 3 seeds, as 3 concurrent shards. One config occupies only
+# ~2.4 cores, so a serial sweep leaves most of a 10-core machine idle.
+for i in 0 1 2; do
+  python analysis/penalty_sweep.py --gate X --mode ofat \
+         --seeds 42 43 44 --maxiter 1500 --shard $i/3 &
+done; wait
 python analysis/penalty_sweep.py --gate X --mode ofat \
-       --seeds 42 7 123 --maxiter 1500
+       --seeds 42 43 44 --maxiter 1500 --merge
 
-# Focused 2-D grid
+# Focused 2-D grid (all cells cached; completes in seconds)
 python analysis/penalty_sweep.py --gate X --mode grid \
-       --grid-x deriv --grid-y boundary --seeds 42 7 123 --maxiter 1500
+       --grid-x deriv --grid-y boundary --seeds 42 43 44 --maxiter 1500
 
 # Figures, budgeted recommendation, and tables
-#   -> set BW_BUDGET in penalty_optimization.ipynb, run with RUN_SWEEP = False
+#   -> set BUDGET_FRAC (% of each drive's own mask) in
+#      penalty_optimization.ipynb, run with RUN_SWEEP = False
+
+# Metric + selection acceptance tests
+python validation/test_pulse_metrics.py -v
 \end{lstlisting}
 
 Both trained pulses and scored metric rows are disk-cached under
 \texttt{results/penalty\_sweep\_cache/}, keyed by a hash of the full configuration, so an
-interrupted sweep resumes without retraining and re-scoring never re-optimizes.
+interrupted sweep resumes without retraining and re-scoring never re-optimizes. Shards share
+that cache and write disjoint rows, so they need no locking; \texttt{-{}-merge} rebuilds the
+combined table from it in the order a serial run would have produced, and refuses to emit a
+partial table if any row is missing.
+
+Each trained configuration also keeps the pulse a run truncated at 500 and at 1000 iterations
+would have returned (\texttt{SNAPSHOT\_ITERS}), scored into \texttt{F\_ped\_heldout\_mean@500}
+and \texttt{@1000}. The optimizer-side cost is a callback that copies an array and the scoring
+cost is $\sim\!1.7\%$ of training, in exchange for a maxiter-sensitivity curve on every
+configuration.
+
+The question it exists to answer is whether a short screening stage preserves the \emph{ranking}
+of configurations. On the 30 configurations that carry snapshots, the Spearman correlation
+between the 500-iteration ordering and the final one is \num{0.88} and \num{0.94} on the two
+seeds; the top-3 sets agree exactly on both, and the eventual winner is in the 500-iteration
+top-3 every time. A screen at one third of the iteration budget is therefore a sound shortlisting
+tool.
+
+It is worth being clear about how much that buys, though. With only fifteen configurations per
+gate, screening then retraining the survivors saves around a third of the cost of extending to
+all six logical gates. The larger lever is the one Section~\ref{sec:replication} supplies: since
+$\lamb$ and $\epsilon_{\max}$ are unidentified, a per-gate sweep needs only the six-rung $\lamd$
+ladder, which is a $2.5\times$ reduction before any screening is applied. Replication paid for
+itself twice --- once in what it established, and once in what it allowed to be dropped.
 
 \end{document}
