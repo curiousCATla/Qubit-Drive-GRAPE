@@ -296,9 +296,10 @@ Headline comparison — the EsT : Ord separation each run achieves, against the 
 |---|---|---|---|---|---|---|
 | X, cold | 600 | 0.99920 | 0.679 | 0.208 | 2.18× | 2.53× |
 | X, warm | 1000 | 0.99904 | 0.736 | 0.149 | 3.05× | 3.07× |
-| **H, cold** | **2000** | **0.99968** | **0.818** | **0.113** | **4.65×** | **4.58×** |
+| **X, cold** | **2000** | **0.99929** | **0.730** | **0.148** | **3.15×** | **2.99×** |
+| H, cold | 2000 | 0.99968 | 0.818 | 0.113 | 4.65× | 4.58× |
 
-Every metric improves monotonically with iteration count, and the H run is the first to reach the paper's $F_{\mathrm{ET}} \approx 0.83$ (0.827 at stage 1). Note the confound: the H row changes both the iteration count *and* the gate, so it is not a controlled demonstration that iterations alone are responsible — see limitation 1.
+$F_{\mathrm{ET}}$ does not improve monotonically with iteration count within a gate: cold-starting X at 2000 it/stage moves $F_{\mathrm{ET}}$ only from 0.679 (600 it) to 0.730, and even *undershoots* the 1000-it warm restart's 0.736. This is the controlled rerun limitation 1 called for — same gate, same cold start, same everything except iteration budget, run against H at an identical 2000-it/stage budget — and it settles the question: **the H run's higher $F_{\mathrm{ET}}$ is not an iteration-count artifact.** X gets a real but modest gain from the extra iterations (+0.051 over the 600-it cold baseline) and plateaus well short of H's 0.818, despite identical per-iteration cost (same $N$, $n_t$, $n_c$; only the target unitary differs). See limitation 1 for the full discussion.
 
 ### X gate (600–1000 iterations per stage)
 
@@ -335,6 +336,36 @@ Stage 1 buys transparency with fidelity exactly as intended: infidelity worsens 
 
 One caveat on the schedule as documented: `train_est.py`'s docstring says stage 2 moves the ET **and velocity** metrics by ~1%. That holds for $F_{\mathrm{ET}}$ but not for $C_3$, which regresses 17× ($0.0072 \to 0.1203$, back to Ord's 0.1208) because $w_3 = 0$ in stage 2 and nothing then holds uniform speed. Velocity uniformity is not a property of the delivered pulse; it is scaffolding that stage 1 uses to stop the optimizer parking the dynamics to cheat $C_2$.
 
+### X gate (2000 iterations per stage)
+
+Both variants cold-started at `--maxiter 2000`, otherwise identical to the 600/1000-it X runs above and to the H run below — this is the controlled rerun limitation 1 originally called for, isolating iteration count from gate choice by holding everything else fixed:
+
+```bash
+python EST/train_est.py --gate X --variant ord --maxiter 2000   # 2.8 h
+python EST/train_est.py --gate X --variant est --maxiter 2000   # 2.9 h
+```
+
+Run sequentially, not concurrently: `EST/grape_jax.py`'s objective calls are XLA calls that already try to saturate the whole CPU device on their own (see `build_gate_objective`'s docstring), so two concurrent `train_est.py` processes fight over the same cores rather than splitting them. A first attempt launched `est` and `ord` together and neither finished stage 1 after 30+ hours (~485% CPU each on a 10-core machine, load average 68.8); restarting sequentially fixed it immediately (~934% CPU, i.e. the whole machine, once alone) and both runs above completed in a few hours each.
+
+| | $F_1$ | $F_{\mathrm{ET}}$ | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ | max active Fock |
+|---|---|---|---|---|---|---|
+| **EsT** | 0.99929 | 0.730 | $3.58\times10^{-2}$ | $1.48\times10^{-1}$ | $2.70\times10^{-1}$ | 9 |
+| **Ord** | 1.00000 | 0.194 | $6.92\times10^{-2}$ | $4.66\times10^{-1}$ | $8.06\times10^{-1}$ | 8 |
+| ratio, Ord : EsT | — | 3.76× | **1.93×** | 3.15× | 2.99× | — |
+
+This is the direct answer to limitation 1: at an identical 2000-it/stage cold-start budget, X's $F_{\mathrm{ET}}$ reaches only 0.730 against H's 0.818 — a gap of 0.088. The extra 1400 iterations over the 600-it cold run bought X +0.051 in $F_{\mathrm{ET}}$ (0.679 → 0.730), and did not even clear the 1000-it warm restart's 0.736; since H's $F_{\mathrm{ET}}$ is fixed at 0.818 regardless, that +0.051 narrows the original 0.679-vs-0.818 gap (0.139) by exactly its own size and no more, leaving the majority of the gap (0.088, i.e. 63% of the original 0.139) unexplained by iteration count. H's schedule reaches a materially higher transparency ceiling under an identical budget. **So the earlier hypothesis — that iteration count alone explained H's advantage — does not hold**; something about the H gate itself, not just training time, lets the optimizer reach deeper transparency. $\Delta_{\mathrm{QEC}}$ is the one metric where X-2000 leads the whole field — its 1.93× ratio beats every other run reported here, including H's 1.30× — so the gate-dependent effect does not favor H uniformly across every metric, even though $F_{\mathrm{ET}}$, $L$, and $\eta$ all do.
+
+The stage decomposition:
+
+| | $F_1$ | $F_{\mathrm{ET}}$ | $C_3$ (vel. var.) |
+|---|---|---|---|
+| after stage 1 | 0.95706 | **0.729** | **0.00949** |
+| after stage 2 | **0.99929** | 0.730 | 0.14772 |
+
+Stage 1 reaches $F_{\mathrm{ET}} = 0.729$, already close to the final value, and hit `maxiter` without converging on gradient tolerance (`nit=2000`, `STOP: TOTAL NO. of ITERATIONS REACHED LIMIT`) — 2000 iterations is still the binding constraint here, exactly as for the 600-it X run and for H, so a longer stage 1 might move $F_{\mathrm{ET}}$ further. Stage 2 then buys a 60× infidelity improvement ($4.29\times10^{-2} \to 7.1\times10^{-4}$) for essentially no $F_{\mathrm{ET}}$ cost (0.729 → 0.730 — a marginal *gain*, unlike the small losses stage 2 costs in the 600/1000-it X runs and in H). The same $C_3$ scaffolding pattern holds: velocity variance drops 14× in stage 1 and returns to roughly the Ord level (0.1197 for this run's Ord pulse) once $w_3 \to 0$ in stage 2.
+
+Independent checks: the `eigh` re-score matches the JAX training value to five decimal places (0.999285 against $1 - c_1 = 0.99929$), and the truncation scan is flat over $n_c = 16\ldots28$ at a spread of $8.0\times10^{-6}$ (EsT) and $1.3\times10^{-9}$ (Ord), so single-truncation training is validated for this run as for the others. Reproduce with `python EST/diagnostics.py --gate X` (overwrites `tables/est_fig1_metrics.csv` and `figures/est/fig1def_est_vs_ord[_linear].png`; the archived 600-it comparison is preserved at `tables/est_fig1_metrics_X_it600.csv` and `figures/est/fig1def_est_vs_ord_X_it600[.png/_linear.png]`).
+
 ### H gate (2000 iterations per stage)
 
 Both variants cold-started at `--maxiter 2000`, otherwise identical to the X runs:
@@ -350,9 +381,9 @@ python EST/train_est.py --gate H --variant ord --maxiter 2000   # 10.1 h (loaded
 | **Ord** | 1.00000 | 0.165 | $5.31\times10^{-2}$ | $5.28\times10^{-1}$ | $8.35\times10^{-1}$ | 8 |
 | ratio, Ord : EsT | — | **5.0×** | 1.30× | **4.65×** | **4.58×** | — |
 
-This is the strongest separation the replication has produced, and it beats the best X result on every error-space metric at *higher* ordinary fidelity: $L$ is $0.113$ against the warm X pulse's $0.149$, $\eta$ is $0.182$ against $0.264$, and $F_1$ is $0.99968$ against $0.99904$. The Ord baselines are comparable across the two gates ($L = 0.528$ here versus $0.454$ for X), so the improvement lives in the EsT pulse rather than in a shifted control.
+This is the strongest separation the replication has produced, and it beats the best result from *any* of the three X runs — 600-it cold, 1000-it warm, or the matched-budget 2000-it cold rerun (see "X gate (2000 iterations per stage)" above) — on every error-space metric, at *higher* ordinary fidelity: the best X $L$ is $0.148$ (2000-it cold) against H's $0.113$, the best X $\eta$ is $0.264$ (1000-it warm) against H's $0.182$, and the best X $F_1$ is $0.99929$ (2000-it cold) against H's $0.99968$. Since the 2000-it cold X and H runs share an identical iteration budget and per-iteration cost, this is no longer confounded by training time — H reaches a better point on every one of these metrics under the same schedule. The Ord baselines are comparable across the two gates ($L = 0.528$ here versus $0.466$ for X at 2000 it), so the improvement lives in the EsT pulse rather than in a shifted control.
 
-$\Delta_{\mathrm{QEC}}$ is again the laggard at 1.30×, consistent with X's 1.49–1.60× and with limitation 4 below.
+$\Delta_{\mathrm{QEC}}$ is the one metric that does *not* favor H: its 1.30× ratio is the weakest of any run reported here, behind X's 1.49–1.93× across all three X runs (best at 2000-it cold), consistent with limitation 4 below.
 
 The stage decomposition:
 
@@ -397,13 +428,13 @@ The $r^2$ curves in the right-hand panel are the surviving weight inside each fi
 
 ### Known limitations
 
-1. **Iteration count was the binding constraint, and the H run resolved it.** Almost no stage-run has terminated on a convergence criterion; nearly all hit `maxiter`. The X warm restart tested running longer and suggested it helps without closing the gap — $F_{\mathrm{ET}}$ at stage 1 went $0.704$ (600 it) $\to 0.747$ (1000 it) against the paper's $\approx 0.83$ — which pointed suspicion at the $C_2$ normalization and the box artifact in item 3. The H run at 2000 iterations reaches $0.827$ at stage 1, so that reading was wrong: the schedule needed roughly 3× the iterations it was being given, and the normalization choices are not implicated.
+1. **Iteration count matters within a gate, but does not explain the H-vs-X gap.** Almost no stage-run has terminated on a convergence criterion; nearly all hit `maxiter`, so more iterations generally help — the X warm restart tested this at 1000 it and suggested it helps without closing the gap ($F_{\mathrm{ET}}$ at stage 1 went $0.704 \to 0.747$ against the paper's $\approx 0.83$), which pointed suspicion at the $C_2$ normalization and the box artifact in item 3. That suspicion was tested directly with the controlled rerun this item originally called for: X cold-started at `--maxiter 2000`, identical in every other respect to the H run (see "X gate (2000 iterations per stage)"). The result settles the question the other way — **$F_{\mathrm{ET}}$ reaches only $0.730$, not H's $0.818$.** X's own cold-start trend, $600 \to 2000$ it, is $0.679 \to 0.730$: a real but modest gain from 3.3× the iterations, not the missing factor. Iteration count and the normalization choices are therefore not implicated in the H-vs-X gap; something about the H gate itself reaches a higher transparency ceiling under an identical schedule, and that something is not yet identified.
 
-   Two caveats. This is H, not X, so it is not a controlled comparison — a matching X rerun at `--maxiter 2000` would settle it and has not been done. And the H stage-1 run still stopped on `maxiter`, so 0.827 is a lower bound on what the schedule converges to, not the converged value.
-2. **The comparison is not like-for-like.** Max active Fock level is 9 (X EsT), 10 (X EsT warm), 10 (H EsT) against 8 for both Ord pulses. The paper's fair-comparison criterion matches on this quantity rather than on gate duration, so every ratio above should be regarded as provisional — the EsT pulses are being scored across a wider Fock spread than the controls they are compared to. `diagnostics.py` reports the mismatch automatically.
+   One caveat carries over unchanged: both the X-2000 and H stage-1 runs stopped on `maxiter` rather than converging, so $0.730$ and $0.818$ are lower bounds on where their schedules would eventually converge, not final answers — a longer stage 1 could still narrow or widen the gap.
+2. **The comparison is not like-for-like.** Max active Fock level is 9 (X EsT cold, both 600 and 2000 it), 10 (X EsT warm), 10 (H EsT), against 8 for all three Ord pulses. The paper's fair-comparison criterion matches on this quantity rather than on gate duration, so every ratio above should be regarded as provisional — the EsT pulses are being scored across a wider Fock spread than the controls they are compared to. `diagnostics.py` reports the mismatch automatically.
 3. **The X warm run trained against a binding box.** `max_abs_preimage` sat at exactly 120.0 — the `--hard-bound` value — at the end of both warm stages, so L-BFGS-B spent the whole run pressed against a constraint that has no physical meaning (see *Bounds versus penalties*). Side effects are visible but small: out-of-band energy rose from 0.50% to 0.70% on the cavity drive and the endpoint/mid amplitude ratio from 0.016 to 0.040, both indicating extra amplitude pushed into the 48 ns ramp windows. The amplitude cap is still satisfied (25.15 rad/μs, the same 0.2% $C_4$ overshoot as the cold pulse). This affects only that one pulse — the H runs are cold and show 0.125% of components at the bound — and `--init-x` prevents it recurring.
 4. **The $\Delta_{\mathrm{QEC}}$ endpoint is an artifact.** At $t = T$, $\Delta_{\mathrm{QEC}}$ is $8\times10^{-5}$ for Ord against $5.3\times10^{-3}$ for EsT — purely because Ord's terminal fidelity is higher, and a gate landing exactly on the ideal code words has zero KL violation by construction. Mid-gate, where transparency matters, EsT leads 1.9×.
-5. **Absolute transparency is improving but still short.** $L = 0.21$ (X cold), $0.15$ (X warm), $0.113$ (H) — so between a fifth and a ninth of the error state has left the instantaneous error space on average. The hierarchy is reproduced throughout and the longer H run roughly halves the X figure, but a residual floor is expected on principle: App. A rules out exact transparency with linear drives.
+5. **Absolute transparency is improving but still short.** $L = 0.208$ (X cold, 600 it), $0.149$ (X warm, 1000 it), $0.148$ (X cold, 2000 it), $0.113$ (H, 2000 it) — so between a fifth and a ninth of the error state has left the instantaneous error space on average. The hierarchy is reproduced throughout: H's $L$ roughly halves the 600-it X cold figure, but is only ~24% below the best (2000-it) X cold figure at the same iteration budget — consistent with limitation 1, where the H-vs-X gap survives holding iterations fixed. A residual floor is still expected on principle: App. A rules out exact transparency with linear drives.
 6. **Scope.** X and H are trained; **T is not**. T is a parameter change against the same pipeline, but not a free one — it is 0.6 μs rather than 1.0 ($N = 600$) and its `CONTROL_MASK` is transmon-only `[0,0,1,1]`, which is the one case where `deramp` cannot round-trip the masked-out cavity columns. The **LE** control variant is not implemented — it requires an error-space terminal-fidelity term, which is a new cost function rather than a reweighting — and neither is the AQEC recovery pulse needed for the paper's Figs. 4–5.
 
 ## Project layout
