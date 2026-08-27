@@ -1,0 +1,22 @@
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_coh (process) [coherent_fidelity_multi_state]
+============================================================
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy
+
+============================================================
+Post-optimization bare F_coh (process) per training truncation
+============================================================
+  n_c=22: F_coh (process) = 0.997659
+  n_c=24: F_coh (process) = 0.997652
+  n_c=26: F_coh (process) = 0.997632
+  max pairwise |F_i - F_j| across training truncations: 2.756e-05
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_coh (process) (at max trunc): 0.997632
+Best bare multi-trunc F_coh (process) seen during optimization: 0.997648
+Note: F_coh is the process objective; report Pedersen gate fidelity separately.

@@ -1,0 +1,21 @@
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_mean (incoherent) [fidelity_fn]
+============================================================
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_mean (incoherent) = 0.997678) instead of final L-BFGS point (F_mean (incoherent) = 0.997623)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy
+
+============================================================
+Post-optimization bare F_mean (incoherent) per training truncation
+============================================================
+  n_c=22: F_mean (incoherent) = 0.997679
+  n_c=24: F_mean (incoherent) = 0.997678
+  n_c=26: F_mean (incoherent) = 0.997677
+  max pairwise |F_i - F_j| across training truncations: 1.424e-06
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_mean (incoherent) (at max trunc): 0.997677
+Best bare multi-trunc F_mean (incoherent) seen during optimization: 0.997678

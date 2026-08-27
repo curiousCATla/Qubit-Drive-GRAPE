@@ -1,0 +1,432 @@
+{
+  "recipe": {
+    "trunc_list": [
+      22,
+      24,
+      26
+    ],
+    "penalties": {
+      "deriv": 1e-05,
+      "boundary": 2e-05,
+      "amp": 8e-05,
+      "amp_max": 40.0,
+      "disc": 0.5
+    },
+    "warm_start": null,
+    "cav_band": [
+      -27.0,
+      27.0
+    ],
+    "tra_band": [
+      -33.0,
+      33.0
+    ],
+    "hard_amp_limit": 40.0,
+    "n_jobs": 3
+  },
+  "maxiter": 1500,
+  "train_rows": [
+    {
+      "gate": "X",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy",
+      "wall_clock_s": 819.227727375,
+      "iterations": 1500,
+      "final_fidelity": 0.9976319075168323,
+      "best_bare_F_during_opt": 0.9976478825468359,
+      "success": false
+    },
+    {
+      "gate": "X",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_pedersen.npy",
+      "wall_clock_s": 859.8982573330001,
+      "iterations": 1500,
+      "final_fidelity": 0.9988608773797064,
+      "best_bare_F_during_opt": 0.9988606045173274,
+      "success": false
+    },
+    {
+      "gate": "H",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_coh_fresh.npy",
+      "wall_clock_s": 1060.6802591249998,
+      "iterations": 1500,
+      "final_fidelity": 0.9981528702726765,
+      "best_bare_F_during_opt": 0.9981528684975146,
+      "success": false
+    },
+    {
+      "gate": "H",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy",
+      "wall_clock_s": 883.498490167,
+      "iterations": 1500,
+      "final_fidelity": 0.9976774691038907,
+      "best_bare_F_during_opt": 0.9976779791960367,
+      "success": false
+    },
+    {
+      "gate": "T",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_coh_fresh.npy",
+      "wall_clock_s": 828.4084092089997,
+      "iterations": 1500,
+      "final_fidelity": 0.999792431678396,
+      "best_bare_F_during_opt": 0.9997924316799698,
+      "success": false
+    },
+    {
+      "gate": "T",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_pedersen.npy",
+      "wall_clock_s": 830.739838208,
+      "iterations": 1500,
+      "final_fidelity": 0.9997926665493025,
+      "best_bare_F_during_opt": 0.9997926665508863,
+      "success": false
+    },
+    {
+      "gate": "enc",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_enc_coh_fresh.npy",
+      "wall_clock_s": 817.7942847910001,
+      "iterations": 1500,
+      "final_fidelity": 0.9993925617474899,
+      "best_bare_F_during_opt": 0.9993925323057716,
+      "success": false
+    },
+    {
+      "gate": "enc",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_enc_pedersen.npy",
+      "wall_clock_s": 865.350657291,
+      "iterations": 1500,
+      "final_fidelity": 0.9978652884230921,
+      "best_bare_F_during_opt": 0.9978651532356375,
+      "success": false
+    },
+    {
+      "gate": "dec",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_dec_coh_fresh.npy",
+      "wall_clock_s": 833.9907938750002,
+      "iterations": 1500,
+      "final_fidelity": 0.9980683345482024,
+      "best_bare_F_during_opt": 0.9980681265968788,
+      "success": false
+    },
+    {
+      "gate": "dec",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_dec_pedersen.npy",
+      "wall_clock_s": 822.5360860000001,
+      "iterations": 1500,
+      "final_fidelity": 0.9987006245099361,
+      "best_bare_F_during_opt": 0.9986955286595222,
+      "success": false
+    },
+    {
+      "gate": "Y",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_coh_fresh.npy",
+      "wall_clock_s": 835.5106947500003,
+      "iterations": 1500,
+      "final_fidelity": 0.9959144594525149,
+      "best_bare_F_during_opt": 0.995912782937341,
+      "success": false
+    },
+    {
+      "gate": "Y",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_pedersen.npy",
+      "wall_clock_s": 828.2067052920002,
+      "iterations": 1500,
+      "final_fidelity": 0.33294614949318624,
+      "best_bare_F_during_opt": 0.3329480151331836,
+      "success": false
+    },
+    {
+      "gate": "Z",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Z_coh_fresh.npy",
+      "wall_clock_s": 837.1211157080006,
+      "iterations": 1500,
+      "final_fidelity": 0.9993827725727826,
+      "best_bare_F_during_opt": 0.9993827725754981,
+      "success": false
+    },
+    {
+      "gate": "Z",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Z_pedersen.npy",
+      "wall_clock_s": 868.5314787500001,
+      "iterations": 1500,
+      "final_fidelity": 0.9994823582280743,
+      "best_bare_F_during_opt": 0.9994823582287632,
+      "success": false
+    },
+    {
+      "gate": "I",
+      "method": "coherent",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_I_coh_fresh.npy",
+      "wall_clock_s": 898.8821189589999,
+      "iterations": 1500,
+      "final_fidelity": 0.9995287014841225,
+      "best_bare_F_during_opt": 0.9995287014848694,
+      "success": false
+    },
+    {
+      "gate": "I",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_I_pedersen.npy",
+      "wall_clock_s": 843.9411524169991,
+      "iterations": 1500,
+      "final_fidelity": 0.9995691365203232,
+      "best_bare_F_during_opt": 0.9995691365211014,
+      "success": false
+    }
+  ],
+  "score_rows": [
+    {
+      "F_pedersen_trained_mean": 0.9969027891305348,
+      "F_pedersen_heldout_mean": 0.996891455848748,
+      "F_pedersen_heldout_min": 0.9968485455835637,
+      "L1_trained_mean": 0.0030967219431789297,
+      "L1_heldout_mean": 0.0031080476626703215,
+      "gate": "enc",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_enc_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9993926569915539,
+      "F_pedersen_heldout_mean": 0.9993841715267365,
+      "F_pedersen_heldout_min": 0.9993516529973626,
+      "L1_trained_mean": 0.000607093636881865,
+      "L1_heldout_mean": 0.0006155821916659532,
+      "gate": "enc",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_enc_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9978651532356384,
+      "F_pedersen_heldout_mean": 0.9978521767618457,
+      "F_pedersen_heldout_min": 0.9978002911081575,
+      "L1_trained_mean": 0.0021342365487512227,
+      "L1_heldout_mean": 0.0021472243732333363,
+      "gate": "enc",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_enc_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9979969669058381,
+      "F_pedersen_heldout_mean": 0.9979754826970793,
+      "F_pedersen_heldout_min": 0.9979010608071434,
+      "L1_trained_mean": 0.002001646416222728,
+      "L1_heldout_mean": 0.002023126972168288,
+      "gate": "dec",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_dec_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.998068336957603,
+      "F_pedersen_heldout_mean": 0.9980782524592227,
+      "F_pedersen_heldout_min": 0.9980685380112365,
+      "L1_trained_mean": 0.0019312423209470648,
+      "L1_heldout_mean": 0.0019213155825980044,
+      "gate": "dec",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_dec_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9986955286595208,
+      "F_pedersen_heldout_mean": 0.9984071818866381,
+      "F_pedersen_heldout_min": 0.9974013318778341,
+      "L1_trained_mean": 0.0013041656085162427,
+      "L1_heldout_mean": 0.0015924618719280082,
+      "gate": "dec",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_dec_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9973719096393409,
+      "F_pedersen_heldout_mean": 0.9965527960878496,
+      "F_pedersen_heldout_min": 0.9939273043264572,
+      "L1_trained_mean": 0.00261794765610975,
+      "L1_heldout_mean": 0.0034354925923455017,
+      "gate": "X",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9976494778427996,
+      "F_pedersen_heldout_mean": 0.996942994395055,
+      "F_pedersen_heldout_min": 0.9946146580597489,
+      "L1_trained_mean": 0.002347331565282218,
+      "L1_heldout_mean": 0.003052989254572691,
+      "gate": "X",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9988606045173273,
+      "F_pedersen_heldout_mean": 0.9987656059591364,
+      "F_pedersen_heldout_min": 0.998447157432229,
+      "L1_trained_mean": 0.001134757012881867,
+      "L1_heldout_mean": 0.0012298858637501907,
+      "gate": "X",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.997641812946282,
+      "F_pedersen_heldout_mean": 0.9973439831860211,
+      "F_pedersen_heldout_min": 0.9963681775823142,
+      "L1_trained_mean": 0.002354120456902494,
+      "L1_heldout_mean": 0.0026519265454993278,
+      "gate": "Y",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9959152224544595,
+      "F_pedersen_heldout_mean": 0.9958299152152043,
+      "F_pedersen_heldout_min": 0.9954307391363075,
+      "L1_trained_mean": 0.0040798985113033774,
+      "L1_heldout_mean": 0.004165057432287789,
+      "gate": "Y",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.33294614949328477,
+      "F_pedersen_heldout_mean": 0.33294615091946,
+      "F_pedersen_heldout_min": 0.3329461494931543,
+      "L1_trained_mean": 0.001161551520182232,
+      "L1_heldout_mean": 0.0011615472416566242,
+      "gate": "Y",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9992392049130564,
+      "F_pedersen_heldout_mean": 0.9992392051510761,
+      "F_pedersen_heldout_min": 0.9992392049102022,
+      "L1_trained_mean": 0.0007606573744138497,
+      "L1_heldout_mean": 0.0007606571365362136,
+      "gate": "Z",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Z_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9993828186028643,
+      "F_pedersen_heldout_mean": 0.9993828188009838,
+      "F_pedersen_heldout_min": 0.9993828186001646,
+      "L1_trained_mean": 0.0006170893424046753,
+      "L1_heldout_mean": 0.0006170891443557424,
+      "gate": "Z",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Z_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9994823582287632,
+      "F_pedersen_heldout_mean": 0.9994823597710811,
+      "F_pedersen_heldout_min": 0.9994823582280734,
+      "L1_trained_mean": 0.000513930263682294,
+      "L1_heldout_mean": 0.0005139287183249186,
+      "gate": "Z",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Z_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9983238497836462,
+      "F_pedersen_heldout_mean": 0.9982843265404199,
+      "F_pedersen_heldout_min": 0.9981774293733469,
+      "L1_trained_mean": 0.001674179418473883,
+      "L1_heldout_mean": 0.001713620208189881,
+      "gate": "H",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.998153916823913,
+      "F_pedersen_heldout_mean": 0.9981536637485295,
+      "F_pedersen_heldout_min": 0.9981527418192256,
+      "L1_trained_mean": 0.0018439865232861008,
+      "L1_heldout_mean": 0.0018442394458498379,
+      "gate": "H",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9976779791960385,
+      "F_pedersen_heldout_mean": 0.9976657061808296,
+      "F_pedersen_heldout_min": 0.9976170233456328,
+      "L1_trained_mean": 0.0022974148493420574,
+      "L1_heldout_mean": 0.0023096697718422376,
+      "gate": "H",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9997902206646039,
+      "F_pedersen_heldout_mean": 0.9997902250184568,
+      "F_pedersen_heldout_min": 0.9997902206629533,
+      "L1_trained_mean": 0.00020915182104001376,
+      "L1_heldout_mean": 0.00020914746634781434,
+      "gate": "T",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9997926112945205,
+      "F_pedersen_heldout_mean": 0.9997926156794612,
+      "F_pedersen_heldout_min": 0.9997926112929315,
+      "L1_trained_mean": 0.00020702947638895353,
+      "L1_heldout_mean": 0.00020702509077439313,
+      "gate": "T",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9997926665508753,
+      "F_pedersen_heldout_mean": 0.9997926709374397,
+      "F_pedersen_heldout_min": 0.9997926665493053,
+      "L1_trained_mean": 0.0002064897119702739,
+      "L1_heldout_mean": 0.0002064853244983178,
+      "gate": "T",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_pedersen.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9995242331478934,
+      "F_pedersen_heldout_mean": 0.9995242376669605,
+      "F_pedersen_heldout_min": 0.9995242331471385,
+      "L1_trained_mean": 0.00047557839838748467,
+      "L1_heldout_mean": 0.0004755738795255926,
+      "gate": "I",
+      "method": "main",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_I_main.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9995291077928505,
+      "F_pedersen_heldout_mean": 0.9995291123084442,
+      "F_pedersen_heldout_min": 0.9995291077921244,
+      "L1_trained_mean": 0.000470079591192792,
+      "L1_heldout_mean": 0.00047007507564202913,
+      "gate": "I",
+      "method": "coh_fresh",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_I_coh_fresh.npy"
+    },
+    {
+      "F_pedersen_trained_mean": 0.9995691365210956,
+      "F_pedersen_heldout_mean": 0.9995691410138436,
+      "F_pedersen_heldout_min": 0.9995691365203104,
+      "L1_trained_mean": 0.00043055353295758564,
+      "L1_heldout_mean": 0.00043054904029573573,
+      "gate": "I",
+      "method": "pedersen",
+      "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_I_pedersen.npy"
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+Running Pedersen-fidelity gradient self-test for each gate...
+[self-test] gate=X n_c=22 F=0.244399 analytic grad[(100, 1)]=8.504812e-04 finite-diff=8.504814e-04 OK
+[self-test] gate=H n_c=22 F=0.237937 analytic grad[(100, 1)]=1.078847e-03 finite-diff=1.078847e-03 OK
+[self-test] gate=T n_c=22 F=0.608453 analytic grad[(100, 1)]=3.696735e-03 finite-diff=3.696735e-03 OK
+Self-test passed for all gates.
+
+
+######################################################################
+# X / coherent -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_coh (process) [coherent_fidelity_multi_state]
+============================================================
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy
+
+============================================================
+Post-optimization bare F_coh (process) per training truncation
+============================================================
+  n_c=22: F_coh (process) = 0.997659
+  n_c=24: F_coh (process) = 0.997652
+  n_c=26: F_coh (process) = 0.997632
+  max pairwise |F_i - F_j| across training truncations: 2.756e-05
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_coh (process) (at max trunc): 0.997632
+Best bare multi-trunc F_coh (process) seen during optimization: 0.997648
+Note: F_coh is the process objective; report Pedersen gate fidelity separately.
+
+######################################################################
+# X / pedersen -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_pedersen.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_mean (incoherent) [fidelity_fn]
+============================================================
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_mean (incoherent) = 0.998861) instead of final L-BFGS point (F_mean (incoherent) = 0.998679)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_pedersen.npy
+
+============================================================
+Post-optimization bare F_mean (incoherent) per training truncation
+============================================================
+  n_c=22: F_mean (incoherent) = 0.998861
+  n_c=24: F_mean (incoherent) = 0.998860
+  n_c=26: F_mean (incoherent) = 0.998861
+  max pairwise |F_i - F_j| across training truncations: 7.147e-07
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_mean (incoherent) (at max trunc): 0.998861
+Best bare multi-trunc F_mean (incoherent) seen during optimization: 0.998861
+
+######################################################################
+# H / coherent -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_coh_fresh.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_coh (process) [coherent_fidelity_multi_state]
+============================================================
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_coh (process) = 0.998153) instead of final L-BFGS point (F_coh (process) = 0.998088)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_coh_fresh.npy
+
+============================================================
+Post-optimization bare F_coh (process) per training truncation
+============================================================
+  n_c=22: F_coh (process) = 0.998153
+  n_c=24: F_coh (process) = 0.998153
+  n_c=26: F_coh (process) = 0.998153
+  max pairwise |F_i - F_j| across training truncations: 6.216e-09
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_coh (process) (at max trunc): 0.998153
+Best bare multi-trunc F_coh (process) seen during optimization: 0.998153
+Note: F_coh is the process objective; report Pedersen gate fidelity separately.
+
+######################################################################
+# H / pedersen -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_mean (incoherent) [fidelity_fn]
+============================================================
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_mean (incoherent) = 0.997678) instead of final L-BFGS point (F_mean (incoherent) = 0.997623)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy
+
+============================================================
+Post-optimization bare F_mean (incoherent) per training truncation
+============================================================
+  n_c=22: F_mean (incoherent) = 0.997679
+  n_c=24: F_mean (incoherent) = 0.997678
+  n_c=26: F_mean (incoherent) = 0.997677
+  max pairwise |F_i - F_j| across training truncations: 1.424e-06
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_mean (incoherent) (at max trunc): 0.997677
+Best bare multi-trunc F_mean (incoherent) seen during optimization: 0.997678
+
+######################################################################
+# T / coherent -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_coh_fresh.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_coh (process) [coherent_fidelity_multi_state]
+============================================================
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_coh (process) = 0.999792) instead of final L-BFGS point (F_coh (process) = 0.999785)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_coh_fresh.npy
+
+============================================================
+Post-optimization bare F_coh (process) per training truncation
+============================================================
+  n_c=22: F_coh (process) = 0.999792
+  n_c=24: F_coh (process) = 0.999792
+  n_c=26: F_coh (process) = 0.999792
+  max pairwise |F_i - F_j| across training truncations: 4.722e-12
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_coh (process) (at max trunc): 0.999792
+Best bare multi-trunc F_coh (process) seen during optimization: 0.999792
+Note: F_coh is the process objective; report Pedersen gate fidelity separately.
+
+######################################################################
+# T / pedersen -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_pedersen.npy
+######################################################################
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_mean (incoherent) [fidelity_fn]
+============================================================
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_mean (incoherent) = 0.999793) instead of final L-BFGS point (F_mean (incoherent) = 0.999785)
+Saved optimized pulse to /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_pedersen.npy
+
+============================================================
+Post-optimization bare F_mean (incoherent) per training truncation
+============================================================
+  n_c=22: F_mean (incoherent) = 0.999793
+  n_c=24: F_mean (incoherent) = 0.999793
+  n_c=26: F_mean (incoherent) = 0.999793
+  max pairwise |F_i - F_j| across training truncations: 4.713e-12
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_mean (incoherent) (at max trunc): 0.999793
+Best bare multi-trunc F_mean (incoherent) seen during optimization: 0.999793
+
+All training runs complete. Scoring...
+
+Saved: /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/tables/pedersen_vs_main_comparison.csv
+ F_pedersen_trained_mean  F_pedersen_heldout_mean  F_pedersen_heldout_min  L1_trained_mean  L1_heldout_mean gate    method                                                                       pulse_path  wall_clock_s  iterations  final_fidelity
+                0.997372                 0.996553                0.993927         0.002618         0.003435    X      main      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_main.npy           NaN         NaN             NaN
+                0.997649                 0.996943                0.994615         0.002347         0.003053    X coh_fresh /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_coh_fresh.npy    819.227727 1500.000000        0.997632
+                0.998861                 0.998766                0.998447         0.001135         0.001230    X  pedersen  /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_X_pedersen.npy    859.898257 1500.000000        0.998861
+                0.998324                 0.998284                0.998177         0.001674         0.001714    H      main      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_main.npy           NaN         NaN             NaN
+                0.998154                 0.998154                0.998153         0.001844         0.001844    H coh_fresh /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_coh_fresh.npy   1060.680259 1500.000000        0.998153
+                0.997678                 0.997666                0.997617         0.002297         0.002310    H  pedersen  /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_H_pedersen.npy    883.498490 1500.000000        0.997677
+                0.999790                 0.999790                0.999790         0.000209         0.000209    T      main      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_main.npy           NaN         NaN             NaN
+                0.999793                 0.999793                0.999793         0.000207         0.000207    T coh_fresh /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_coh_fresh.npy    828.408409 1500.000000        0.999792
+                0.999793                 0.999793                0.999793         0.000206         0.000206    T  pedersen  /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_T_pedersen.npy    830.739838 1500.000000        0.999793
+Saved: /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/results/pedersen_vs_main_comparison.json
