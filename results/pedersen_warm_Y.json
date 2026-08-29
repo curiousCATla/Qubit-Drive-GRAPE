@@ -1,0 +1,97 @@
+{
+ "gate": "Y",
+ "method": "pedersen_warm",
+ "init_pulse": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_coh_fresh.npy",
+ "pulse_path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_pedersen_warm.npy",
+ "recipe": {
+  "trunc_list": [
+   22,
+   24,
+   26
+  ],
+  "penalties": {
+   "deriv": 1e-05,
+   "boundary": 2e-05,
+   "amp": 8e-05,
+   "amp_max": 40.0,
+   "disc": 0.5
+  },
+  "warm_start": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/u_Y_coh_fresh.npy",
+  "cav_band": [
+   -27.0,
+   27.0
+  ],
+  "tra_band": [
+   -33.0,
+   33.0
+  ],
+  "hard_amp_limit": 40.0,
+  "n_jobs": 3
+ },
+ "maxiter": 1500,
+ "wall_clock_s": 819.497223875,
+ "iterations": 1500,
+ "success": false,
+ "final_fidelity": 0.9981594630567644,
+ "gate_term_before": 0.9979551389979966,
+ "gate_term_after": 0.9990789072695446,
+ "leak_term_before": 0.9959217979783668,
+ "leak_term_after": 0.9981610632684889,
+ "summary": {
+  "F_pedersen_trained_mean": 0.998141570586598,
+  "F_pedersen_heldout_mean": 0.9975444714180635,
+  "F_pedersen_heldout_min": 0.9952600209802771,
+  "L1_trained_mean": 0.0018567905708431291,
+  "L1_heldout_mean": 0.0024538476986705636
+ },
+ "score_rows": [
+  {
+   "n_c": 18,
+   "trained": false,
+   "F_pedersen": 0.9952600209802771,
+   "L1": 0.004738050677066008
+  },
+  {
+   "n_c": 20,
+   "trained": false,
+   "F_pedersen": 0.9980031626286703,
+   "L1": 0.0019951615102027365
+  },
+  {
+   "n_c": 22,
+   "trained": true,
+   "F_pedersen": 0.9981001821499067,
+   "L1": 0.0018981111714870824
+  },
+  {
+   "n_c": 24,
+   "trained": true,
+   "F_pedersen": 0.9981650665531195,
+   "L1": 0.0018333238095311621
+  },
+  {
+   "n_c": 26,
+   "trained": true,
+   "F_pedersen": 0.9981594630567677,
+   "L1": 0.0018389367315111427
+  },
+  {
+   "n_c": 28,
+   "trained": false,
+   "F_pedersen": 0.9981532197096934,
+   "L1": 0.0018451804068322364
+  },
+  {
+   "n_c": 30,
+   "trained": false,
+   "F_pedersen": 0.9981529199371332,
+   "L1": 0.0018454798993479127
+  },
+  {
+   "n_c": 32,
+   "trained": false,
+   "F_pedersen": 0.9981530338345427,
+   "L1": 0.0018453659999039251
+  }
+ ]
+}

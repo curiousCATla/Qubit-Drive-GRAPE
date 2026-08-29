@@ -1,0 +1,30 @@
+
+=== X / est / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.89628  c2=0.59604  c3=0.13522  c4=0.02358   [F1=0.10372  F_ET=0.40396]
+    end    c1=0.04188  c2=0.27219  c3=0.00905  c4=0.00003   [F1=0.95812  F_ET=0.72781]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2154 cost=2.957726e-01 (2071.4s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_eigh_stage1.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_eigh_stage1.npy
+
+=== X / est / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.04188  c2=0.27219  c3=0.00905  c4=0.00003   [F1=0.95812  F_ET=0.72781]
+    end    c1=0.00028  c2=0.27842  c3=0.11578  c4=0.00000   [F1=0.99972  F_ET=0.72158]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2197 cost=2.812640e-02 (1523.0s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_eigh_stage2.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_eigh_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 25.15572810477703
+  max_eps_transmon_rad_per_us: 25.153077360960932
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.005800234043905038, 'transmon': 0.0009936804832651686}
+  endpoint_rel_to_mid: [0.022255685118535474, 0.022574831965907795]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_eigh.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_eigh.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_X_est_eigh.json
