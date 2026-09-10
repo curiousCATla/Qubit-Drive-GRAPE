@@ -5,7 +5,7 @@ analysis/penalty_sweep.py
 Multi-objective (Pareto) sweep over the four GRAPE soft-penalty weights.
 
 The cost function in `core/optimizer.optimize_multi_state_pulse` carries four
-regularizer weights -- `deriv`, `boundary`, `amp`, `disc`. Because they are
+regularizer weights -- `deriv`, `amp`, `disc`. Because they are
 regularizers, maximizing the *training* objective F_coh drives all four toward
 zero and yields rough, high-bandwidth pulses that overfit the training
 truncations `trunc_list`. Choosing them is therefore not a scalar optimization:
@@ -41,7 +41,7 @@ interrupted sweep resumes for free and re-scoring never retrains.
 Usage
 -----
     python analysis/penalty_sweep.py --gate X --mode ofat --seeds 42 --maxiter 1500
-    python analysis/penalty_sweep.py --gate X --mode grid --grid-x deriv --grid-y boundary
+    python analysis/penalty_sweep.py --gate X --mode grid --grid-x deriv --grid-y amp_max
 
 Config-level parallelism
 ------------------------
@@ -90,6 +90,7 @@ if REPO_ROOT not in sys.path:
 from core.grape_core import chi, coherent_fidelity_multi_state, two_pi
 from core.optimizer import optimize_multi_state_pulse
 from core.propagator import leakage_L1
+from core.ramp import constraint_report
 from main import GATE_FACTORIES, report_pedersen_gate_fidelity
 
 
@@ -111,6 +112,7 @@ FIXED = {
     "tra_band": (-33.0, 33.0),
     "hard_amp_limit": 40.0,
     "amp_max": 40.0,
+    "ramp_ns": 48.0,             # Gaussian rise/fall; replaced the `boundary` penalty
     "warm_start": None,          # smooth random warm start, seeded per-run
 }
 
@@ -161,12 +163,11 @@ assert BAND_LIMITS_MHz["tra"] == FIXED["tra_band"][1] - FIXED["tra_band"][0]
 # other three weights here.
 BASELINE = {
     "deriv": 1e-5,
-    "boundary": 2e-5,
     "amp": 8e-5,
     "disc": 0.5,
 }
 
-PENALTY_NAMES = ("deriv", "boundary", "amp", "disc")
+PENALTY_NAMES = ("deriv", "amp", "disc")
 
 # --- Why `disc` is pinned here and NOT swept ---------------------------
 #
@@ -197,8 +198,23 @@ PENALTY_NAMES = ("deriv", "boundary", "amp", "disc")
 # generalize this past these conditions.
 #
 # IMPORTANT: `disc` stays in PENALTY_NAMES and stays at 0.5 in BASELINE. It is
-# part of the `_config_hash` payload, so setting it to 0.0 would invalidate all
-# 60 cached pulses and force a ~10.6 h retrain for a numerically null change.
+# part of the `_config_hash` payload, and there is no reason to spend a retrain
+# on a numerically null change.
+#
+# --- The retired `boundary` axis ---------------------------------------
+#
+# `boundary` was a sweep axis until the Gaussian rise/fall ramp replaced the
+# penalty it weighted (core/ramp.py). The sweep had already measured it as
+# dead: over the full 5x5 deriv x boundary grid its marginal range in held-out
+# fidelity was 8.1e-4 .. 4.81e-3, straddling the 1.03e-3 basin-noise floor and
+# non-monotonic in all five rows. The boundary condition is now structural, so
+# there is no weight left to sweep.
+#
+# Removing it from PENALTY_NAMES (and adding ramp_ns to FIXED) DELIBERATELY
+# invalidates every hash computed before this change. That was accepted when
+# the ramp landed. Do NOT delete results/penalty_sweep_cache/ -- the existing
+# tables/penalty_sweep_X_*.csv still reference those labels, and they remain a
+# valid record of the pre-ramp regime. They are not comparable to new rows.
 
 # OFAT ladder: multiples of the incumbent value, plus a 0 negative control.
 # The 0 row is the point of the exercise -- it should show HIGHER training
@@ -217,13 +233,101 @@ OFAT_MULTIPLIERS = (0.0, 0.1, 0.3, 1.0, 3.0, 10.0)
 # The live knob is the THRESHOLD, not the weight. This ladder brackets the
 # observed peak amplitude, so the low end binds hard and the high end never
 # binds -- which is what makes it a real peak-power constraint.
-AMP_MAX_VALUES = (12.0, 16.0, 20.0, 28.0, 40.0)
+#
+# The upper rungs are DELIBERATELY inert, and they are the most useful part of
+# the ladder. Note the threshold acts ELEMENT-WISE on the (N,4) quadratures, so
+# the quantity it charges against is max|u| element-wise -- NOT this module's
+# `peak_amp` column, which is the complex-envelope max. That distinction is why
+# the previous ladder's amp_max=20 rung looked like it should bind and mostly
+# did not.
+#
+# Measured element-wise peak of an UNCONSTRAINED converged pulse: 17.73 on
+# pulses/u_X_main.npy, and 18.0 / 18.4 / 20.2 on the pre-ramp cached sweep
+# pulses at seeds 42/43/44. So the binding threshold sits at ~18-20 and is
+# seed-dependent. Against u_X_main at lambda_amp = 8e-5:
+#
+#     amp_max      10      14      18   22   26   30   40
+#     lam*g_amp   0.171   0.019     0    0    0    0    0
+#     violations   162      51      0    0    0    0    0   (of 2200 entries)
+#
+# So the ladder splits into three regimes, and each is an instrument:
+#
+#   10, 14  genuinely bind -- the only rungs that constrain every seed.
+#   18      straddles the threshold: binds for the higher-peak seeds, not the
+#           lower ones. A dynamically marginal yet finite perturbation, i.e. the
+#           direct analogue of the retired `disc` ladder, and what re-measures
+#           `floor_basin` (the 1.03e-3 basin-noise floor) post-ramp.
+#   22, 26, 30  exactly zero at every iterate, so they optimize the SAME
+#           objective as the baseline and can differ only by reduction-order
+#           nondeterminism. Nine independent replicates of the incumbent recipe
+#           -- what re-measures `floor_bitwise`, which used to come from a
+#           single accidental OFAT/grid float-rounding collision on `boundary`
+#           and cannot be reproduced now that that axis is gone.
+#
+# These are PREDICTIONS, and the notebook reports them as such. If the nominally
+# null rungs come back non-identical, that is real nondeterminism in the
+# pipeline and a more important finding than the ladder itself.
+#
+# Do not "trim the inert rungs": trimming them deletes both noise floors, and
+# the pre-ramp tables that used to carry them are not comparable to new rows.
+AMP_MAX_VALUES = (10.0, 14.0, 18.0, 22.0, 26.0, 30.0)
 
-# Axis names that are valid sweep targets. "amp_max" is not a penalty weight,
-# so it is handled separately from PENALTY_NAMES throughout. `disc` and `amp`
-# are both absent by design -- see the PENALTY_NAMES note above for `disc` and
-# AMP_MAX_VALUES for `amp`.
-AXIS_NAMES = ("deriv", "boundary", "amp_max")
+# --- The ramp_ns axis --------------------------------------------------
+#
+# Rise/fall duration of the Gaussian envelope in core/ramp.py, in NANOSECONDS.
+# Not a penalty weight and not a Pareto axis: the endpoint condition is
+# structural (`u = env * P(x)`), so there is no weight to trade off. It is swept
+# because the structure itself has a cost that has never been measured.
+#
+# The expected trade was: a longer ramp pushes the first/last sample further
+# toward zero (env[0] = 0.0219/0.0163/0.0135/0.0129/0.0107/0.0091 at
+# 30/40/48/50/60/70 ns) but removes control authority over more steps
+# (5.5% .. 12.7% of the 550), which L-BFGS-B buys back by inflating the
+# PRE-IMAGE, bounded only by `hard_amp_limit`.
+#
+# MEASURED (seeds 42/43/44, gate X): the first half holds and the second does
+# NOT. endpoint_rel_to_peak falls 2.81% -> 0.83% across the ladder, Spearman
+# rho = -0.94 against ramp duration: the ramp does exactly its job. But
+# max_abs_preimage has **rho = +0.03** against ramp duration -- no relationship
+# at all -- and the 70 ns rung has the LOWEST mean max|x| of the ladder (23.5,
+# against the incumbent's 25.0).
+#
+# What actually governs pre-image inflation here is `lambda_deriv`
+# (rho = -0.94: 32.1 at lambda_deriv = 0 down to 20.7 at 1e-4). That makes sense
+# in hindsight -- the derivative penalty is what charges for the large
+# step-to-step excursions an inflated pre-image produces -- but it was not the
+# expectation, and core/ramp.py's docstring should be read as a statement about
+# ramp-vs-no-ramp at the fixed 48 ns default, NOT about ramp duration.
+#
+# So the one clipped run in the sweep (ramp=60, seed 42, max|x| = 40.0 exactly,
+# 0.046% of entries pinned) is a basin accident at one seed, not the top of a
+# trend. `max_abs_preimage` and `preimage_at_bound_frac` are still scored per
+# row, and still earn their place: that run reported the BEST robustness spread
+# in the entire sweep (5.99e-04) and is invisible as a failure by every metric
+# that existed before them.
+#
+# `ramp_envelope` raises once 2*ramp_ns >= N*dt, i.e. above 550 ns at this
+# geometry (N=550, dt=0.002 us => T = 1100 ns). Keep the ladder well clear.
+# FIXED["ramp_ns"] = 48 is the incumbent and is not repeated here -- it enters
+# every panel as the shared baseline rung.
+RAMP_NS_VALUES = (30.0, 40.0, 50.0, 60.0, 70.0)
+
+# Sweep axes whose value lives in FIXED rather than in the penalties dict.
+# These are threaded through _label / _make_config / _axis_apply / _config_hash
+# / the optimizer call sites as a "knobs" dict, so adding a third one (say
+# `hard_amp_limit`, the knob physically coupled to `ramp_ns`) is a one-line
+# change here plus a ladder constant -- NOT another hand-threaded special case.
+FIXED_AXES = ("amp_max", "ramp_ns")
+
+# Axis names that are valid sweep targets. `amp_max` and `ramp_ns` are not
+# penalty weights, so they are handled via FIXED_AXES rather than PENALTY_NAMES.
+# `disc`, `amp` and `boundary` are all absent by design -- see the PENALTY_NAMES
+# note above for `disc` and `boundary`, and AMP_MAX_VALUES for `amp`.
+#
+# visualization/penalty_viz.py's AXIS_NAMES is deliberately a SUPERSET of this
+# one so historical CSVs (which still carry a lambda_boundary column) keep
+# plotting. Do not "sync" the two lists.
+AXIS_NAMES = ("deriv", "amp_max", "ramp_ns")
 
 # Focused 2-D grid axes (absolute values, not multipliers).
 #
@@ -240,8 +344,8 @@ AXIS_NAMES = ("deriv", "boundary", "amp_max")
 # on the OFAT ladders, which is what actually puts error bars on the claims.
 GRID_VALUES = {
     "deriv": [0.0, 3e-6, 1e-5],
-    "boundary": [0.0, 6e-6, 2e-5],
     "amp_max": list(AMP_MAX_VALUES),
+    "ramp_ns": list(RAMP_NS_VALUES),
 }
 
 # Cavity truncations used for SCORING. Those in FIXED["trunc_list"] were trained
@@ -278,30 +382,72 @@ RESULT_DIR = os.path.join(REPO_ROOT, "results")
 # Configuration enumeration
 # ============================================================
 
-def _label(penalties, amp_max):
+# Suffix used in `_label` for each FIXED_AXES knob. Kept separate from the axis
+# name so `amp_max` keeps spelling itself "_ampmax=" exactly as it always has --
+# every pre-ramp label in tables/penalty_sweep_X_*.csv must still parse.
+_KNOB_LABEL = {"amp_max": "ampmax", "ramp_ns": "ramp"}
+
+
+def knobs(**over):
     """
-    Compact human-readable label for a recipe. `amp_max` is appended only when
-    it differs from the fixed default, so the common case stays readable and
-    labels from before the amp_max axis existed are unchanged.
+    The FIXED_AXES values for one config: defaults from FIXED, overridden by
+    whichever axis this config sweeps.
+
+    Every config carries a full knobs dict rather than only the swept key, so
+    `_config_hash` and the optimizer call sites never have to ask "was this axis
+    swept?" -- they just read the value.
+    """
+    k = {a: FIXED[a] for a in FIXED_AXES}
+    for a in over:
+        if a not in k:
+            raise KeyError(f"{a!r} is not a FIXED_AXES knob; have {FIXED_AXES}")
+    k.update(over)
+    return k
+
+
+def _label(penalties, kn):
+    """
+    Compact human-readable label for a recipe. A knob is appended only when it
+    differs from the fixed default, so the common case stays readable and labels
+    from before either FIXED_AXES axis existed are unchanged.
     """
     s = "_".join(f"{k}={penalties[k]:.3g}" for k in PENALTY_NAMES)
-    if amp_max != FIXED["amp_max"]:
-        s += f"_ampmax={amp_max:.3g}"
+    for a in FIXED_AXES:
+        if kn[a] != FIXED[a]:
+            s += f"_{_KNOB_LABEL[a]}={kn[a]:.3g}"
     return s
 
 
-def _make_config(pen, amp_max, swept, multiplier=np.nan):
+def _make_config(pen, kn, swept, multiplier=np.nan):
     return {
         "penalties": pen,
-        "amp_max": amp_max,
+        "knobs": dict(kn),
+        # Mirrored as a flat key for backward compatibility: `_make_config`
+        # callers, the row dict, the manifest and penalty_convergence_check all
+        # read cfg["amp_max"] directly, and so do the pre-ramp CSVs' columns.
+        "amp_max": kn["amp_max"],
+        "ramp_ns": kn["ramp_ns"],
         "swept": swept,
         "multiplier": multiplier,
-        "label": _label(pen, amp_max),
+        "label": _label(pen, kn),
         "is_baseline": (
             all(pen[k] == BASELINE[k] for k in PENALTY_NAMES)
-            and amp_max == FIXED["amp_max"]
+            # EVERY knob must sit at its default, not just amp_max. A ramp rung
+            # that slipped through here would be picked up as the incumbent by
+            # penalty_viz.plot_ofat and drawn as the dotted line on every panel.
+            and all(kn[a] == FIXED[a] for a in FIXED_AXES)
         ),
     }
+
+
+def _cfg_knobs(cfg):
+    """
+    Knobs for a config, tolerating dicts built before `knobs` existed (the
+    disc-null path and penalty_convergence_check both hand us plain configs).
+    """
+    if "knobs" in cfg:
+        return dict(cfg["knobs"])
+    return knobs(**{a: cfg[a] for a in FIXED_AXES if a in cfg})
 
 
 def build_ofat_configs():
@@ -313,26 +459,35 @@ def build_ofat_configs():
     slot is taken by `amp_max`, the threshold that actually determines whether
     the amplitude penalty ever activates (see AMP_MAX_VALUES); `disc`'s ladder
     was retired outright (see the note above PENALTY_NAMES).
+
+    Three ladders: one penalty weight (`deriv`, in multiples of BASELINE) and
+    two FIXED_AXES knobs (`amp_max`, `ramp_ns`, in absolute values). The knob
+    ladders carry multiplier=NaN because "3x the incumbent threshold" is not a
+    meaningful quantity -- they are physical values, not weights.
     """
     configs, seen = [], set()
 
-    for name in ("deriv", "boundary"):
+    def _add(pen, kn, swept, multiplier):
+        # The dedup key must span the penalties AND every knob. Keying on
+        # amp_max alone (as this did before ramp_ns existed) would collapse the
+        # whole ramp ladder onto the baseline and silently train nothing.
+        key = (tuple(pen[k] for k in PENALTY_NAMES),
+               tuple(kn[a] for a in FIXED_AXES))
+        if key in seen:
+            return
+        seen.add(key)
+        configs.append(_make_config(pen, kn, swept, multiplier))
+
+    for name in ("deriv",):
         for mult in OFAT_MULTIPLIERS:
             pen = dict(BASELINE)
             pen[name] = BASELINE[name] * mult
-            key = (tuple(pen[k] for k in PENALTY_NAMES), FIXED["amp_max"])
-            if key in seen:
-                continue
-            seen.add(key)
-            configs.append(_make_config(pen, FIXED["amp_max"], name, mult))
+            _add(pen, knobs(), name, mult)
 
-    for amp_max in AMP_MAX_VALUES:
-        pen = dict(BASELINE)
-        key = (tuple(pen[k] for k in PENALTY_NAMES), amp_max)
-        if key in seen:
-            continue
-        seen.add(key)
-        configs.append(_make_config(pen, amp_max, "amp_max", np.nan))
+    for axis, ladder in (("amp_max", AMP_MAX_VALUES),
+                         ("ramp_ns", RAMP_NS_VALUES)):
+        for value in ladder:
+            _add(dict(BASELINE), knobs(**{axis: value}), axis, np.nan)
 
     return configs
 
@@ -355,18 +510,26 @@ def build_disc_null_configs():
     """
     return [
         _make_config(dict(BASELINE, disc=BASELINE["disc"] * mult),
-                     FIXED["amp_max"], "disc", mult)
+                     knobs(), "disc", mult)
         for mult in OFAT_MULTIPLIERS
     ]
 
 
-def _axis_apply(pen, amp_max, name, value):
-    """Set one axis, returning the updated (penalties, amp_max) pair."""
-    if name == "amp_max":
-        return pen, value
+def _axis_apply(pen, kn, name, value):
+    """
+    Set one axis, returning the updated (penalties, knobs) pair.
+
+    Chainable: apply the x axis, then the y axis, to the same pair. A FIXED_AXES
+    name writes into `knobs`, anything else into `penalties`, so a new knob axis
+    needs no change here at all.
+    """
+    if name in FIXED_AXES:
+        kn = dict(kn)
+        kn[name] = value
+        return pen, kn
     pen = dict(pen)
     pen[name] = value
-    return pen, amp_max
+    return pen, kn
 
 
 def build_grid_configs(x_name, y_name):
@@ -374,10 +537,10 @@ def build_grid_configs(x_name, y_name):
     configs = []
     for xv in GRID_VALUES[x_name]:
         for yv in GRID_VALUES[y_name]:
-            pen, amp_max = dict(BASELINE), FIXED["amp_max"]
-            pen, amp_max = _axis_apply(pen, amp_max, x_name, xv)
-            pen, amp_max = _axis_apply(pen, amp_max, y_name, yv)
-            configs.append(_make_config(pen, amp_max, f"{x_name}x{y_name}"))
+            pen, kn = dict(BASELINE), knobs()
+            pen, kn = _axis_apply(pen, kn, x_name, xv)
+            pen, kn = _axis_apply(pen, kn, y_name, yv)
+            configs.append(_make_config(pen, kn, f"{x_name}x{y_name}"))
     return configs
 
 
@@ -542,7 +705,7 @@ def pulse_metrics(u, dt, band_limits=None):
     # waveform is to synthesize.
     roughness = float(np.sqrt(np.mean(np.sum(np.diff(u, axis=0) ** 2, axis=1))))
 
-    return {
+    out = {
         "peak_amp": peak_amp,
         "roughness": roughness,
         # Retained for continuity; superseded as the scored cost by occ99_MHz.
@@ -580,6 +743,30 @@ def pulse_metrics(u, dt, band_limits=None):
         "centroid_tra_MHz": s_t["centroid"],
         "n_bar_drive": float(s_t["centroid"] / (chi / two_pi)),
     }
+
+    # --- What the ramp actually delivered ------------------------------
+    #
+    # `ramp_ns` is a sweep axis, so the table has to carry the quantity the
+    # ramp exists to control, not just fidelity and bandwidth. These come
+    # straight from core.ramp.constraint_report and are recomputable from a
+    # cached .npy, which is why they live in `pulse_metrics` (and so are
+    # covered by _METRIC_KEYS' cache backfill) rather than being read out of
+    # the optimizer's `info`.
+    #
+    # `endpoint_rel_to_peak` is the one to report: it divides a max by a max.
+    # `endpoint_rel_to_mid` divides a max by an RMS and also moves when the
+    # mid-pulse RMS moves, so the two are not interchangeable -- both are kept
+    # because core/ramp.py's own benchmark quotes the latter.
+    #
+    # `out_of_band_*` are not a bug: the chain is band-limit THEN ramp, so the
+    # envelope reintroduces sub-percent out-of-band energy by construction.
+    # Sweeping the ramp sweeps that residual, so it has to be measured.
+    cr = constraint_report(u, dt, FIXED["cav_band"], FIXED["tra_band"])
+    out["endpoint_rel_to_peak"] = float(cr["endpoint_rel_to_peak"])
+    out["endpoint_rel_to_mid"] = float(cr["endpoint_rel_to_mid"])
+    out["out_of_band_cav"] = float(cr["out_of_band_cavity"])
+    out["out_of_band_tra"] = float(cr["out_of_band_transmon"])
+    return out
 
 
 # Keys `pulse_metrics` returns. Used to detect cached rows written before a
@@ -626,23 +813,37 @@ def score_pulse(gate, u, eval_truncs, trained_truncs, n_t, dt):
 # Caching
 # ============================================================
 
-def _config_hash(gate, penalties, seed, maxiter, amp_max=None, extra=None,
-                 protocol="single_phase"):
+def _config_hash(gate, penalties, seed, maxiter, kn=None, extra=None,
+                 protocol="single_phase", amp_max=None):
     """
     Stable hash over everything that affects the trained pulse.
 
-    `amp_max` enters the payload only when it differs from the fixed default.
-    That keeps hashes computed before amp_max became a sweep axis valid, so an
-    existing cache is not invalidated by adding the axis. `protocol` follows the
-    same rule: it enters the payload (along with the actual TWO_PHASE settings,
-    mirroring how `fixed` embeds FIXED) only when it is not "single_phase", so
-    every hash computed before the two-phase protocol existed -- i.e. every
-    hash in the current cache -- is unchanged.
+    A FIXED_AXES knob enters the payload only when it differs from the fixed
+    default. That is the rule that lets a new sweep axis be added without
+    invalidating the cache: every config that leaves the new knob alone hashes
+    exactly as it did before the axis existed. `amp_max` was the first axis to
+    use it, `ramp_ns` is the second, and `hard_amp_limit` would be the third.
+    `protocol` follows the same rule: it enters the payload (along with the
+    actual TWO_PHASE settings, mirroring how `fixed` embeds FIXED) only when it
+    is not "single_phase", so every hash computed before the two-phase protocol
+    existed is unchanged.
+
+    Note this rule is about the TOP-LEVEL keys only. `fixed` embeds the whole
+    FIXED dict verbatim, so *changing a default in FIXED* still invalidates
+    everything -- which is exactly what adding `ramp_ns: 48.0` to FIXED already
+    did to the pre-ramp cache.
+
+    `kn` is a knobs dict (see `knobs`). `amp_max=` is accepted as a deprecated
+    alias for `kn={"amp_max": ...}` so older callers keep working.
 
     `SNAPSHOT_ITERS` deliberately does NOT enter the payload -- see its
     definition. Anything added here invalidates every cached pulse, so add only
     things that change the pulse.
     """
+    if kn is None:
+        kn = knobs() if amp_max is None else knobs(amp_max=amp_max)
+    elif amp_max is not None:
+        raise TypeError("pass either kn= or amp_max=, not both")
     payload = {
         "gate": gate,
         "penalties": {k: float(penalties[k]) for k in PENALTY_NAMES},
@@ -653,8 +854,9 @@ def _config_hash(gate, penalties, seed, maxiter, amp_max=None, extra=None,
             for k, v in FIXED.items()
         },
     }
-    if amp_max is not None and float(amp_max) != float(FIXED["amp_max"]):
-        payload["amp_max"] = float(amp_max)
+    for a in FIXED_AXES:
+        if float(kn[a]) != float(FIXED[a]):
+            payload[a] = float(kn[a])
     if protocol != "single_phase":
         payload["protocol"] = protocol
         payload["two_phase"] = TWO_PHASE
@@ -664,10 +866,63 @@ def _config_hash(gate, penalties, seed, maxiter, amp_max=None, extra=None,
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
+def _preimage_stats(info, hard_amp_limit):
+    """
+    How close the raw optimizer variable came to its box.
+
+    This is the ramp axis's failure detector. The envelope removes control
+    authority over the first/last `ramp_ns/dt` steps and L-BFGS-B buys it back
+    by inflating the PRE-IMAGE there; what stops the inflation is the box
+    `hard_amp_limit` on x, not the envelope. A run that pins the box has been
+    clipped, not converged -- that is how U_Y's seed-42 cold start landed in a
+    44%-leakage basin with a perfectly healthy-looking training fidelity. A
+    longer ramp makes it likelier, so a ramp ladder without these two columns
+    cannot tell a converged rung from a clipped one.
+
+    NOT recomputable from a cached pulse: the sweep trains with save_path=None,
+    so no pre-image is written to disk. A reused row therefore reports NaN here
+    rather than a wrong number, and `_METRIC_KEYS`' backfill leaves it alone.
+    """
+    x = info.get("x_preimage")
+    if x is None:
+        return {"max_abs_preimage": np.nan, "preimage_at_bound_frac": np.nan}
+    ax = np.abs(np.asarray(x, dtype=np.float64))
+    return {
+        "max_abs_preimage": float(ax.max()),
+        # Fraction of entries sitting ON the bound, not merely near it --
+        # L-BFGS-B pins a clipped variable exactly at the box.
+        "preimage_at_bound_frac": float(
+            np.mean(ax >= float(hard_amp_limit) - 1e-9)
+        ),
+    }
+
+
 def _cache_paths(gate, h):
     d = os.path.join(CACHE_DIR, gate)
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, f"u_{h}.npy"), os.path.join(d, f"row_{h}.json")
+
+
+# Same role as _METRIC_KEYS, but backfilled from x_<hash>.npy rather than
+# u_<hash>.npy. A row whose run predates that file legitimately has NEITHER
+# column -- absent, not NaN, the same convention SNAPSHOT_ITERS documents.
+_PREIMAGE_KEYS = tuple(_preimage_stats({"x_preimage": np.zeros((8, 4))}, 40.0))
+
+
+def _preimage_path(gate, h):
+    """
+    Raw optimizer pre-image `x` for config hash `h`.
+
+    The sweep trains with `save_path=None`, so `optimize_multi_state_pulse`'s
+    own `save_preimage` never fires -- it is gated on `save_path`. Without this
+    the pre-image only ever exists in memory, and the two columns that detect a
+    clipped run (`max_abs_preimage`, `preimage_at_bound_frac`) would be NaN on
+    every cache hit, including every `--merge`.
+
+    Deliberately OUTSIDE `_config_hash`, for the same reason SNAPSHOT_ITERS is:
+    it is an artifact OF a run, not something that changes the pulse.
+    """
+    return os.path.join(CACHE_DIR, gate, f"x_{h}.npy")
 
 
 def _snapshot_path(gate, h, k):
@@ -712,9 +967,9 @@ def _get_or_train_phase1(gate, cfg, seed, h, n_t, N, dt, verbose, force):
         return u1, meta, False
 
     penalties = cfg["penalties"]
-    amp_max = cfg.get("amp_max", FIXED["amp_max"])
+    kn = _cfg_knobs(cfg)
     pen = dict(penalties)
-    pen["amp_max"] = amp_max
+    pen["amp_max"] = kn["amp_max"]
     t0 = time.time()
     u1, info1 = optimize_multi_state_pulse(
         GATE_FACTORIES[gate],
@@ -725,7 +980,7 @@ def _get_or_train_phase1(gate, cfg, seed, h, n_t, N, dt, verbose, force):
         n_t=n_t, N=N, dt=dt, penalties=pen,
         save_path=None, n_jobs=len(TWO_PHASE["phase1_trunc_list"]),
         cav_band=FIXED["cav_band"], tra_band=FIXED["tra_band"],
-        hard_amp_limit=FIXED["hard_amp_limit"],
+        ramp_ns=kn["ramp_ns"], hard_amp_limit=FIXED["hard_amp_limit"],
         fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
     )
     train_time = time.time() - t0
@@ -803,13 +1058,14 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
         raise ValueError("phase is only meaningful for protocol='two_phase'")
 
     penalties = cfg["penalties"]
-    amp_max = cfg.get("amp_max", FIXED["amp_max"])
-    h = _config_hash(gate, penalties, seed, maxiter, amp_max=amp_max,
+    kn = _cfg_knobs(cfg)
+    amp_max = kn["amp_max"]
+    h = _config_hash(gate, penalties, seed, maxiter, kn=kn,
                      protocol=protocol)
     pulse_path, row_path = _cache_paths(gate, h)
 
     row_extra_key = _config_hash(
-        gate, penalties, seed, maxiter, amp_max=amp_max,
+        gate, penalties, seed, maxiter, kn=kn,
         extra={"eval": list(eval_truncs)}, protocol=protocol,
     )
 
@@ -836,6 +1092,14 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
             # Same argument for snapshots: they are scored from waveforms on
             # disk, so a row predating them can gain the columns without
             # retraining. Only pay the extra score_pulse calls once.
+            # And again for the pre-image columns, which come from x_<hash>.npy
+            # rather than u_<hash>.npy. A row trained before that file was
+            # written keeps them absent rather than gaining a wrong number.
+            x_path = _preimage_path(gate, h)
+            if not set(_PREIMAGE_KEYS) <= cached.keys() and os.path.exists(x_path):
+                cached.update(_preimage_stats(
+                    {"x_preimage": np.load(x_path)}, FIXED["hard_amp_limit"]))
+                dirty = True
             snap_keys = {f"F_ped_heldout_mean@{k}" for k in SNAPSHOT_ITERS
                          if os.path.exists(_snapshot_path(gate, h, k))}
             if snap_keys and not snap_keys <= cached.keys():
@@ -870,6 +1134,9 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
     if not force and os.path.exists(pulse_path):
         u = np.load(pulse_path)
         info = {"iterations": np.nan, "success": None, "final_fidelity": np.nan}
+        x_path = _preimage_path(gate, h)
+        if os.path.exists(x_path):
+            info["x_preimage"] = np.load(x_path)
         train_time = np.nan
         reused_pulse = True
     else:
@@ -878,7 +1145,8 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
         common = dict(
             n_t=FIXED["n_t"], N=FIXED["N"], dt=FIXED["dt"], penalties=pen,
             save_path=None, n_jobs=n_jobs, cav_band=FIXED["cav_band"],
-            tra_band=FIXED["tra_band"], hard_amp_limit=FIXED["hard_amp_limit"],
+            tra_band=FIXED["tra_band"], ramp_ns=kn["ramp_ns"],
+            hard_amp_limit=FIXED["hard_amp_limit"],
             fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
         )
         if protocol == "two_phase":
@@ -909,7 +1177,7 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
                 n_t=FIXED["n_t"], N=FIXED["N"], dt=FIXED["dt"], penalties=pen,
                 save_path=None, n_jobs=len(TWO_PHASE["phase2_trunc_list"]),
                 cav_band=FIXED["cav_band"], tra_band=FIXED["tra_band"],
-                hard_amp_limit=FIXED["hard_amp_limit"],
+                ramp_ns=kn["ramp_ns"], hard_amp_limit=FIXED["hard_amp_limit"],
                 fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
             )
             phase2_time = time.time() - t0
@@ -928,6 +1196,8 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
             )
             train_time = time.time() - t0
         np.save(pulse_path, u)
+        if info.get("x_preimage") is not None:
+            np.save(_preimage_path(gate, h), np.asarray(info["x_preimage"]))
         for k, u_k in info.get("snapshots", {}).items():
             np.save(_snapshot_path(gate, h, k), u_k)
         reused_pulse = False
@@ -937,6 +1207,7 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
     )
     metrics = pulse_metrics(u, FIXED["dt"])
     snaps = snapshot_scores(gate, h, eval_truncs) if protocol != "two_phase" else {}
+    pre = _preimage_stats(info, FIXED["hard_amp_limit"])
 
     row = {
         "gate": gate,
@@ -954,10 +1225,17 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
            if protocol == "two_phase" else {}),
         **{f"lambda_{k}": float(penalties[k]) for k in PENALTY_NAMES},
         "amp_max": float(amp_max),
+        "ramp_ns": float(kn["ramp_ns"]),
+        # Echoed for provenance, not swept. It is the knob physically coupled to
+        # ramp_ns -- the pre-image inflation a longer ramp causes is bounded by
+        # THIS, not by the envelope -- so a row reporting max_abs_preimage
+        # without reporting what bounded it is not self-describing.
+        "hard_amp_limit": float(FIXED["hard_amp_limit"]),
         "F_coh_train": float(info.get("final_fidelity", np.nan)),
         "iterations": info.get("iterations", np.nan),
         "converged": info.get("success", None),
         "train_time_s": train_time,
+        **pre,
         **scores,
         **metrics,
         **snaps,
@@ -1017,7 +1295,7 @@ def _shard_filter(gate, items, maxiter, s_idx, s_cnt, force=False,
     for it in items:
         _, cfg, seed = it
         h = _config_hash(gate, cfg["penalties"], seed, maxiter,
-                         amp_max=cfg.get("amp_max", FIXED["amp_max"]),
+                         kn=_cfg_knobs(cfg),
                          protocol=protocol)
         pulse_path, _ = _cache_paths(gate, h)
         done = os.path.exists(pulse_path)
@@ -1114,7 +1392,13 @@ def run_sweep(gate, configs, seeds, maxiter, eval_truncs, out_csv, manifest_path
             f"occ99={row.get('occ99_frac', float('nan')):.0%} of own mask "
             f"({row.get('binding_drive', '?')}; "
             f"{row.get('occ99_MHz', float('nan')):.1f} MHz) "
-            f"peak={row['peak_amp']:.1f}",
+            f"peak={row['peak_amp']:.1f} "
+            # Surfaced live because this is the one number that invalidates a
+            # run: at the bound the box chose the pulse, not the objective.
+            f"maxx={row.get('max_abs_preimage', float('nan')):.1f}/"
+            f"{row.get('hard_amp_limit', float('nan')):.0f}"
+            + ("  ** AT BOUND **"
+               if row.get("preimage_at_bound_frac", 0) else ""),
             flush=True,
         )
         rows.append(row)
@@ -1152,7 +1436,8 @@ def run_sweep(gate, configs, seeds, maxiter, eval_truncs, out_csv, manifest_path
         "n_rows": len(rows),
         "configs": [
             {"label": c["label"], "swept": c["swept"], "penalties": c["penalties"],
-             "amp_max": c.get("amp_max", FIXED["amp_max"])}
+             "amp_max": c.get("amp_max", FIXED["amp_max"]),
+             "ramp_ns": c.get("ramp_ns", FIXED["ramp_ns"])}
             for c in configs
         ],
         "per_trunc": {
@@ -1186,11 +1471,11 @@ def merge_sweep(gate, configs, seeds, maxiter, eval_truncs, out_csv, manifest_pa
 
     rows, missing = [], []
     for _, cfg, seed in _work_items(configs, seeds):
-        amp_max = cfg.get("amp_max", FIXED["amp_max"])
-        h = _config_hash(gate, cfg["penalties"], seed, maxiter, amp_max=amp_max,
+        kn = _cfg_knobs(cfg)
+        h = _config_hash(gate, cfg["penalties"], seed, maxiter, kn=kn,
                          protocol=protocol)
         want_key = _config_hash(
-            gate, cfg["penalties"], seed, maxiter, amp_max=amp_max,
+            gate, cfg["penalties"], seed, maxiter, kn=kn,
             extra={"eval": list(eval_truncs)}, protocol=protocol,
         )
         _, row_path = _cache_paths(gate, h)
@@ -1244,7 +1529,8 @@ def merge_sweep(gate, configs, seeds, maxiter, eval_truncs, out_csv, manifest_pa
         "n_rows": len(rows),
         "configs": [
             {"label": c["label"], "swept": c["swept"], "penalties": c["penalties"],
-             "amp_max": c.get("amp_max", FIXED["amp_max"])}
+             "amp_max": c.get("amp_max", FIXED["amp_max"]),
+             "ramp_ns": c.get("ramp_ns", FIXED["ramp_ns"])}
             for c in configs
         ],
         "per_trunc": {
@@ -1279,11 +1565,11 @@ def build_arg_parser():
     )
     p.add_argument("--gate", default="X", choices=sorted(GATE_FACTORIES))
     p.add_argument("--mode", default="ofat", choices=["ofat", "grid", "disc-null"])
-    # Default grid is deriv x boundary. `disc` is no longer a legal axis at all
+    # Default grid is deriv x amp_max. `disc` and `boundary` are no longer legal axes
     # (provably inert -- see the note above PENALTY_NAMES), so the original
     # deriv x disc plan is not merely discouraged, it cannot be selected.
     p.add_argument("--grid-x", default="deriv", choices=AXIS_NAMES)
-    p.add_argument("--grid-y", default="boundary", choices=AXIS_NAMES)
+    p.add_argument("--grid-y", default="amp_max", choices=AXIS_NAMES)
     p.add_argument("--seeds", type=int, nargs="+", default=[42])
     p.add_argument("--maxiter", type=int, default=1500)
     p.add_argument("--protocol", default="single_phase",
@@ -1349,7 +1635,7 @@ def main():
             if not os.path.exists(_cache_paths(
                 args.gate,
                 _config_hash(args.gate, c["penalties"], s, args.maxiter,
-                             amp_max=c.get("amp_max", FIXED["amp_max"]),
+                             kn=_cfg_knobs(c),
                              protocol=args.protocol))[0])
         ]
         if untrained and not args.force:

@@ -115,8 +115,11 @@ def build_arg_parser():
     opt.add_argument("--n-t", type=int, default=3, help="Number of transmon levels.")
     opt.add_argument("--lambda-deriv", type=float, default=1e-5,
                       help="Weight of the pulse-smoothness (derivative) penalty.")
-    opt.add_argument("--lambda-boundary", type=float, default=2e-5,
-                      help="Weight of the boundary (start/end amplitude) penalty.")
+    opt.add_argument("--ramp-ns", type=float, default=48.0,
+                      help="Gaussian rise/fall width in ns applied after the "
+                           "band-limit projection. Enforces zero drive at the "
+                           "pulse endpoints structurally, replacing the removed "
+                           "boundary penalty. Pass 0 to disable.")
     opt.add_argument("--lambda-amp", type=float, default=8e-5,
                       help="Weight of the soft amplitude penalty.")
     opt.add_argument("--lambda-disc", type=float, default=0.5,
@@ -378,7 +381,6 @@ def main():
 
     penalties = {
         "deriv": args.lambda_deriv,
-        "boundary": args.lambda_boundary,
         "amp": args.lambda_amp,
         "amp_max": args.amp_max,
         "disc": args.lambda_disc,
@@ -398,6 +400,7 @@ def main():
         maxiter=args.max_iter,
         cav_band=cav_band,
         tra_band=tra_band,
+        ramp_ns=args.ramp_ns or None,
         hard_amp_limit=args.hard_amp_limit,
         fidelity_fn=fidelity_fn,
         verbose=True,

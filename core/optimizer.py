@@ -6,7 +6,6 @@ from core.grape_core import (
     make_hamiltonian,
     smooth_initial_controls,
     derivative_penalty,
-    boundary_penalty,
     amplitude_penalty,
     fidelity_multi_state,
     coherent_fidelity_multi_state,
@@ -14,7 +13,40 @@ from core.grape_core import (
     refine_dt,
 )
 from core.cat_code import validate_pulse_truncations
-from core.fourier_cutoff import project_bandlimit
+from core.ramp import (
+    DEFAULT_RAMP_NS,
+    make_constraint_chain,
+    deramp,
+    constraint_report,
+)
+
+# Penalty-dict keys this module understands. `boundary` was REMOVED when the
+# Gaussian rise/fall ramp replaced it (core/ramp.py); an unknown key raises
+# rather than being silently dropped, so stale recipes surface immediately
+# instead of training under a weight nobody applied.
+_VALID_PENALTY_KEYS = frozenset({'deriv', 'amp', 'amp_max', 'disc'})
+
+
+def _check_penalties(penalties):
+    unknown = set(penalties) - _VALID_PENALTY_KEYS
+    if unknown:
+        extra = ""
+        if 'boundary' in unknown:
+            extra = (" The 'boundary' penalty was removed; the boundary condition"
+                     " is now structural via ramp_ns (see core/ramp.py).")
+        raise ValueError(
+            f"unknown penalty key(s) {sorted(unknown)}; "
+            f"expected a subset of {sorted(_VALID_PENALTY_KEYS)}.{extra}"
+        )
+
+
+def _preimage_path(save_path):
+    """pulses/u_X_main.npy -> pulses/x_X_main.npy (EST/train_est.py convention)."""
+    d, base = os.path.split(save_path)
+    if base.startswith('u_'):
+        return os.path.join(d, 'x_' + base[2:])
+    stem, ext = os.path.splitext(base)
+    return os.path.join(d, f"{stem}_x{ext or '.npy'}")
 
 
 def make_smooth_warm_start(N, amp_max=4.0, cutoff_frac=0.04, seed=42):
@@ -37,11 +69,15 @@ def optimize_multi_state_pulse(
     warm_start_amp=4.0,
     warm_start_cutoff_frac=0.04,
     warm_start_seed=42,
+    warm_start_strict=True,
+    init_x=None,
     save_path=None,
+    save_preimage=True,
     n_jobs=3,
     maxiter=2000,
     cav_band=None,
     tra_band=None,
+    ramp_ns=DEFAULT_RAMP_NS,
     hard_amp_limit=50.0,
     parallel_backend='loky',
     fidelity_fn=fidelity_multi_state,
@@ -67,6 +103,42 @@ def optimize_multi_state_pulse(
         projection u = P(x) onto the band-limited subspace (see
         fourier_cutoff.project_bandlimit). Leave both None to disable
         (identical to previous behavior).
+    ramp_ns : float, or None
+        Width in ns of the Gaussian rise/fall envelope applied AFTER the
+        band-limit projection, so the full chain is u = env * P(x)
+        (core.ramp.make_constraint_chain). This suppresses the drive at the
+        pulse endpoints, replacing the removed soft `boundary` penalty --
+        structurally, as part of the parametrization, so it is not a term the
+        optimizer can trade away. Set None to disable (required for pulses too
+        short to hold a flat top: ramp_envelope raises when 2*ramp_ns >= N*dt).
+
+        It HALVES endpoint amplitude rather than zeroing it (0.83 -> 0.41
+        rad/us on u_X_main, 4.75% -> 2.32% of peak), because the optimizer
+        inflates the pre-image at the edges to recover the control authority
+        the envelope removes -- and what bounds that inflation is
+        hard_amp_limit, not the envelope. See core/ramp.py's module docstring;
+        check info['max_abs_preimage'] and info['constraints'] per run.
+
+        Ramping after projecting means the returned pulse is no longer
+        EXACTLY band-limited. That cost is small and measured, not assumed:
+        sub-percent out-of-band energy on white noise, ~1e-4 on a trained
+        pulse. Projecting last would instead leave the endpoints at ~a third
+        of full scale, defeating the point. See core/ramp.py.
+    init_x : str path, (N,4) array, or None
+        Resume from a saved raw PRE-IMAGE (an x_*.npy written beside a
+        pulse). Exact: x is what L-BFGS-B optimizes, so there is nothing to
+        invert. Mutually exclusive with warm_start, and the preferred way to
+        warm-start now that a chain exists -- see warm_start_strict.
+    warm_start_strict : bool
+        When warm_start is a PHYSICAL pulse, it must be inverted through the
+        constraint chain (core.ramp.deramp) to recover a pre-image, and that
+        inversion is checked. Pulses trained before the ramp existed are not
+        in the chain's range and will be REFUSED -- correctly, since they
+        cannot be resumed exactly. Pass False to downgrade the failure to a
+        warning for one-off legacy comparisons.
+    save_preimage : bool
+        Also write the raw pre-image beside save_path (u_X_main.npy ->
+        x_X_main.npy), so a run can later be resumed exactly via init_x.
     hard_amp_limit : float
         L-BFGS-B box constraint on the raw variable x, in rad/us. This is
         the true hard amplitude bound, decoupled from penalties['amp_max']
@@ -102,14 +174,23 @@ def optimize_multi_state_pulse(
         and leaving this None reproduces the previous behavior exactly.
     """
     if penalties is None:
-        penalties = {'deriv': 0.00001, 'boundary': 0.00004, 'amp': 0.00012, 'amp_max': 40.0}
+        penalties = {'deriv': 0.00001, 'amp': 0.00012, 'amp_max': 40.0}
     else:
         penalties = penalties.copy()
+    _check_penalties(penalties)
     penalties.setdefault('disc', 0.0)
 
-    bandlimit = cav_band is not None and tra_band is not None
     if (cav_band is None) != (tra_band is None):
         raise ValueError("cav_band and tra_band must both be given or both be None")
+    if init_x is not None and warm_start is not None:
+        raise ValueError("pass init_x or warm_start, not both")
+
+    # The single place the raw-variable -> physical-pulse map is defined.
+    # Everything below -- objective, snapshots, final pulse -- goes through it,
+    # so the band/ramp composition order cannot disagree with itself.
+    to_physical, to_preimage_grad = make_constraint_chain(
+        N, dt, cav_band, tra_band, ramp_ns
+    )
 
     # Label the optimizer objective correctly: F_coh is process fidelity,
     # never "gate fidelity" (Pedersen is reported separately by the caller).
@@ -141,12 +222,30 @@ def optimize_multi_state_pulse(
         if verbose:
             print(f"assert_coherent_inputs passed for trunc_list={list(trunc_list)}")
 
-    # Initial controls
-    if isinstance(warm_start, str) and os.path.exists(warm_start):
-        u0 = np.load(warm_start)
-        if verbose: print(f"Loaded warm start from {warm_start}")
-    elif isinstance(warm_start, np.ndarray):
-        u0 = warm_start
+    # Initial controls. Note the distinction the ramp forces: `init_x` is a raw
+    # PRE-IMAGE (used as-is), while `warm_start` is a PHYSICAL pulse and must be
+    # pulled back through the chain first. Feeding a physical pulse straight in
+    # as x0 -- which is what this function used to do -- would envelope it a
+    # second time.
+    warm_kind, roundtrip_err = 'cold', None
+    if init_x is not None:
+        x_init = np.load(init_x) if isinstance(init_x, str) else np.asarray(init_x)
+        if x_init.shape != (N, 4):
+            raise ValueError(f"init_x has shape {x_init.shape}, expected {(N, 4)}")
+        u0, warm_kind = x_init, 'preimage'
+        if verbose: print(f"Exact warm start from pre-image {init_x}")
+    elif (isinstance(warm_start, str) and os.path.exists(warm_start)) or \
+            isinstance(warm_start, np.ndarray):
+        u_ws = np.load(warm_start) if isinstance(warm_start, str) else warm_start
+        warm_kind = 'pulse'
+        try:
+            u0, roundtrip_err = deramp(u_ws, dt, cav_band, tra_band, ramp_ns)
+        except ValueError as exc:
+            if warm_start_strict:
+                raise
+            u0 = u_ws
+            print(f"WARNING: warm_start_strict=False, proceeding anyway.\n  {exc}")
+        if verbose: print(f"Loaded warm start from {warm_start} (as physical pulse)")
     elif warm_start in ("zero", 0, "zeros"):
         u0 = np.zeros((N, 4))
         if verbose: print("Starting from zero controls (warm_start='zero')")
@@ -160,11 +259,23 @@ def optimize_multi_state_pulse(
                 f"(peak |u| = {np.max(np.abs(u0)):.4f} <= {warm_start_amp})"
             )
 
+    # L-BFGS-B silently PROJECTS an infeasible start into the box; refuse
+    # instead, so a warm start that needs a raised hard_amp_limit says so.
+    if np.abs(u0).max() > hard_amp_limit:
+        raise ValueError(
+            f"initial pre-image peak {np.abs(u0).max():.3f} exceeds "
+            f"hard_amp_limit={hard_amp_limit}. L-BFGS-B would silently clip it. "
+            "Raise hard_amp_limit or start from a different point."
+        )
+
     x0 = u0.ravel()
     bounds = [(-hard_amp_limit, hard_amp_limit)] * (N * 4)
 
     # === Best bare-F tracking (mutable container for closure) ===
-    best = {'u': None, 'F': -np.inf}
+    # `x` is tracked alongside `u` so the pulse we save always has a pre-image
+    # that reproduces it. Previously only `u` was kept, so the returned pulse
+    # frequently had no recorded x at all and could not be resumed.
+    best = {'u': None, 'x': None, 'F': -np.inf}
 
     # === Parallel evaluation (unchanged core logic) ===
     def evaluate_trunc(u, H0_k, Hc_k, nc):
@@ -180,12 +291,12 @@ def optimize_multi_state_pulse(
 
         def objective(x):
             u_raw = x.reshape(N, 4)
-            # Reparametrization (Heeres et al. 2017, Supp. Eq. 22): x is a free
-            # pre-image; the physical pulse is its projection onto the
-            # band-limited subspace. All fidelity/penalty terms below act on
-            # the PHYSICAL pulse u, so the returned pulse is guaranteed
-            # band-limited by construction.
-            u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+            # Reparametrization: x is a free pre-image; the physical pulse is
+            # u = env * P(x) -- band-limit projection (Heeres et al. 2017,
+            # Supp. Eq. 22) followed by the Gaussian rise/fall envelope. All
+            # fidelity/penalty terms below act on the PHYSICAL pulse u, so the
+            # returned pulse satisfies both constraints by construction.
+            u = to_physical(u_raw)
 
             results = parallel(
                 delayed(evaluate_trunc)(u, H0_k, Hc_k, nc)
@@ -199,10 +310,12 @@ def optimize_multi_state_pulse(
             F_avg = total_F / M          # bare average fidelity across training truncations
             grad_avg = total_grad / M
 
-            # Track best bare-F pulse seen so far
+            # Track best bare-F pulse seen so far, with the pre-image that
+            # produced it (they are only useful as a pair).
             if F_avg > best['F']:
                 best['F'] = F_avg
                 best['u'] = u.copy()
+                best['x'] = u_raw.copy()
 
             cost = -F_avg
             g = -grad_avg
@@ -231,19 +344,17 @@ def optimize_multi_state_pulse(
                 g_d, gr_d = derivative_penalty(u)
                 cost += penalties['deriv'] * g_d
                 g += penalties['deriv'] * gr_d
-            if penalties['boundary'] > 0:
-                g_b, gr_b = boundary_penalty(u)
-                cost += penalties['boundary'] * g_b
-                g += penalties['boundary'] * gr_b
             if penalties['amp'] > 0:
                 g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
                 cost += penalties['amp'] * g_a
                 g += penalties['amp'] * gr_a
 
-            # Chain rule for the reparametrization: dCost/dx = P(dCost/du).
-            # Valid because P is self-adjoint & idempotent (see fourier_cutoff.py).
-            if bandlimit:
-                g = project_bandlimit(g, dt, cav_band, tra_band)
+            # Chain rule for the reparametrization: dCost/dx = P(env * dCost/du).
+            # The envelope is applied BEFORE the projection here: the Jacobian
+            # of u = R(P(x)) is R.P, whose adjoint is P.R. Reversing the two
+            # still yields a plausible-looking gradient, so the adjoint identity
+            # is pinned by test, not by inspection.
+            g = to_preimage_grad(g)
 
             return cost, g.ravel()
 
@@ -264,21 +375,20 @@ def optimize_multi_state_pulse(
                     if best['u'] is not None and best['F'] > 0.5:
                         snapshots[k] = best['u'].copy()
                     else:
-                        snapshots[k] = (
-                            project_bandlimit(xk.reshape(N, 4), dt, cav_band, tra_band)
-                            if bandlimit else xk.reshape(N, 4).copy()
-                        )
+                        snapshots[k] = to_physical(xk)
 
         # Run optimization
         res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds,
                        callback=callback,
                        options={'maxiter': maxiter, 'ftol': 1e-12, 'gtol': 1e-8})
 
-        # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
-        u_final = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
-            else res.x.reshape(N, 4)
+        # res.x is the raw pre-image; map it through the chain for the physical pulse.
+        x_final = res.x.reshape(N, 4)
+        u_final = to_physical(x_final)
 
-        # Decide which pulse to return: final from minimizer or best bare-F seen during run
+        # Decide which pulse to return: final from minimizer or best bare-F seen
+        # during the run. Pick the (u, x) PAIR either way -- never mix them, or
+        # the saved pre-image would not reproduce the saved pulse.
         if best['u'] is not None and best['F'] > 0.5:   # only consider if reasonably good
             # Re-evaluate bare F of final point on training set for fair comparison
             def _bare_F(u):
@@ -290,20 +400,28 @@ def optimize_multi_state_pulse(
 
             F_final_eval = _bare_F(u_final)
             if best['F'] > F_final_eval:
-                u_opt = best['u'].copy()
+                u_opt, x_opt = best['u'].copy(), best['x'].copy()
                 if verbose:
                     print(
                         f"Using best-seen pulse ({obj_label} = {best['F']:.6f}) "
                         f"instead of final L-BFGS point ({obj_label} = {F_final_eval:.6f})"
                     )
             else:
-                u_opt = u_final
+                u_opt, x_opt = u_final, x_final
         else:
-            u_opt = u_final
+            u_opt, x_opt = u_final, x_final
+
+    # The invariant that makes x_*.npy a valid resume point. One FFT.
+    assert np.allclose(to_physical(x_opt), u_opt, atol=1e-12), \
+        "saved pre-image does not reproduce the saved pulse"
 
     if save_path:
         np.save(save_path, u_opt)
         if verbose: print(f"Saved optimized pulse to {save_path}")
+        if save_preimage:
+            x_path = _preimage_path(save_path)
+            np.save(x_path, x_opt)
+            if verbose: print(f"Saved raw pre-image to {x_path} (resume with init_x)")
 
     # === Post-optimization diagnostics: same objective used for training ===
     if verbose:
@@ -347,7 +465,28 @@ def optimize_multi_state_pulse(
         'trunc_list': trunc_list,
         'disc_penalty_weight': penalties.get('disc', 0.0),
         'snapshots': snapshots,
+        # Constraint-chain record. `x_preimage` rides in `info` rather than the
+        # return tuple so the ~17 existing call sites keep working; `snapshots`
+        # already establishes that convention for ndarray payloads.
+        'x_preimage': x_opt,
+        'ramp_ns': ramp_ns,
+        'warm_start_kind': warm_kind,
+        'roundtrip_err': roundtrip_err,
+        'max_abs_preimage': float(np.abs(x_opt).max()),
+        # What the chain actually delivered on THIS pulse: endpoint amplitude
+        # and residual out-of-band energy. Reported per gate rather than
+        # assumed once in a test -- ramping after projecting is a real
+        # trade-off and this is where it stays visible.
+        'constraints': constraint_report(u_opt, dt, cav_band, tra_band),
     }
+
+    if verbose:
+        c = info['constraints']
+        print(f"Constraint check: endpoints {c['endpoint_rel_to_mid']:.3%} of mid-pulse RMS, "
+              f"peak |u| = {c['peak_amp']:.2f} rad/us, max|x| = {info['max_abs_preimage']:.2f}")
+        if 'out_of_band_cavity' in c:
+            print(f"  residual out-of-band: cavity {c['out_of_band_cavity']:.2e}, "
+                  f"transmon {c['out_of_band_transmon']:.2e}")
 
     return u_opt, info
 
@@ -368,6 +507,7 @@ def refine_pulse(
     save_path=None,
     cav_band=None,
     tra_band=None,
+    ramp_ns=DEFAULT_RAMP_NS,
     hard_amp_limit=40.0,
     parallel_backend='loky',
     verbose=True
@@ -393,8 +533,8 @@ def refine_pulse(
         Base penalty dictionary. If None, uses sensible defaults.
     penalty_scale : float or dict
         Scaling factor(s) applied to penalties.
-        - float: scales all regularization penalties (deriv, boundary, amp)
-        - dict: allows per-penalty scaling, e.g. {'deriv': 0.4, 'boundary': 0.8}
+        - float: scales all regularization penalties (deriv, amp)
+        - dict: allows per-penalty scaling, e.g. {'deriv': 0.4, 'amp': 0.8}
     widen_training : bool
         If True, prints a recommendation for a wider training set.
         Actual widening is left manual (as requested).
@@ -425,7 +565,6 @@ def refine_pulse(
     if penalties is None:
         penalties = {
             'deriv': 0.00001,
-            'boundary': 0.00002,
             'amp': 0.00008,
             'amp_max': 40.0
         }
@@ -440,7 +579,7 @@ def refine_pulse(
                 if verbose:
                     print(f"  Scaled '{key}' by {scale} → {penalties[key]:.2e}")
     elif penalty_scale != 1.0:
-        for key in ['deriv', 'boundary', 'amp']:
+        for key in ['deriv', 'amp']:
             if key in penalties:
                 penalties[key] *= penalty_scale
         if verbose:
@@ -467,6 +606,7 @@ def refine_pulse(
         save_path=save_path,
         cav_band=cav_band,
         tra_band=tra_band,
+        ramp_ns=ramp_ns,
         hard_amp_limit=hard_amp_limit,
         parallel_backend=parallel_backend,
         verbose=verbose
@@ -511,6 +651,7 @@ def refine_pulse_dt(
     save_path=None,
     cav_band=None,
     tra_band=None,
+    ramp_ns=DEFAULT_RAMP_NS,
     hard_amp_limit=40.0,
     parallel_backend='loky',
     verbose=True
@@ -536,7 +677,7 @@ def refine_pulse_dt(
 
     Penalty note: derivative_penalty's raw sum scales ~dt (so it shrinks by
     ~s at the finer grid) while amplitude_penalty's raw sum scales ~1/dt (so
-    it grows by ~s); boundary_penalty is unaffected. This function does NOT
+    it grows by ~s). This function does NOT
     rescale lambda_deriv/lambda_amp automatically -- penalties are passed
     through unchanged, exactly as given.
     """
@@ -546,7 +687,16 @@ def refine_pulse_dt(
         print("=" * 70)
         print(f"Original: N={initial_pulse.shape[0]}, dt={dt}")
 
-    u0 = refine_dt(initial_pulse, s)
+    # `initial_pulse` is PHYSICAL, so under the constraint chain it must be
+    # pulled back to a pre-image before it can serve as a starting point -- and
+    # that pullback must happen on the OLD grid. The refined envelope floors
+    # ~s times lower than the original, so deramping after upsampling would
+    # amplify the pulse edges far harder for no gain. ZOH breaks band-limiting;
+    # the projection repairs it on the first objective call.
+    x_init = initial_pulse
+    if ramp_ns:
+        x_init, _ = deramp(initial_pulse, dt, cav_band, tra_band, ramp_ns)
+    u0 = refine_dt(x_init, s)
     new_dt = dt / s
     N_new = u0.shape[0]
 
@@ -561,7 +711,6 @@ def refine_pulse_dt(
     if penalties is None:
         penalties = {
             'deriv': 0.00001,
-            'boundary': 0.00002,
             'amp': 0.00008,
             'amp_max': 40.0
         }
@@ -575,7 +724,7 @@ def refine_pulse_dt(
                 if verbose:
                     print(f"  Scaled '{key}' by {scale} → {penalties[key]:.2e}")
     elif penalty_scale != 1.0:
-        for key in ['deriv', 'boundary', 'amp']:
+        for key in ['deriv', 'amp']:
             if key in penalties:
                 penalties[key] *= penalty_scale
         if verbose:
@@ -596,12 +745,13 @@ def refine_pulse_dt(
         n_t=n_t,
         N=N_new,
         dt=new_dt,
-        warm_start=u0,
+        init_x=u0,          # already a pre-image (deramped on the old grid)
         penalties=penalties,
         maxiter=extra_maxiter,
         save_path=save_path,
         cav_band=cav_band,
         tra_band=tra_band,
+        ramp_ns=ramp_ns,
         hard_amp_limit=hard_amp_limit,
         parallel_backend=parallel_backend,
         verbose=verbose
@@ -647,6 +797,7 @@ def refine_pulse_dt_light(
     save_path=None,
     cav_band=None,
     tra_band=None,
+    ramp_ns=DEFAULT_RAMP_NS,
     hard_amp_limit=40.0,
     validation_trunc_range=range(18, 31, 2),
     verbose=True
@@ -683,7 +834,7 @@ def refine_pulse_dt_light(
         L-BFGS-B iteration budget. The halfway sanity check fires at
         iteration ~extra_maxiter // 2.
     penalties : dict or None
-        Base penalty dictionary (deriv/boundary/amp/amp_max). Same
+        Base penalty dictionary (deriv/amp/amp_max). Same
         defaults as refine_pulse_dt.
     penalty_scale : float or dict
         Scaling factor(s) applied to penalties (see refine_pulse_dt).
@@ -701,7 +852,6 @@ def refine_pulse_dt_light(
     """
     if (cav_band is None) != (tra_band is None):
         raise ValueError("cav_band and tra_band must both be given or both be None")
-    bandlimit = cav_band is not None and tra_band is not None
 
     if verbose:
         print("\n" + "=" * 70)
@@ -709,7 +859,12 @@ def refine_pulse_dt_light(
         print("=" * 70)
         print(f"Original: N={initial_pulse.shape[0]}, dt={dt}")
 
-    u0 = refine_dt(initial_pulse, s)
+    # Pull the physical pulse back to a pre-image on the OLD grid before
+    # upsampling -- see the matching comment in refine_pulse_dt.
+    x_init = initial_pulse
+    if ramp_ns:
+        x_init, _ = deramp(initial_pulse, dt, cav_band, tra_band, ramp_ns)
+    u0 = refine_dt(x_init, s)
     new_dt = dt / s
     N_new = u0.shape[0]
 
@@ -724,7 +879,6 @@ def refine_pulse_dt_light(
     if penalties is None:
         penalties = {
             'deriv': 0.00001,
-            'boundary': 0.00002,
             'amp': 0.00008,
             'amp_max': 40.0
         }
@@ -738,7 +892,7 @@ def refine_pulse_dt_light(
                 if verbose:
                     print(f"  Scaled '{key}' by {scale} → {penalties[key]:.2e}")
     elif penalty_scale != 1.0:
-        for key in ['deriv', 'boundary', 'amp']:
+        for key in ['deriv', 'amp']:
             if key in penalties:
                 penalties[key] *= penalty_scale
         if verbose:
@@ -754,9 +908,13 @@ def refine_pulse_dt_light(
     psi_i_list = [p[0] for p in state_pairs]
     psi_f_list = [p[1] for p in state_pairs]
 
-    def to_physical(x):
-        u_raw = x.reshape(N_new, 4)
-        return project_bandlimit(u_raw, new_dt, cav_band, tra_band) if bandlimit else u_raw
+    # Rebuild the chain on the REFINED grid -- the envelope is a function of
+    # (N_new, new_dt), and reusing the caller's would put the ramp in the wrong
+    # place. Duration is unchanged (N_new*new_dt == N*dt), so the continuous
+    # envelope is identical and only the midpoint sampling shifts.
+    to_physical, to_preimage_grad = make_constraint_chain(
+        N_new, new_dt, cav_band, tra_band, ramp_ns
+    )
 
     def objective(x):
         u = to_physical(x)
@@ -769,17 +927,12 @@ def refine_pulse_dt_light(
             g_d, gr_d = derivative_penalty(u)
             cost += penalties['deriv'] * g_d
             g += penalties['deriv'] * gr_d
-        if penalties['boundary'] > 0:
-            g_b, gr_b = boundary_penalty(u)
-            cost += penalties['boundary'] * g_b
-            g += penalties['boundary'] * gr_b
         if penalties['amp'] > 0:
             g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
             cost += penalties['amp'] * g_a
             g += penalties['amp'] * gr_a
 
-        if bandlimit:
-            g = project_bandlimit(g, new_dt, cav_band, tra_band)
+        g = to_preimage_grad(g)
 
         return cost, g.ravel()
 

@@ -69,7 +69,7 @@ if __name__ == "__main__":
         trunc_list=[22, 24, 26],
         warm_start_amp=np.pi,
         save_path="pulses/u_H_logical_v2.npy",
-        penalties={'deriv': 0.00001, 'boundary': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
+        penalties={'deriv': 0.00001, 'amp': 0.00001, 'amp_max': 40.0},
         maxiter=1500,
         cav_band=(-27.0, 27.0),
         tra_band=(-33.0, 33.0),

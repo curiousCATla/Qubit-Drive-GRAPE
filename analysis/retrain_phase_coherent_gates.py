@@ -70,7 +70,7 @@ DT = 0.002
 
 # Same production recipe as experiments.ipynb Section 1 (OPTIMIZATION_RECIPE).
 TRUNC_LIST = [22, 24, 26]
-PENALTIES = {"deriv": 1e-5, "boundary": 2e-5, "amp": 8e-5, "amp_max": 40.0, "disc": 0.5}
+PENALTIES = {"deriv": 1e-5, "amp": 8e-5, "amp_max": 40.0, "disc": 0.5}
 CAV_BAND = (-27.0, 27.0)
 TRA_BAND = (-33.0, 33.0)
 HARD_AMP_LIMIT = 40.0

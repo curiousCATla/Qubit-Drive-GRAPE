@@ -457,7 +457,18 @@ def derivative_penalty(u):
 
 
 def boundary_penalty(u):
-    """Prefer controls that start and end near zero."""
+    """
+    Prefer controls that start and end near zero.
+
+    NOTE: this DELIBERATELY diverges from core/ as of the ramp migration. The
+    main pipeline removed its `boundary_penalty` and now enforces the endpoint
+    condition structurally, via the 48 ns Gaussian rise/fall in core/ramp.py.
+    This module is a deliberately independent re-implementation (see CLAUDE.md)
+    and the notebook only uses it for the measurement-side
+    `qutip_full_propagator` cross-check, never for training -- so it was left
+    alone. If you ever train with it, expect a differently-shaped pulse than
+    core/ produces: this cost function is no longer the same objective.
+    """
     pen = np.sum(u[0] ** 2) + np.sum(u[-1] ** 2)
     grad = np.zeros_like(u)
     grad[0] += 2 * u[0]

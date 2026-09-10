@@ -132,53 +132,12 @@ def make_hamiltonian_est(n_t, n_c):
     return H0, Hc
 
 
-def ramp_envelope(N, dt, ramp_ns=RAMP_NS):
-    """
-    Gaussian rise/fall envelope, (N,) real in [0, 1].
-
-    Pedestal-subtracted so the underlying continuous envelope is exactly 0 at
-    t = 0 and t = T, and exactly 1 across the flat top. Samples are taken at the
-    MIDPOINT of each piecewise-constant step, which is the honest convention for
-    a sampled-and-held drive but means the first and last steps sit at a small
-    nonzero value (~0.7% of full scale at N=1000, dt=1 ns) rather than at 0.
-
-    Multiplying a pulse by this envelope therefore makes
-    core.grape_core.boundary_penalty near-redundant: the boundary condition is
-    enforced structurally by the envelope shape rather than by a penalty term.
-
-    Parameters
-    ----------
-    N : int          number of time steps
-    dt : float       step size in us
-    ramp_ns : float  rise/fall duration in ns
-
-    Returns
-    -------
-    env : (N,) float64
-    """
-    t_ramp = ramp_ns * 1e-3          # ns -> us
-    t = (np.arange(N) + 0.5) * dt    # midpoint of each piecewise-constant step
-    T = N * dt
-
-    if 2 * t_ramp >= T:
-        raise ValueError(
-            f"ramp_ns={ramp_ns} ns leaves no flat top in a {T*1e3:.1f} ns pulse."
-        )
-
-    sigma = t_ramp / 2.0
-    pedestal = np.exp(-t_ramp ** 2 / (2 * sigma ** 2))   # value of the raw Gaussian at t=0
-
-    def lifted(x):
-        """Raw Gaussian shifted to peak at x = t_ramp, rescaled to hit 0 at x = 0."""
-        g = np.exp(-(x - t_ramp) ** 2 / (2 * sigma ** 2))
-        return (g - pedestal) / (1.0 - pedestal)
-
-    env = np.ones(N)
-    rise = t < t_ramp
-    fall = t > (T - t_ramp)
-    env[rise] = lifted(t[rise])
-    env[fall] = lifted(T - t[fall])
-    return np.clip(env, 0.0, 1.0)
+# `ramp_envelope` now lives in core.ramp and is re-exported here, exactly as
+# `band_mask` below delegates to core.fourier_cutoff.make_band_mask. The core
+# pipeline adopted this envelope to replace its old boundary_penalty, so there
+# is one implementation and the two tracks cannot drift apart. RAMP_NS stays
+# here because it is a device/paper constant, not a core default.
+from core.ramp import ramp_envelope  # noqa: E402
 
 
 def band_mask(N, dt=DT, band=BAND_MHZ):

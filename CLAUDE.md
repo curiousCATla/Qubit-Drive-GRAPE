@@ -43,6 +43,27 @@ RuntimeWarnings from ordinary complex matmuls (verified benign — no actual NaN
 
 There is no build step and no pytest config — tests are plain `unittest` files run directly.
 
+`main.py` is the production training entry point for a single operation, and its CLI defaults
+**are** the production recipe (`analysis/penalty_sweep.py`'s `FIXED` and `experiments.ipynb`'s
+`OPTIMIZATION_RECIPE` both mirror it). Training one gate takes on the order of an hour:
+
+```bash
+# Train one gate at the production recipe. All of these are already the defaults:
+#   --trunc-list 22 24 26  --max-iter 1500  --n-jobs 3  --seed 42
+#   --ramp-ns 48.0  --hard-amp-limit 40.0  --amp-max 40.0
+#   --lambda-deriv 1e-5  --lambda-amp 8e-5  --lambda-disc 0.5
+#   --cav-band -27 27  --tra-band -33 33  --fidelity-fn auto (=> coherent, every gate)
+python main.py --gate X
+
+# U_Y is the exception: seed 42 drives max|x| into the hard_amp_limit box and
+# converges into a 44%-leakage basin. pulses/u_Y_main.npy is a seed-44 pulse.
+python main.py --gate Y --seed 44
+
+# Disable the ramp (0 means off, not "zero-width"); needed for pulses too short
+# to hold a flat top. 'none' likewise disables a band.
+python main.py --gate X --ramp-ns 0 --cav-band none --tra-band none
+```
+
 ```bash
 # Regression suite for the batched fidelity core (pre-refactor equivalence,
 # finite-difference gradient check, optimizer smoke tests). Run from repo root.
@@ -72,14 +93,25 @@ python QuTip/qutip_validate.py
 ```
 
 Penalty-weight sweep (`analysis/penalty_sweep.py` + `penalty_optimization.ipynb`). A config
-costs ~850 s at `maxiter=1500` and occupies only ~2.4 cores, so run it sharded:
+costs ~1250 s median at `maxiter=1500` (826-1449 s over 45 measured rows) and occupies ~2.4
+cores, so run it sharded. **Always pass `--tag`** unless you mean to overwrite
+`tables/penalty_sweep_X_ofat.csv`, which is the frozen pre-ramp table that
+`penalty_optimization.ipynb` §9-§15 read and `validation/test_pulse_metrics.py` pins a
+recommendation against:
 
 ```bash
-# 3 concurrent shards, then rebuild the combined table from the row cache.
-for i in 0 1 2; do
-  python analysis/penalty_sweep.py --gate X --mode ofat --seeds 42 43 44 --shard $i/3 &
+# The post-ramp OFAT sweep: 17 configs (deriv x6, amp_max x6, ramp_ns x5) x 3 seeds = 51 runs.
+# 4 shards is ~9.6 busy cores on a 10-core box; total is ~4-6 h either way, because
+# 3 and 4 shards both saturate the machine (4x3 joblib workers oversubscribes 10 cores).
+for i in 0 1 2 3; do
+  python analysis/penalty_sweep.py --gate X --mode ofat --tag ramp \
+      --seeds 42 43 44 --shard $i/4 &
 done; wait
-python analysis/penalty_sweep.py --gate X --mode ofat --seeds 42 43 44 --merge
+python analysis/penalty_sweep.py --gate X --mode ofat --tag ramp --seeds 42 43 44 --merge
+
+# Section 4.3's continuation table (~15 min); needs the sweep's cache to exist first.
+python analysis/penalty_convergence_check.py --gate X --extra 750 \
+       --out tables/penalty_convergence_check_ramp.csv
 ```
 
 **Two-phase protocol (`--protocol two_phase`)**, an alternative to the single-continuous-run
@@ -169,24 +201,105 @@ n_c=26 as exactly that failure mode, not a bug in the harness.
 
 Read before changing anything here:
 
-- **`_config_hash` is the cache key.** It covers `FIXED`, the four penalty weights, seed,
-  maxiter, and — only when it is not `"single_phase"` — `protocol` plus the full `TWO_PHASE`
-  dict (mirroring how `amp_max` only enters the hash when it differs from its fixed default, so
-  every hash computed before either axis existed is unchanged). Touching any of these
+- **The cached sweep predates the ramp.** Removing the `boundary` penalty took it out of
+  `PENALTY_NAMES` and added `ramp_ns` to `FIXED`, which changes both `_label` and
+  `_config_hash`, so every one of the ~60 pre-ramp cached pulses under
+  `results/penalty_sweep_cache/` is stale (verified: 0 of 30 cache hits for the current config
+  list). This was deliberate and accepted. Do **not** delete that cache: the existing
+  `tables/penalty_sweep_X_*.csv` (all of which still carry a `lambda_boundary` column), the
+  figures built from them, and `penalty_optimization.ipynb` §9-§15 all still reference those
+  labels and remain a valid record of the **pre-ramp** regime. `validation/test_pulse_metrics.py`
+  also pins two pre-ramp cache hashes (`INCUMBENT_HASH`, `CONTROL_HASH`) as metric fixtures.
+- **`penalty_optimization.ipynb` is now split at §9.** §1-§8 are **post-ramp and live**, built on
+  `tables/penalty_sweep_X_ofat_ramp.csv` and the three current axes, and they end in §8's Pareto
+  front and recommendation (Figure 4). §9-§15 are **pre-ramp and frozen** behind a banner, kept
+  because two findings there have not been repeated post-ramp (the mid-training screening
+  correlation in §10, the two-phase protocol comparison in §11/§13) and neither can be
+  regenerated at all. The two halves use disjoint variable names on purpose —
+  `df_ramp`/`agg_ramp`/`base_ramp`/`front`/`rec` in §1-§8, `df`/`combined`/`agg`/`base` in
+  §9-§15, rebound by a restore cell immediately under the banner — because §9-§15 read globals
+  the live half no longer defines. Do not "tidy" that by reusing one set of names.
+- **The pre-ramp `deriv x boundary` grid section was deleted, not archived.** Its heatmap
+  (Figure 3, `figures/penalty_grid_heatmap.*`) is not comparable to anything post-ramp, its axis
+  no longer exists, and its one durable finding — the response was one-dimensional in
+  `lambda_deriv` — is now a cited sentence in §7.2, where the 2-D verdict actually uses it. The
+  CSV stays on disk and `grid` is still loaded, because §11/§13/§14 pool it. Two figure files are
+  now orphaned and regenerated by nothing: `figures/penalty_grid_heatmap.*` and
+  `figures/penalty_disc_null_ofat.*`. Left in place rather than deleted; do not treat their
+  presence as evidence the notebook still produces them.
+- **`--mode disc-null` and the `boundary` grid can no longer be regenerated.** `disc-null` is
+  cache-only and recomputes its hashes under the post-ramp `FIXED`, so it reads all six configs
+  as untrained and exits; `boundary` is not a legal grid axis any more. The CSVs are the
+  artifact. §6.2 of the notebook therefore builds its floor from the `amp_max` ladder's
+  non-binding rungs instead — see the note below.
+- **`_config_hash` is the cache key, and the only-when-it-differs rule is what protects it.**
+  It covers `FIXED`, the penalty weights, seed, maxiter, and — only when it is not
+  `"single_phase"` — `protocol` plus the full `TWO_PHASE` dict. Every `FIXED_AXES` knob
+  (`amp_max`, `ramp_ns`) enters the payload **only when it differs from `FIXED[axis]`**, which
+  is what lets a new sweep axis be added without invalidating anything: verified directly when
+  `ramp_ns` was added as an axis, the baseline hash was byte-identical before and after. Note
+  the rule applies to top-level keys only — `fixed` embeds the whole `FIXED` dict verbatim, so
+  changing a *default* in `FIXED` still invalidates everything, which is exactly what adding
+  `ramp_ns: 48.0` to `FIXED` did. A third knob axis (`hard_amp_limit` is the obvious candidate)
+  is a one-line addition to `FIXED_AXES` plus a ladder constant; the `knobs()` dict threads it
+  everywhere else. Touching any of these
   invalidates all ~60 cached pulses and forces a multi-hour retrain. This is why
   `BASELINE["disc"]` stays at 0.5 even though `disc` is provably inert and is no longer a sweep
   axis — setting it to 0.0 would be a numerically null change that costs 10.6 h. `SNAPSHOT_ITERS`
   is deliberately *outside* the hash for the same reason, and `two_phase` runs skip snapshots
   entirely (`snapshot_iters=None` on both phases) rather than trying to map the single-run
   screening concept onto two separate short runs.
-- **`disc` and `amp` are retired axes, not forgotten ones.** Both are inert under `FIXED` (see
-  the note above `PENALTY_NAMES`). `penalty_viz.AXIS_NAMES` is deliberately a *superset* of
+- **`disc`, `amp` and `boundary` are retired axes, not forgotten ones.** `disc` and `amp` are
+  inert under `FIXED` (see the note above `PENALTY_NAMES`); `boundary` is gone because the
+  penalty it weighted no longer exists — the endpoint condition is now structural (see the ramp
+  note below). `penalty_viz.AXIS_NAMES` is deliberately a *superset* of
   `penalty_sweep.AXIS_NAMES` so historical CSVs still plot and grid rows are still classified
   correctly — do not "sync" the two lists.
-- **The noise floor for comparing two configs is ~1e-3, not ~1.5e-4.** The retired `disc` ladder
-  is a calibrated null: a dynamically negligible perturbation that still moves held-out fidelity
-  by 1.03e-3 by pushing L-BFGS-B into a different basin. Only the `deriv` axis clears it
-  decisively. Do not report a sub-1e-3 fidelity difference as a ranking.
+- **There is exactly ONE post-ramp noise floor: `FLOOR = 1.47e-3`.** Notebook §6.2 derives it in
+  three steps and nothing downstream is allowed a second one. (1) The `amp_max` >= 22 rungs are
+  **bit-identical** to the incumbent at all three seeds — same objective, different hash,
+  separate run — so the pipeline is deterministic and contributes zero noise of its own. (2) Seed
+  choice is therefore the only source: pooled cross-seed sd over the 14 distinct configs is
+  `s = 8.82e-4` (28 dof; Levene p = 0.71 supports pooling, Bartlett p = 0.009 disagrees and is
+  the fragile test at n=3). (3) `FLOOR = t(28) * s * sqrt(2/3) = 1.47e-3` for a difference of two
+  seed-means; ladder *ranges* are compared against `d_k * s / sqrt(3)` instead (Hartley's d2:
+  1.18e-3 at k=5, 1.29e-3 at k=6, 1.38e-3 at k=7), because a range is biased upward by noise.
+  **Pairing by seed does not help** — the pooled paired-difference sd is 1.10e-3, *larger* than
+  the unpaired 8.82e-4, so basin choice is config-specific rather than a shared per-seed offset.
+  Only `deriv` clears the floor (7.90e-3, 5.4x). Do not report a sub-1.5e-3 fidelity difference
+  as a ranking, and do not resurrect the old `floor_bitwise`/`floor_basin` pair — the pre-ramp
+  1.03e-3 came from the retired `disc` ladder and is a different regime.
+- **`amplitude_penalty` charges element-wise on the (N,4) quadratures, not on the complex
+  envelope.** The `peak_amp` column is `max(|eps_C|, |eps_T|)`; the threshold `amp_max` acts on
+  `max|u|` element-wise. They are different numbers, and reading one against the other is why the
+  old `amp_max=20` rung looked like it should bind and mostly did not. Measured element-wise peak
+  of an unconstrained converged pulse: **17.7-20.2 depending on seed**, so the `AMP_MAX_VALUES`
+  ladder `(10, 14, 18, 22, 26, 30)` is live at 10/14, marginal at 18, and **provably inert at
+  22/26/30**. Those inert rungs are the point, not waste: they optimize the identical objective
+  as the incumbent under different hashes, which makes them independent replicates and the
+  post-ramp replacement for both retired noise-floor instruments — they are step 1 of the single
+  floor above. Do not trim them.
+- **Pre-image inflation tracks `lambda_deriv`, NOT ramp duration.** This was measured, and it
+  contradicts the natural reading of `core/ramp.py`'s docstring. Over the 30-70 ns ladder at
+  seeds 42/43/44, `max_abs_preimage` vs `ramp_ns` has Spearman **rho = +0.03** — no relationship
+  — and the 70 ns rung has the *lowest* mean max|x| (23.5 vs the incumbent's 25.0). Against
+  `lambda_deriv` it is **rho = -0.94** on the seed means (32.1 at 0, down to 20.7 at 1e-4).
+  Quote the *direction* of that one, not its strength: per seed it is -0.14 / -0.77 / -1.00, so
+  one seed carries almost none of it. Read `core/ramp.py`'s
+  authority-loss argument as ramp-vs-no-ramp at the fixed 48 ns default, not as a claim about
+  duration. The physically coupled pair for a future grid is therefore
+  `deriv x hard_amp_limit`, not `ramp_ns x hard_amp_limit`.
+- **A ramp sweep is only interpretable because of the pre-image columns.** `max_abs_preimage`
+  and `preimage_at_bound_frac` measure the raw L-BFGS-B variable against `hard_amp_limit=40`.
+  When the box binds, the box chose the pulse and the row's fidelity is not comparable to the
+  rest of its ladder (the U_Y seed-42 failure mode). Exactly one row of 51 pinned it
+  (`ramp=60`, seed 42, 0.046% of entries) — and it reported the **best** robustness spread in
+  the whole sweep, 5.99e-04, an order of magnitude better than its neighbours. By every metric
+  that existed before these columns it was the healthiest pulse in the ladder. They are not
+  recomputable from the waveform, so `run_one` now writes `x_<hash>.npy` beside `u_<hash>.npy` —
+  outside `_config_hash`, for the same reason `SNAPSHOT_ITERS` is. The `constraint_report`
+  metrics (`endpoint_rel_to_peak`, `out_of_band_{cav,tra}`) live in `pulse_metrics` instead,
+  because those *are* recomputable and so get the normal cache backfill.
 
 EsT module (`EST/`) — all from the repo root:
 
@@ -226,7 +339,7 @@ targets and saves results to `pulses/*.npy`. Everything downstream (`analysis/`,
   `fidelity_multi_state` (propagates all target states jointly per time step, amortizing one
   eigendecomposition per step across the batch — this is the main performance-sensitive path).
   Propagators use eigendecomposition (`U_k = V diag(e^{-i dt ω}) V†`), not matrix exponentiation.
-  Penalty terms (`derivative_penalty`, `boundary_penalty`, `amplitude_penalty`) and the
+  Penalty terms (`derivative_penalty`, `amplitude_penalty`) and the
   lower-level `optimize_controls` also live here.
 - **`core/cat_code.py`** — cat-state construction and per-gate `get_*_state_pairs()` factories
   (encode, decode, X, Y, Z, H, T, I) that `optimizer.py` consumes; `validate_pulse_truncations`
@@ -234,7 +347,57 @@ targets and saves results to `pulses/*.npy`. Everything downstream (`analysis/`,
 - **`core/fourier_cutoff.py`** — `project_bandlimit` implements the hard frequency-band
   constraint as an orthogonal projection (`IFFT ∘ mask ∘ FFT`), applied identically to pulses
   and gradients since the projection is idempotent/self-adjoint. Enabled via `cav_band`/
-  `tra_band` kwargs on `optimize_multi_state_pulse`; `None` disables it.
+  `tra_band` kwargs on `optimize_multi_state_pulse`; both must be given or both `None`
+  (exactly one raises). The default is `None` — the band limit is **off** unless the caller
+  asks for it, unlike `ramp_ns`, which is on by default at the `optimizer.py` entry points.
+  Every production caller passes the bands explicitly (`-27/27`, `-33/33`).
+- **`core/ramp.py`** — the 48 ns pedestal-subtracted Gaussian rise/fall (`ramp_envelope`) and
+  the full raw-variable→physical-pulse chain `make_constraint_chain`, which returns the
+  `(to_physical, to_preimage_grad)` pair every cost assembly uses. Order is **band-limit then
+  ramp**, so `u = env * P(x)` and the adjoint is `P(env * g)` — the envelope multiplies the
+  gradient *before* the projection. Getting that backwards still produces a plausible-looking
+  gradient, so `validation/test_grape_core_perf.py` pins the adjoint identity with a negative
+  control; do not "simplify" the order. This module **replaced `boundary_penalty`**, which was
+  removed outright — passing `penalties={'boundary': ...}` now raises. `EST/device.py`
+  re-exports `ramp_envelope` from here (core never imports from EST), so the two tracks share
+  one implementation. Also holds `deramp` (chain inverse, for physical-pulse warm starts) and
+  `constraint_report` (per-pulse endpoint + residual out-of-band measurement, surfaced as
+  `info['constraints']`). When reporting endpoints prefer `endpoint_rel_to_peak`;
+  `endpoint_rel_to_mid` divides a max by an RMS, and the two are not interchangeable — the
+  module docstring's white-noise ordering benchmark ("0.84% of mid") quotes the latter.
+- **The ramp defaults ON at the `optimizer.py` entry points and OFF everywhere else.**
+  `ramp_envelope` and the four `optimizer.py` entry points default to `DEFAULT_RAMP_NS = 48.0`,
+  but `make_constraint_chain` itself defaults to `ramp_ns=None`, as do the three legacy
+  `grape_core` objective makers (`make_objective_with_pen`, `make_objective_multi_trunc`,
+  `optimize_controls`). That is deliberate — silently reshaping the older notebooks' pulses
+  would change historical results — but it means calling the legacy makers produces *unramped*
+  pulses with no warning. `ramp_ns=0` (or `0.0`) also disables, which is what `main.py
+  --ramp-ns 0` relies on.
+- **`hard_amp_limit`, not the envelope, is what bounds the endpoint amplitude — and it can
+  bind.** The ramp cuts `max|u[0]|/peak|u|` on every operation (typically ~3x, up to 11x: Z
+  3.64%->0.32%, T 4.98%->0.47%, I 3.87%->0.34%, opt 6.06%->1.13%), but it does not reach zero,
+  and how close it gets tracks how amplitude-hungry the gate is (X only 4.75%->2.39%). The
+  reason: the envelope removes control authority over the first/last 24 steps and L-BFGS-B buys
+  it back by inflating the *pre-image* there — on `u_X_main`, `|P(x)[0]| = 30.6` against a
+  mid-pulse RMS of 5.03 (6x), so `u[0] = 0.0135 * 30.6 = 0.42` survives. What stops that
+  inflation is the box on the raw variable, so raising `hard_amp_limit` would quietly undo part
+  of the ramp. **Mind which default you are getting**: `optimize_multi_state_pulse` defaults to
+  `hard_amp_limit=50.0`, `refine_pulse`/`refine_pulse_dt`/`refine_pulse_dt_light` to 40.0, and
+  every production path (`main.py`, `analysis/penalty_sweep.py` `FIXED`, the notebook recipe)
+  pins **40.0**. All the numbers below are against 40, so comparing them to a bare
+  `optimize_multi_state_pulse` call's box is comparing to the wrong number.
+  **Y is the cautionary case**: under a cold start at seed 42 it drove
+  `max|x|` to exactly 40.0 (0.46% of entries pinned at the bound) and converged into a
+  44%-leakage basin, `F_ped` held-out 0.9973 -> 0.7491. Seeds 43 and 45 also bound the box
+  (`F_coh` 0.9976 / 0.8908); seed 44 stayed clear at `max|x| = 26.59` and reached
+  `F_coh = 0.9988`. **`pulses/u_Y_main.npy` is therefore a seed-44 pulse** — every other
+  operation is a seed-42 cold start — and is reproduced with `python main.py --gate Y
+  --seed 44`, not by the bare recipe. Note that `experiments.ipynb`'s `OPTIMIZATION_RECIPE`
+  carries no seed key, so re-running its Section 5 loop with `RUN_OPTIMIZATION=True` would
+  silently regenerate the broken seed-42 Y. Always check `info['max_abs_preimage']` against
+  `hard_amp_limit` before trusting a retrained pulse: a pulse at the bound has been clipped,
+  not converged (for reference, X sits at 32.3 and enc at 32.7).
+  Midpoint sampling (EST's convention, `env[0]=0.0135` not 0) is the other half of the gap.
 - **`core/optimizer.py`** — `optimize_multi_state_pulse()` (top-level entry point: averaged
   fidelity over `trunc_list`, optional discrepancy penalty, joblib-parallel truncation
   evaluation, saves to `save_path`), `refine_pulse()`, `refine_pulse_dt()` /
@@ -268,9 +431,24 @@ targets and saves results to `pulses/*.npy`. Everything downstream (`analysis/`,
   `pulses/u_*_main.npy` are the current canonical logical-gate pulses (retrained under the
   cold-start + Eqs. 23/24 protocol — see README "Truncation convergence" section before
   reintroducing warm-started multi-truncation training, which is known to produce pulses that
-  exploit the Hilbert-space truncation wall).
+  exploit the Hilbert-space truncation wall). Every `u_*_main.npy` is now accompanied by its
+  raw optimizer pre-image `x_*_main.npy`, same shape, written by `save_preimage=True`. Only
+  `u` is physical and only `u` is ever scored; `x` exists so a run resumes *exactly* via
+  `init_x`. Prefer `init_x` over `warm_start` — a physical `warm_start` has to be inverted
+  through the chain by `deramp`, which divides by an envelope that floors at 0.0135 at core
+  geometry, and a pulse not produced by this chain (anything pre-ramp) is refused rather than
+  silently mis-resumed unless you pass `warm_start_strict=False`. Same rule as `pulses/est/`.
 - **`figures/`, `tables/`, `wigner/`, `results/`, `logs/`** — generated outputs (figures, CSV
   summaries, campaign metadata). Do not hand-edit; regenerate via the corresponding script.
+- **Most of `tables/` predates the ramp retrain — check mtimes before quoting a number.** The
+  `pulses/u_*_main.npy` set was retrained on 2026-09-09; only `tables/phase0_corrected_fidelities.csv`
+  and `tables/phase2_summary.csv` were regenerated after it. The rest (`validation_master_summary.csv`,
+  `gate_campaign_summary.csv`, `pulse_characterization.csv`, `unitary_*.csv`) still hold the
+  pre-ramp numbers, as does `results/gate_campaign_info.json` (whose stored recipe still lists
+  the removed `boundary` penalty). The same applies to `experiments.ipynb`: its **markdown is
+  post-ramp but its stored cell outputs are not** — the notebook was last executed before the
+  retrain. Post-ramp `F_avg_gate`/`Pipeline_avg` exist only in that markdown (Section 6), not
+  in any CSV. Quoting a stale table as a current result is the easiest mistake to make here.
 
 ### EsT module (`EST/`)
 

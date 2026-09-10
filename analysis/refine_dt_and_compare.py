@@ -22,7 +22,8 @@ if REPO_ROOT not in sys.path:
 from core.optimizer import refine_pulse_dt
 from core.compare_pulses import get_g6_state_pairs
 from core.cat_code import validate_pulse_truncations
-from core.grape_core import derivative_penalty, boundary_penalty, amplitude_penalty
+from core.grape_core import derivative_penalty, amplitude_penalty
+from core.ramp import constraint_report
 
 # ============================================================
 # CONFIGURATION
@@ -43,7 +44,6 @@ VALIDATION_TRUNC_RANGE = list(range(18, 31, 2))
 # (not rescaled for the finer dt) per the user's request.
 PENALTIES = {
     'deriv': 0.00001,
-    'boundary': 0.00002,
     'amp': 0.00008,
     'amp_max': 40.0
 }
@@ -93,8 +93,6 @@ def print_penalty_comparison(u_before, u_after, s):
     ~1/s scaling directly (see refine_pulse_dt's docstring)."""
     d_before, _ = derivative_penalty(u_before)
     d_after, _ = derivative_penalty(u_after)
-    b_before, _ = boundary_penalty(u_before)
-    b_after, _ = boundary_penalty(u_after)
     a_before, _ = amplitude_penalty(u_before, amp_max=PENALTIES['amp_max'])
     a_after, _ = amplitude_penalty(u_after, amp_max=PENALTIES['amp_max'])
 
@@ -102,10 +100,18 @@ def print_penalty_comparison(u_before, u_after, s):
     print("=" * 70)
     print(f"{'Penalty':<12}{'Before':>15}{'After':>15}{'After/Before':>18}")
     print(f"{'derivative':<12}{d_before:>15.6f}{d_after:>15.6f}{(d_after/d_before if d_before else float('nan')):>18.4f}")
-    print(f"{'boundary':<12}{b_before:>15.6f}{b_after:>15.6f}{(b_after/b_before if b_before else float('nan')):>18.4f}")
     print(f"{'amplitude':<12}{a_before:>15.6f}{a_after:>15.6f}{(a_after/a_before if a_before else float('nan')):>18.4f}")
     print("=" * 70)
-    print(f"Expectation: derivative ~ 1/{s} of before, amplitude ~ {s}x before, boundary ~ unchanged.")
+    print(f"Expectation: derivative ~ 1/{s} of before, amplitude ~ {s}x before.")
+
+    # The boundary row used to live here, reporting the retired
+    # boundary_penalty. The boundary condition is now structural (the Gaussian
+    # ramp in core/ramp.py), so what is worth watching is whether the endpoints
+    # actually stayed down across the dt refinement -- not a penalty value.
+    for label, u in (("before", u_before), ("after", u_after)):
+        r = constraint_report(u, DT if label == "before" else DT / s)
+        print(f"endpoints {label:<7}: {r['endpoint_rel_to_mid']:.3%} of mid-pulse RMS "
+              f"(peak |u| = {r['peak_amp']:.3f} rad/us)")
 
 
 # ============================================================

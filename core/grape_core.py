@@ -2,7 +2,7 @@
 import numpy as np
 from numpy.linalg import eigh
 from scipy.optimize import minimize
-from core.fourier_cutoff import project_bandlimit
+from core.ramp import make_constraint_chain
 
 # Apple's Accelerate BLAS backend spuriously raises RuntimeWarnings (divide by
 # zero / overflow / invalid value) on ordinary complex matmuls (verified: no
@@ -401,15 +401,12 @@ def derivative_penalty(u):
 
     return smooth_pen, grad
 
-def boundary_penalty(u):
-    """
-    Penalty for control waveforms not starting and ending at zero.
-    """
-    g_boundary = np.sum(u[0]**2) + np.sum(u[-1]**2)
-    grad = np.zeros_like(u)
-    grad[0] += 2*u[0]
-    grad[-1] += 2*u[-1]
-    return g_boundary, grad
+# `boundary_penalty` (|u_0|^2 + |u_N|^2) was REMOVED. It never worked: its
+# gradient had support on 2 of 550 rows and was then smeared over all of them by
+# the band-limit projection, which -- being a circular FFT operator -- does not
+# preserve endpoint zeros in the first place. The penalty sweep measured its
+# effect as indistinguishable from basin noise. The boundary condition is now
+# structural, via the Gaussian rise/fall envelope in core/ramp.py.
 
 def amplitude_penalty(u, amp_max=40.0):
     # Compute excesss amplitude 
@@ -422,20 +419,27 @@ def amplitude_penalty(u, amp_max=40.0):
     return g_amp, grad
 
 
-def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, amp_max=40.0, cav_band=None, tra_band=None):
+def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_amp=0.0, amp_max=40.0, cav_band=None, tra_band=None, ramp_ns=None):
     """
-    Objective that includes fidelity + derivative + boundary + amplitude penalties.
+    Objective that includes fidelity + derivative + amplitude penalties.
 
     cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
         Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22) applied via
         orthogonal projection: x is a free pre-image, the physical pulse is
         u = P(x). Leave both None to disable.
+    ramp_ns : float, or None
+        Gaussian rise/fall width in ns (core.ramp). Defaults to None -- OFF --
+        because this legacy single-pair maker is what `optimize_controls` and
+        the older notebooks still call, and silently reshaping their pulses
+        would change historical results for no benefit. The production path
+        (optimizer.optimize_multi_state_pulse) defaults it ON.
     """
-    bandlimit = cav_band is not None and tra_band is not None
+    to_physical, to_preimage_grad = make_constraint_chain(
+        N, dt, cav_band, tra_band, ramp_ns
+    )
 
     def objective(x):
-        u_raw = x.reshape(N, 4)
-        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+        u = to_physical(x)
 
         # Fidelity
         F, grad_F = fidelity_grad(u, H0, Hc, psi_i, psi_f, dt)
@@ -449,29 +453,21 @@ def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambd
             total_cost  += lambda_deriv * g_deriv
             total_grad  += lambda_deriv * grad_deriv
 
-        # Boundary penalty (start and end at zero)
-        if lambda_boundary > 0:
-            g_bound, grad_bound = boundary_penalty(u)
-            total_cost  += lambda_boundary * g_bound
-            total_grad  += lambda_boundary * grad_bound
-
         # Amplitude penalty
         if lambda_amp > 0:
             g_amp, grad_amp = amplitude_penalty(u, amp_max=amp_max)
             total_cost  += lambda_amp * g_amp
             total_grad  += lambda_amp * grad_amp
 
-        # Chain rule for the reparametrization: dCost/dx = P(dCost/du),
-        # valid because P is self-adjoint & idempotent.
-        if bandlimit:
-            total_grad = project_bandlimit(total_grad, dt, cav_band, tra_band)
+        # Chain rule for the reparametrization: dCost/dx = P(env * dCost/du).
+        total_grad = to_preimage_grad(total_grad)
 
         return total_cost, total_grad.ravel()
 
     return objective
 
 
-def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,lambda_deriv=0.0, lambda_boundary=0.0, lambda_amp=0.0, lambda_disc=0.0, amp_max=40.0, cav_band=None, tra_band=None):
+def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,lambda_deriv=0.0, lambda_amp=0.0, lambda_disc=0.0, amp_max=40.0, cav_band=None, tra_band=None, ramp_ns=None):
     """
     Multi-truncation objective with discrepancy penalty + existing penalties.
 
@@ -479,12 +475,17 @@ def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,l
         Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22) applied via
         orthogonal projection: x is a free pre-image, the physical pulse is
         u = P(x). Leave both None to disable.
+    ramp_ns : float, or None
+        Gaussian rise/fall width in ns (core.ramp). Defaults to None -- OFF --
+        for the same reason as make_objective_with_pen: this is the legacy
+        path, not the production one.
     """
     n_trunc = len(H0_list)
-    bandlimit = cav_band is not None and tra_band is not None
+    to_physical, to_preimage_grad = make_constraint_chain(
+        N, dt, cav_band, tra_band, ramp_ns
+    )
     def objective(x):
-        u_raw = x.reshape(N, 4)
-        u = project_bandlimit(u_raw, dt, cav_band, tra_band) if bandlimit else u_raw
+        u = to_physical(x)
 
         total_F = 0.0
         total_grad = np.zeros_like(u)
@@ -519,27 +520,20 @@ def make_objective_multi_trunc(H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,l
             cost += lambda_deriv * g_d
             grad += lambda_deriv * gr_d
         
-        if lambda_boundary > 0:
-            g_b, gr_b = boundary_penalty(u)
-            cost += lambda_boundary * g_b
-            grad += lambda_boundary * gr_b
-        
         if lambda_amp > 0:
             g_a, gr_a = amplitude_penalty(u, amp_max=amp_max)
             cost += lambda_amp * g_a
             grad += lambda_amp * gr_a
 
-        # Chain rule for the reparametrization: dCost/dx = P(dCost/du),
-        # valid because P is self-adjoint & idempotent.
-        if bandlimit:
-            grad = project_bandlimit(grad, dt, cav_band, tra_band)
+        # Chain rule for the reparametrization: dCost/dx = P(env * dCost/du).
+        grad = to_preimage_grad(grad)
 
         return cost, grad.ravel()
 
     return objective
 
 
-def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_deriv = 0.0, lambda_boundary = 0.0, lambda_amp = 0.0, lambda_disc=0.0, amp_max= 40.0, cav_band=None, tra_band=None, hard_amp_limit=50.0):
+def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_deriv = 0.0, lambda_amp = 0.0, lambda_disc=0.0, amp_max= 40.0, cav_band=None, tra_band=None, hard_amp_limit=50.0, ramp_ns=None):
     """
     cav_band, tra_band : (f_lo, f_hi) tuples in MHz, or None
         Hard frequency cutoff (Heeres et al. 2017, Supp. Eq. 22). When both
@@ -549,8 +543,12 @@ def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_de
         L-BFGS-B box constraint on the raw variable, in rad/us -- the true
         hard amplitude bound, decoupled from amp_max (which only sets the
         soft quadratic amplitude_penalty threshold).
+    ramp_ns : float, or None
+        Gaussian rise/fall width in ns. Off by default here; see
+        make_objective_with_pen. The production entry point is
+        optimizer.optimize_multi_state_pulse, which defaults it on.
     """
-    bandlimit = cav_band is not None and tra_band is not None
+    to_physical, _ = make_constraint_chain(N, dt, cav_band, tra_band, ramp_ns)
     if trunc_list is not None and len(trunc_list) > 1:
         # === Multi-truncation mode ===
         print(f"Using multi-truncation mode with truncations: {trunc_list}")
@@ -567,24 +565,24 @@ def optimize_controls(H0, Hc, psi_i, psi_f, dt, N, u0, trunc_list=None,lambda_de
         objective = make_objective_multi_trunc(
             H0_list, Hc_list, psi_i_list, psi_f_list, dt, N,
             lambda_deriv=lambda_deriv,
-            lambda_boundary=lambda_boundary,
             lambda_amp=lambda_amp,
             lambda_disc=lambda_disc,
             amp_max=amp_max,
             cav_band=cav_band,
-            tra_band=tra_band
+            tra_band=tra_band,
+            ramp_ns=ramp_ns
         )
 
     else:
     # Single trunction, ptimize the control sequence u to maximize the fidelity between the initial state psi_i and the final state psi_f.
-        objective = make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N,lambda_deriv=lambda_deriv,lambda_boundary=lambda_boundary,lambda_amp=lambda_amp,amp_max=amp_max,cav_band=cav_band,tra_band=tra_band)
+        objective = make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N,lambda_deriv=lambda_deriv,lambda_amp=lambda_amp,amp_max=amp_max,cav_band=cav_band,tra_band=tra_band,ramp_ns=ramp_ns)
 
     x0 = u0.ravel() # flatten the initial control array into a 1D array
     bounds = [(-hard_amp_limit, hard_amp_limit)] * (N * 4)
     res = minimize(objective, x0, method='L-BFGS-B', jac=True, bounds=bounds, options={'maxiter': 2000, 'ftol': 1e-12, 'gtol': 1e-8 })
-    # res.x is the raw pre-image; project to get the physical (band-limited) pulse.
-    u_opt = project_bandlimit(res.x.reshape(N, 4), dt, cav_band, tra_band) if bandlimit \
-        else res.x.reshape(N, 4)
+    # res.x is the raw pre-image; map through the constraint chain to get the
+    # physical (band-limited, ramped) pulse.
+    u_opt = to_physical(res.x)
     if not res.success:
         print("Optimization failed:", res.message)
     # Final fidelity evaluation (always done at the largest truncation)

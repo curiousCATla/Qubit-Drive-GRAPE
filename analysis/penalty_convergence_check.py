@@ -22,14 +22,20 @@ optimizing it for `--extra` more iterations under the identical objective, and
 reports how far the scored metrics moved. A metric that barely moves is
 plateaued; one that keeps drifting is not.
 
-Warm-starting from the cached `u` is exact here: the pulse is already
-band-limited and `project_bandlimit` is idempotent, so `P(u) = u`.
+Warm-starting from the cached `u` is exact here, but no longer for the reason
+it once was. Before the ramp the argument was that the pulse is already
+band-limited and `project_bandlimit` is idempotent, so `P(u) = u`. With the ramp
+the chain is `u = env * P(x)`, which is NOT idempotent -- `optimize_multi_state_pulse`
+recovers a pre-image by inverting it through `core.ramp.deramp` and checks the
+round trip, raising if it does not close. That check is what makes the warm
+start exact now, and it is also why a pre-ramp cached pulse is refused outright
+rather than silently re-ramped.
 
 Usage
 -----
     python analysis/penalty_convergence_check.py                  # default pair
     python analysis/penalty_convergence_check.py --extra 1500
-    python analysis/penalty_convergence_check.py --labels "deriv=0_boundary=2e-05_amp=8e-05_disc=0.5"
+    python analysis/penalty_convergence_check.py --labels "deriv=0_amp=8e-05_disc=0.5"
 
 Writes `tables/penalty_convergence_check.csv`.
 """
@@ -52,16 +58,19 @@ from core.optimizer import optimize_multi_state_pulse
 from main import GATE_FACTORIES
 
 # Incumbent, and the recipe the budgeted selection lands on.
+# Label format follows penalty_sweep.PENALTY_NAMES, which lost `boundary` when
+# the Gaussian ramp replaced that penalty -- older labels carrying
+# `_boundary=...` no longer resolve.
 DEFAULT_LABELS = (
-    "deriv=1e-05_boundary=2e-05_amp=8e-05_disc=0.5",
-    "deriv=1e-06_boundary=2e-05_amp=8e-05_disc=0.5",
+    "deriv=1e-05_amp=8e-05_disc=0.5",
+    "deriv=1e-06_amp=8e-05_disc=0.5",
 )
 
 
 def continue_config(gate, cfg, seed, maxiter, extra, eval_truncs, n_jobs=3):
     """Reload the cached pulse for `cfg`, optimize `extra` more iterations, rescore."""
-    h = ps._config_hash(gate, cfg["penalties"], seed, maxiter,
-                        amp_max=cfg.get("amp_max", ps.FIXED["amp_max"]))
+    kn = ps._cfg_knobs(cfg)
+    h = ps._config_hash(gate, cfg["penalties"], seed, maxiter, kn=kn)
     pulse_path, _ = ps._cache_paths(gate, h)
     if not os.path.exists(pulse_path):
         raise FileNotFoundError(
@@ -75,7 +84,7 @@ def continue_config(gate, cfg, seed, maxiter, extra, eval_truncs, n_jobs=3):
     m0 = ps.pulse_metrics(u0, ps.FIXED["dt"])
 
     pen = dict(cfg["penalties"])
-    pen["amp_max"] = cfg.get("amp_max", ps.FIXED["amp_max"])
+    pen["amp_max"] = kn["amp_max"]
 
     t0 = time.time()
     u1, info = optimize_multi_state_pulse(
@@ -84,7 +93,10 @@ def continue_config(gate, cfg, seed, maxiter, extra, eval_truncs, n_jobs=3):
         N=ps.FIXED["N"], dt=ps.FIXED["dt"], penalties=pen,
         warm_start=u0, save_path=None, n_jobs=n_jobs, maxiter=extra,
         cav_band=ps.FIXED["cav_band"], tra_band=ps.FIXED["tra_band"],
-        hard_amp_limit=ps.FIXED["hard_amp_limit"],
+        # Must come from the config, not FIXED: a ramp-axis config continued at
+        # the 48 ns default would be optimizing a different pulse than the one
+        # it warm-started from, and `deramp` would fail the round trip.
+        ramp_ns=kn["ramp_ns"], hard_amp_limit=ps.FIXED["hard_amp_limit"],
         fidelity_fn=coherent_fidelity_multi_state, verbose=False,
     )
     elapsed = time.time() - t0
@@ -139,7 +151,7 @@ def main():
     args = p.parse_args()
 
     by_label = {c["label"]: c for c in ps.build_ofat_configs()}
-    by_label.update({c["label"]: c for c in ps.build_grid_configs("deriv", "boundary")})
+    by_label.update({c["label"]: c for c in ps.build_grid_configs("deriv", "amp_max")})
 
     rows = []
     for label in args.labels:

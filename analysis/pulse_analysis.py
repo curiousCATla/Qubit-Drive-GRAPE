@@ -80,7 +80,7 @@ else:
         warm_start_cutoff_frac=cutoff_frac,
         warm_start_seed=seed,
         save_path=os.path.join(PULSE_DIR, "u_opt.npy"),
-        penalties={'deriv': 0.00002, 'boundary': 0.0001, 'amp': 0.00001, 'amp_max': 40.0},
+        penalties={'deriv': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
         maxiter=2000,
         cav_band=(-27.0, 27.0),
         tra_band=(-33.0, 33.0),
