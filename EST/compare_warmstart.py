@@ -10,9 +10,11 @@ would mean a numerics problem rather than a physics result:
   * EST/diagnostics.analyze -- eigh propagator, Eqs. 6-8 (Delta_QEC, L, eta)
   * EST/grape_jax           -- expm propagator, the four training cost terms
 
-mean(eta) and c2 are the same quantity computed through those two independent
-paths (diagnostics.eta_mismatch is the time-resolved integrand of grape_jax.
-et_cost), so their agreement is the cross-check, not a redundancy.
+mean(c2_integrand) and c2 are the same quantity computed through those two
+independent paths (diagnostics.c2_integrand is the time-resolved integrand of
+grape_jax.et_cost), so their agreement is the cross-check, not a redundancy.
+Note it is c2_integrand, NOT eta: since Eqs. 6-8 were transcribed, eta is the
+paper's Eq. 8 Bloch distance and is a different quantity from C2.
 
 Reads whatever of the four pulses exist and skips the rest, so it is usable
 mid-campaign. Writes tables/est_warmstart_comparison.csv and
@@ -88,7 +90,10 @@ def main():
         rows[key] = {
             "pulse": key, "description": desc,
             "F1_eigh": r["F1"], "infid": 1.0 - r["F1"], "c1_jax": t["c1"],
-            "F_ET": 1.0 - t["c2"], "eta_mean_eq8": r["eta"].mean(),
+            "F_ET": 1.0 - t["c2"],
+            "eta_0L_mean_eq8": r["eta_0L"].mean(),
+            "eta_avg_mean_eq8": r["eta_avg"].mean(),
+            "c2_integrand_mean": r["c2_integrand"].mean(),
             "c3_velvar": t["c3"], "c4_amp": t["c4"],
             "delta_qec_mean": r["delta_qec"].mean(),
             "leakage_mean_eq7": r["leakage"].mean(),
@@ -98,11 +103,12 @@ def main():
 
         print(f"{key:8s} F1={r['F1']:.6f}  F_ET={1-t['c2']:.5f}  c3={t['c3']:.5f}  "
               f"dQEC={r['delta_qec'].mean():.4e}  L={r['leakage'].mean():.4e}  "
-              f"eta={r['eta'].mean():.5f}  nmax={r['max_active_fock']}  "
+              f"eta={r['eta_0L'].mean():.5f}  nmax={r['max_active_fock']}  "
               f"spread={spread:.2e}")
-        # cross-check: same quantity, two propagators
-        gap = abs(r["eta"].mean() - t["c2"])
-        print(f"         |mean(eta) - c2| = {gap:.2e}"
+        # cross-check: same quantity, two propagators. c2_integrand, not eta --
+        # Eq. 8 is a Bloch distance and is not what C2 optimizes.
+        gap = abs(r["c2_integrand"].mean() - t["c2"])
+        print(f"         |mean(c2_integrand) - c2| = {gap:.2e}"
               + ("" if gap < 1e-9 else "   <-- code paths disagree"))
 
     if not rows:
@@ -131,9 +137,11 @@ def plot(results):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    # Panel (f) plots the |0_L> trace, matching the paper's Fig. 1f; the
+    # six-cardinal mean is in the table rather than crowding four stage curves.
     panels = [("delta_qec", r"$\Delta_{\rm QEC}(t)$", "d"),
               ("leakage",   r"$L_{E_j}(t)$",          "e"),
-              ("eta",       r"$\eta_{E_j,\psi}(t)$",  "f")]
+              ("eta_0L",    r"$\eta_{E_j,\psi}(t)$, $|0_L\rangle$", "f")]
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.6))
     for ax, (key, ylabel, tag) in zip(axes, panels):

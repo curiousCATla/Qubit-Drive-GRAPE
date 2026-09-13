@@ -243,7 +243,7 @@ def knill_laflamme_residual(B, n_t, n_c):
     Measurement only, and deliberately independent of `EST/`:
     `EST.diagnostics.delta_qec` is the time-resolved analogue on the EsT track
     (it folds these same residuals, plus their values mid-pulse, into one
-    number). Importing it here would invert the track separation set up in
+    number -- as the paper's Eq. 6, so unnormalized, unlike this function). Importing it here would invert the track separation set up in
     CLAUDE.md, so the two are cross-referenced in prose rather than shared.
     """
     A, _ = make_ops(n_t, n_c)

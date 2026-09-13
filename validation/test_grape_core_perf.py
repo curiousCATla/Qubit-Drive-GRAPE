@@ -39,6 +39,8 @@ if REPO_ROOT not in sys.path:
 from core.grape_core import make_hamiltonian, basis_state
 from core import grape_core
 from core import optimizer
+from core import ramp
+from core.fourier_cutoff import project_bandlimit, out_of_band_energy_fraction
 
 
 # ============================================================================
@@ -240,13 +242,28 @@ def _toy_state_pairs_m2(n_c, n_t=2):
     return [(a, b), (b, a)]
 
 
-_TOY_PENALTIES = {'deriv': 0.0001, 'boundary': 0.0002, 'amp': 0.0001, 'amp_max': 40.0}
+_TOY_PENALTIES = {'deriv': 0.0001, 'amp': 0.0001, 'amp_max': 40.0}
 
-BASELINE_OPT_M1_F = 0.36741513627087313
-BASELINE_OPT_M2_F = 0.36741513103490353
-BASELINE_N550_BASE_F = 0.9951110678161428
-BASELINE_REFINE_PULSE_F = 0.9989711824612416
-BASELINE_REFINE_DT_F = 0.36775971001479013
+# These toy geometries are N=25/N=60 at dt=0.002 -- 50 ns and 120 ns of total
+# duration -- so a 48 ns Gaussian ramp either raises (2*t_ramp >= T) or eats
+# most of the pulse. They pass ramp_ns=None to keep testing what they were
+# written to test: the batched-_fidelity_core perf refactor, at toy cost. The
+# ramped chain has its own coverage in RampedConstraintChainTest below.
+_TOY_RAMP = None
+
+# RE-CAPTURED when the `boundary` penalty was removed in favour of the
+# Gaussian rise/fall ramp (core/ramp.py). `_TOY_PENALTIES` used to carry
+# 'boundary': 0.0002, so these five numbers were measured under a cost function
+# that no longer exists -- they moved by ~5e-4 for a deliberate change to the
+# objective, NOT by drift. The perf-refactor guarantee they were originally
+# written to protect is carried by FidelityCoreEquivalenceTest and
+# FiniteDifferenceGradientTest, which are untouched by this change because they
+# exercise _fidelity_core directly, below the constraint chain.
+BASELINE_OPT_M1_F = 0.36787994366060794
+BASELINE_OPT_M2_F = 0.36787993323080503
+BASELINE_N550_BASE_F = 0.99524611853639833
+BASELINE_REFINE_PULSE_F = 0.99887036583328714
+BASELINE_REFINE_DT_F = 0.367880401190402
 
 # End-to-end L-BFGS-B trajectories can pick up tiny floating-point
 # differences (parallel reduction order, batched vs per-step eigh) that
@@ -262,7 +279,7 @@ class EndToEndSmokeTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m1,
             trunc_list=[6, 8], n_t=2, N=25,
             warm_start_amp=6.0, warm_start_cutoff_frac=0.3, warm_start_seed=7,
-            penalties=_TOY_PENALTIES, n_jobs=2, maxiter=150, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, n_jobs=2, maxiter=150, verbose=False,
         )
         self.assertAlmostEqual(info['final_fidelity'], BASELINE_OPT_M1_F, delta=_E2E_ATOL)
 
@@ -271,7 +288,7 @@ class EndToEndSmokeTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m2,
             trunc_list=[6, 8], n_t=2, N=25,
             warm_start_amp=6.0, warm_start_cutoff_frac=0.3, warm_start_seed=7,
-            penalties=_TOY_PENALTIES, n_jobs=2, maxiter=150, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, n_jobs=2, maxiter=150, verbose=False,
         )
         self.assertAlmostEqual(info['final_fidelity'], BASELINE_OPT_M2_F, delta=_E2E_ATOL)
 
@@ -280,7 +297,7 @@ class EndToEndSmokeTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m1,
             trunc_list=[6, 8], n_t=2, N=550,
             warm_start_amp=6.0, warm_start_cutoff_frac=0.05, warm_start_seed=7,
-            penalties=_TOY_PENALTIES, n_jobs=2, maxiter=30, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, n_jobs=2, maxiter=30, verbose=False,
         )
         self.assertAlmostEqual(info_base['final_fidelity'], BASELINE_N550_BASE_F, delta=_E2E_ATOL)
 
@@ -288,7 +305,7 @@ class EndToEndSmokeTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m1,
             initial_pulse=u_base,
             trunc_list=[6, 8], n_t=2, extra_maxiter=30,
-            penalties=_TOY_PENALTIES, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, verbose=False,
         )
         self.assertAlmostEqual(info_ref['final_fidelity'], BASELINE_REFINE_PULSE_F, delta=_E2E_ATOL)
 
@@ -297,17 +314,250 @@ class EndToEndSmokeTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m1,
             trunc_list=[6, 8], n_t=2, N=25,
             warm_start_amp=6.0, warm_start_cutoff_frac=0.3, warm_start_seed=7,
-            penalties=_TOY_PENALTIES, n_jobs=2, maxiter=150, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, n_jobs=2, maxiter=150, verbose=False,
         )
         u_dt, info_dt = optimizer.refine_pulse_dt(
             get_state_pairs=_toy_state_pairs_m1,
             initial_pulse=u_opt, s=2, dt=0.002,
             trunc_list=[6, 8], n_t=2, extra_maxiter=50,
-            penalties=_TOY_PENALTIES, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, verbose=False,
         )
         self.assertEqual(u_dt.shape, (50, 4))
         self.assertAlmostEqual(info_dt['dt'], 0.001)
         self.assertAlmostEqual(info_dt['final_fidelity'], BASELINE_REFINE_DT_F, delta=_E2E_ATOL)
+
+
+class RampedConstraintChainTest(unittest.TestCase):
+    """
+    The raw-variable -> physical-pulse chain u = env * P(x) (core/ramp.py),
+    which replaced the removed boundary_penalty.
+
+    The adjoint identity below is the load-bearing test. Applying `env` on the
+    wrong side of the projection still yields a plausible-looking gradient that
+    would quietly degrade every optimization, so the correct order is pinned
+    numerically, WITH a negative control proving the test can actually fail.
+    """
+
+    # Core production geometry.
+    N, DT = 550, 0.002
+    CAV, TRA = (-27.0, 27.0), (-33.0, 33.0)
+    RAMP = 48.0
+
+    def _chain(self):
+        return ramp.make_constraint_chain(self.N, self.DT, self.CAV, self.TRA, self.RAMP)
+
+    def test_adjoint_identity(self):
+        """<R(P(a)), b> == <a, P(R(b))>, i.e. adjoint(R.P) == P.R."""
+        to_physical, to_preimage_grad = self._chain()
+        rng = np.random.default_rng(11)
+        a = rng.standard_normal((self.N, 4))
+        b = rng.standard_normal((self.N, 4))
+        lhs = np.sum(to_physical(a) * b)
+        rhs = np.sum(a * to_preimage_grad(b))
+        self.assertAlmostEqual(lhs, rhs, delta=1e-9)
+
+    def test_reversed_order_fails_adjoint_identity(self):
+        """Negative control: without it, the test above could be vacuous."""
+        to_physical, _ = self._chain()
+        env = ramp.ramp_envelope(self.N, self.DT, self.RAMP)
+        rng = np.random.default_rng(11)
+        a = rng.standard_normal((self.N, 4))
+        b = rng.standard_normal((self.N, 4))
+        lhs = np.sum(to_physical(a) * b)
+        # project THEN scale -- the plausible-looking wrong order
+        wrong = env[:, None] * project_bandlimit(b, self.DT, self.CAV, self.TRA)
+        self.assertGreater(abs(lhs - np.sum(a * wrong)), 1e-3)
+
+    def test_envelope_shape(self):
+        env = ramp.ramp_envelope(self.N, self.DT, self.RAMP)
+        self.assertEqual(env.shape, (self.N,))
+        self.assertGreaterEqual(env.min(), 0.0)
+        self.assertAlmostEqual(env.max(), 1.0)
+        # 48 ns at dt=2 ns -> 24 steps of ramp at each end.
+        self.assertEqual(int((env < 0.999).sum()), 48)
+        # Midpoint sampling: first sample sits ~1.35% up the Gaussian, not at 0.
+        self.assertLess(env[0], 0.02)
+        self.assertAlmostEqual(env[0], env[-1])
+
+    def test_raises_when_no_flat_top(self):
+        # N=25 at dt=0.002 is 50 ns total; a 48 ns rise AND fall cannot fit.
+        with self.assertRaises(ValueError):
+            ramp.ramp_envelope(25, 0.002, self.RAMP)
+
+    def test_deramp_roundtrip(self):
+        """A pulse produced BY the chain is exactly resumable through it."""
+        to_physical, _ = self._chain()
+        rng = np.random.default_rng(5)
+        u = to_physical(rng.standard_normal((self.N, 4)))
+        x, err = ramp.deramp(u, self.DT, self.CAV, self.TRA, self.RAMP)
+        self.assertLess(err, 1e-10)
+        np.testing.assert_allclose(to_physical(x), u, atol=1e-10)
+
+    def test_deramp_refuses_unramped_pulse(self):
+        """A pre-ramp pulse is genuinely not in the chain's range: refuse it."""
+        rng = np.random.default_rng(6)
+        u = rng.standard_normal((self.N, 4))     # never went through the chain
+        with self.assertRaises(ValueError):
+            ramp.deramp(u, self.DT, self.CAV, self.TRA, self.RAMP)
+
+    def test_identity_when_all_constraints_off(self):
+        to_physical, to_preimage_grad = ramp.make_constraint_chain(
+            self.N, self.DT, None, None, None)
+        rng = np.random.default_rng(7)
+        a = rng.standard_normal((self.N, 4))
+        np.testing.assert_allclose(to_physical(a), a)
+        np.testing.assert_allclose(to_preimage_grad(a), a)
+
+
+class ConstraintSatisfactionTest(unittest.TestCase):
+    """
+    What the chain actually delivers, MEASURED on white noise -- the worst
+    case, since a trained pulse is already smooth and small near its edges.
+
+    Values measured at N=550, dt=0.002, cav (-27,27), tra (-33,33), 48 ns ramp:
+
+        project -> ramp (chosen) :  0.60% / 0.53% out-of-band, endpoints 0.84% of mid
+        ramp -> project          :  ~1e-31 out-of-band,        endpoints 32%   of mid
+
+    Ramping last is what keeps the endpoints at zero, and it costs sub-percent
+    band compliance. The rejected ordering is asserted too, so the choice has
+    in-repo evidence rather than living only in a docstring.
+    """
+
+    N, DT = 550, 0.002
+    CAV, TRA = (-27.0, 27.0), (-33.0, 33.0)
+    RAMP = 48.0
+
+    def setUp(self):
+        rng = np.random.default_rng(3)
+        self.x = rng.standard_normal((self.N, 4))
+        self.mid = np.sqrt(np.mean(self.x[self.N // 3:2 * self.N // 3] ** 2))
+
+    def test_project_then_ramp_band_and_endpoints(self):
+        to_physical, _ = ramp.make_constraint_chain(
+            self.N, self.DT, self.CAV, self.TRA, self.RAMP)
+        u = to_physical(self.x)
+        oob = out_of_band_energy_fraction(u, self.DT, self.CAV, self.TRA)
+        self.assertLess(oob['cavity'], 1e-2)
+        self.assertLess(oob['transmon'], 1e-2)
+        endpoints = max(np.abs(u[0]).max(), np.abs(u[-1]).max())
+        self.assertLess(endpoints / self.mid, 0.02)
+
+    def test_ramp_then_project_leaves_endpoints_high(self):
+        """The rejected ordering: exact band-limiting, useless endpoints."""
+        env = ramp.ramp_envelope(self.N, self.DT, self.RAMP)
+        u = project_bandlimit(self.x * env[:, None], self.DT, self.CAV, self.TRA)
+        oob = out_of_band_energy_fraction(u, self.DT, self.CAV, self.TRA)
+        self.assertLess(oob['cavity'], 1e-20)          # exactly band-limited...
+        endpoints = max(np.abs(u[0]).max(), np.abs(u[-1]).max())
+        self.assertGreater(endpoints / self.mid, 0.10)  # ...but the ramp is gone
+
+
+class RampedObjectiveGradientTest(unittest.TestCase):
+    """
+    Finite-difference check of the FULL ramped objective cost(x), penalties
+    included -- end-to-end cover for the P(env * g) chain rule that
+    RampedConstraintChainTest verifies in isolation.
+    """
+
+    def test_finite_difference_through_chain(self):
+        n_t, n_c, N, dt = 2, 6, 550, 0.002
+        cav, tra, ramp_ns = (-27.0, 27.0), (-33.0, 33.0), 48.0
+        H0, Hc = make_hamiltonian(n_t, n_c)
+        psi_i = [basis_state(n_t, n_c, 0, 0)]
+        psi_f = [basis_state(n_t, n_c, 0, 1)]
+        to_physical, to_preimage_grad = ramp.make_constraint_chain(
+            N, dt, cav, tra, ramp_ns)
+        lam_d, lam_a, amp_max = 1e-4, 1e-4, 40.0
+
+        def cost_and_grad(x):
+            u = to_physical(x)
+            F, g = grape_core.fidelity_multi_state(
+                u, H0, Hc, psi_i, psi_f, dt, want_grad=True)
+            cost, gu = -F, -g
+            gd, grd = grape_core.derivative_penalty(u)
+            cost += lam_d * gd
+            gu = gu + lam_d * grd
+            ga, gra = grape_core.amplitude_penalty(u, amp_max=amp_max)
+            cost += lam_a * ga
+            gu = gu + lam_a * gra
+            return cost, to_preimage_grad(gu).ravel()
+
+        rng = np.random.default_rng(21)
+        x = rng.uniform(-5.0, 5.0, size=N * 4)
+        _, grad = cost_and_grad(x)
+
+        h = 1e-6
+        idx_rng = np.random.default_rng(22)
+        for idx in idx_rng.integers(0, N * 4, size=10):
+            xp = x.copy(); xp[idx] += h
+            xm = x.copy(); xm[idx] -= h
+            fd = (cost_and_grad(xp)[0] - cost_and_grad(xm)[0]) / (2 * h)
+            with self.subTest(idx=int(idx)):
+                self.assertAlmostEqual(fd, grad[idx], delta=1e-6)
+
+
+class PreimageResumeTest(unittest.TestCase):
+    """info['x_preimage'] must reproduce the returned pulse, and resuming from
+    it must be exact -- that is the whole reason x_*.npy is written."""
+
+    def test_preimage_reproduces_pulse_and_resumes(self):
+        u, info = optimizer.optimize_multi_state_pulse(
+            get_state_pairs=_toy_state_pairs_m1,
+            trunc_list=[6, 8], n_t=2, N=550, dt=0.002,
+            warm_start_amp=6.0, warm_start_cutoff_frac=0.05, warm_start_seed=7,
+            penalties=_TOY_PENALTIES,
+            cav_band=(-27.0, 27.0), tra_band=(-33.0, 33.0), ramp_ns=48.0,
+            n_jobs=2, maxiter=10, verbose=False,
+        )
+        x = info['x_preimage']
+        to_physical, _ = ramp.make_constraint_chain(
+            550, 0.002, (-27.0, 27.0), (-33.0, 33.0), 48.0)
+        np.testing.assert_allclose(to_physical(x), u, atol=1e-12)
+
+        # The point of the ramp: endpoints are structurally near zero.
+        mid = np.sqrt(np.mean(u[180:370] ** 2))
+        self.assertLess(max(np.abs(u[0]).max(), np.abs(u[-1]).max()) / mid, 0.02)
+
+        # Resuming through init_x picks up where the run left off. Exactness of
+        # the handoff is the assertion above (to_physical(x) == u to 1e-12);
+        # here maxiter=1 lets L-BFGS-B take one real step, so the pulse is
+        # expected to MOVE slightly -- what is checked is that it resumes from
+        # the saved point rather than restarting somewhere unrelated.
+        u2, info2 = optimizer.optimize_multi_state_pulse(
+            get_state_pairs=_toy_state_pairs_m1,
+            trunc_list=[6, 8], n_t=2, N=550, dt=0.002,
+            init_x=x, penalties=_TOY_PENALTIES,
+            cav_band=(-27.0, 27.0), tra_band=(-33.0, 33.0), ramp_ns=48.0,
+            n_jobs=2, maxiter=1, verbose=False,
+        )
+        self.assertEqual(info2['warm_start_kind'], 'preimage')
+        self.assertLess(np.abs(u2 - u).max(), 1e-2)
+
+    def test_warm_start_refuses_preramp_pulse(self):
+        """A pulse trained before the ramp cannot be resumed exactly, and
+        saying so loudly beats silently training from a different point."""
+        rng = np.random.default_rng(31)
+        u_legacy = rng.standard_normal((550, 4))     # not in the chain's range
+        with self.assertRaises(ValueError):
+            optimizer.optimize_multi_state_pulse(
+                get_state_pairs=_toy_state_pairs_m1,
+                trunc_list=[6], n_t=2, N=550, dt=0.002,
+                warm_start=u_legacy, penalties=_TOY_PENALTIES,
+                cav_band=(-27.0, 27.0), tra_band=(-33.0, 33.0), ramp_ns=48.0,
+                maxiter=1, verbose=False,
+            )
+
+    def test_stale_boundary_penalty_key_raises(self):
+        """A recipe still carrying the removed weight must fail loudly."""
+        with self.assertRaises(ValueError) as cm:
+            optimizer.optimize_multi_state_pulse(
+                get_state_pairs=_toy_state_pairs_m1,
+                trunc_list=[6], n_t=2, N=550,
+                penalties={'deriv': 1e-4, 'boundary': 2e-5},
+                maxiter=1, verbose=False,
+            )
+        self.assertIn('boundary', str(cm.exception))
 
 
 class TimingBenchmarkTest(unittest.TestCase):
@@ -321,14 +571,14 @@ class TimingBenchmarkTest(unittest.TestCase):
             get_state_pairs=_toy_state_pairs_m2,
             trunc_list=[8, 10, 12], n_t=2, N=60,
             warm_start_amp=6.0, warm_start_cutoff_frac=0.1, warm_start_seed=3,
-            penalties=_TOY_PENALTIES, n_jobs=3, maxiter=5, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, n_jobs=3, maxiter=5, verbose=False,
         )
         t0 = time.perf_counter()
         optimizer.refine_pulse_dt(
             get_state_pairs=_toy_state_pairs_m2,
             initial_pulse=u0, s=4, dt=0.002,
             trunc_list=[8, 10, 12], n_t=2, extra_maxiter=15,
-            penalties=_TOY_PENALTIES, verbose=False,
+            penalties=_TOY_PENALTIES, ramp_ns=_TOY_RAMP, verbose=False,
         )
         elapsed = time.perf_counter() - t0
         print(f"\n[timing] refine_pulse_dt(N={u0.shape[0]}->{u0.shape[0]*4}, "

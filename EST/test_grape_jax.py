@@ -277,23 +277,29 @@ class VelocityNormalizationTest(unittest.TestCase):
 
 class DiagnosticsTest(unittest.TestCase):
     """
-    Eqs. 6-8 are reconstructed, so they are pinned against two cases whose
-    answers are known from the physics rather than from a reference number.
+    Eqs. 6-8 are transcribed from the paper (App. A's A8-A11 for Eq. 6), so they
+    are pinned two ways: against cases whose answers are known from the physics
+    rather than from a reference number, and against the algebraic identities the
+    published forms are supposed to satisfy.
     """
 
     n_t, n_c, dt, N = 3, 16, 0.001, 100
 
-    def _metrics(self, H0, Hc, u):
-        from EST.diagnostics import (delta_qec, eta_mismatch, leakage_Ej,
-                                     propagate_states)
+    def _trajectories(self, H0, Hc, u):
+        """(A, evolved code words, evolved code cardinals, evolved error cardinals)."""
+        from EST.diagnostics import propagate_states
         A, _ = make_ops(self.n_t, self.n_c)
         words = propagate_states(u, H0, Hc, kitten_code.logical_basis(self.n_t, self.n_c), self.dt)
         both = propagate_states(u, H0, Hc, np.concatenate(
             [kitten_code.cardinals(self.n_t, self.n_c),
              kitten_code.error_cardinals(self.n_t, self.n_c)], axis=1), self.dt)
-        code, err = both[:, :, :6], both[:, :, 6:]
-        return (delta_qec(words, A).max(), leakage_Ej(code, err, A).max(),
-                eta_mismatch(code, err, A).max())
+        return A, words, both[:, :, :6], both[:, :, 6:]
+
+    def _metrics(self, H0, Hc, u):
+        from EST.diagnostics import delta_qec, eta_mismatch, leakage_Ej
+        A, words, code, err = self._trajectories(H0, Hc, u)
+        return (delta_qec(words, A).max(), leakage_Ej(words, err, A).max(),
+                eta_mismatch(words, code, err, A).max())
 
     def test_trivially_transparent_case_is_exactly_zero(self):
         """No Hamiltonian, no drive: nothing evolves, so every metric must vanish."""
@@ -315,6 +321,151 @@ class DiagnosticsTest(unittest.TestCase):
         self.assertLess(d, 1e-12, "Kerr should not violate Knill-Laflamme")
         self.assertLess(l, 1e-10, "Kerr should not cause error-space leakage")
         self.assertGreater(e, 1e-6, "App. A's obstruction should appear in eta")
+
+    def test_error_basis_is_rank_two_and_rejects_the_cardinal_stack(self):
+        """
+        The bug this guards: `a` restricted to the code space has rank 2, so a QR
+        of the (T, n, 6) CARDINAL stack returns six orthonormal columns of which
+        four are an arbitrary completion outside the error space. Projecting onto
+        those absorbs genuine leakage -- it read L(u_X_est) = 0.148 against the
+        correct 0.258. The basis must be built from the two code WORDS, and the
+        wider array must raise rather than silently widen the span.
+        """
+        from EST.diagnostics import _instantaneous_error_basis
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(5).uniform(-5, 5, size=(12, 4))
+        A, words, code, _ = self._trajectories(H0, Hc, u)
+
+        W = _instantaneous_error_basis(words, A)
+        self.assertEqual(W.shape, (len(u) + 1, words.shape[1], 2))
+        # orthonormal columns at every step
+        gram = np.einsum('tik,til->tkl', np.conj(W), W)
+        np.testing.assert_allclose(
+            gram, np.broadcast_to(np.eye(2), gram.shape), atol=1e-12)
+        # a|psi_C> lies inside the span it defines
+        img = np.einsum('ij,tjm->tim', A, words)
+        resid = img - np.einsum('tik,tkm->tim', W,
+                                np.einsum('tik,tim->tkm', np.conj(W), img))
+        self.assertLess(np.abs(resid).max(), 1e-10)
+
+        with self.assertRaises(ValueError):
+            _instantaneous_error_basis(code, A)
+
+    def test_leakage_on_the_cardinal_stack_would_understate(self):
+        """
+        The same bug, measured rather than asserted structurally: the spurious
+        columns can only ever absorb weight, so the old six-column basis is a
+        strict under-estimate of L wherever there is any leakage at all.
+        """
+        from EST.diagnostics import leakage_Ej
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(7).uniform(-5, 5, size=(12, 4))
+        A, words, code, err = self._trajectories(H0, Hc, u)
+
+        correct = leakage_Ej(words, err, A)
+        Q6, _ = np.linalg.qr(np.einsum('ij,tjm->tim', A, code))   # the old path
+        stale = 1.0 - np.sum(
+            np.abs(np.einsum('tik,tim->tkm', np.conj(Q6), err)) ** 2, axis=1)
+        self.assertGreater(correct.mean(), stale.mean())
+        self.assertGreater(correct.min(), -1e-12)
+        self.assertLess(correct.max(), 1.0 + 1e-12)
+
+    def test_delta_qec_vanishes_when_knill_laflamme_holds(self):
+        """
+        Eq. 6 must be zero exactly when every M_ik is proportional to P_C. The
+        undriven code words satisfy that (no Hamiltonian at all), and separately
+        the (I, I) pair must contribute zero for ANY unitary evolution, since
+        M_II = P_C by orthonormality of the evolved words.
+        """
+        from EST.diagnostics import _PAULI, delta_qec
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(11).uniform(-5, 5, size=(12, 4))
+        A, words, _, _ = self._trajectories(np.zeros_like(H0), Hc,
+                                            np.zeros((self.N, 4)))
+        self.assertLess(delta_qec(words, A).max(), 1e-12)
+
+        # (I, I) under a real driven evolution: M_II = P_C, so no Pauli content.
+        _, driven, _, _ = self._trajectories(H0, Hc, u)
+        M = np.einsum('tim,tin->tmn', np.conj(driven), driven)
+        for P in _PAULI:
+            coeff = 0.5 * np.einsum('ij,tji->t', P, M)
+            self.assertLess(np.abs(coeff).max(), 1e-10)
+
+    def test_eta_is_a_bloch_distance_bounded_by_two(self):
+        """
+        Eq. 8 is ||r_C - r_E||_2 between two unit Bloch vectors, so it lives in
+        [0, 2] -- not [0, 1], which is what the infidelity it replaced returned.
+        It must also start at exactly zero: at t = 0 the error cardinals are the
+        loss image of the code cardinals by construction.
+        """
+        from EST.diagnostics import eta_mismatch
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(13).uniform(-8, 8, size=(20, 4))
+        A, words, code, err = self._trajectories(H0, Hc, u)
+
+        eta = eta_mismatch(words, code, err, A)
+        self.assertGreaterEqual(eta.min(), -1e-12)
+        self.assertLessEqual(eta.max(), 2.0 + 1e-12)
+        np.testing.assert_allclose(eta[0], 0.0, atol=1e-12)
+
+    def test_eta_basis_convention_is_pinned(self):
+        """
+        The paper fixes sigma_Ej only up to a constant (Eq. 8's "∝"). This module
+        resolves it with the polar isometry of a P_C(t); the literal reading is
+        `a sigma_C a^dag / nbar`. They coincide exactly wherever a P_C is
+        proportional to an isometry, which holds for this code at t = 0 and only
+        approximately after. Measured drift on the delivered X pulse is 0.4% of
+        the time-averaged eta. If this test fails, the documented choice has
+        moved and EST/diagnostics.py's module docstring is stale.
+        """
+        from EST.diagnostics import _PAULI, _instantaneous_error_basis, eta_mismatch
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(17).uniform(-8, 8, size=(20, 4))
+        A, words, code, err = self._trajectories(H0, Hc, u)
+
+        polar = eta_mismatch(words, code, err, A)
+
+        # Literal reading, built independently of eta_mismatch.
+        W = _instantaneous_error_basis(words, A)
+        cE = np.einsum('tik,tim->tkm', np.conj(W), err)
+        cE = cE / np.maximum(np.linalg.norm(cE, axis=1, keepdims=True), 1e-30)
+        proj = np.einsum('tik,tkm->tim', W, cE)          # rho~, in the full space
+        img = np.einsum('ij,tjm->tim', A, words)
+        nbar = np.einsum('tim,tim->t', np.conj(img), img).real / 2.0
+        cC = np.einsum('tik,tim->tkm', np.conj(words), code)
+        rC = np.stack([np.real(np.einsum('tkm,kl,tlm->tm', np.conj(cC), P, cC))
+                       for P in _PAULI], axis=1)
+        rE = np.stack([
+            np.real(np.einsum('tim,tij,tjm->tm', np.conj(proj),
+                              np.einsum('ij,tjk,lk->til', A,
+                                        np.einsum('tim,mn,tjn->tij', words, P,
+                                                  np.conj(words)), np.conj(A)),
+                              proj)) / nbar[:, None]
+            for P in _PAULI], axis=1)
+        literal = np.linalg.norm(rC - rE, axis=1)
+
+        rel = abs(polar.mean() - literal.mean()) / max(polar.mean(), 1e-30)
+        self.assertLess(rel, 0.01,
+                        f"polar vs literal sigma_E disagree by {rel:.2%}; the "
+                        "documented 0.4% sensitivity no longer holds")
+
+    def test_c2_integrand_reproduces_the_training_cost(self):
+        """
+        `c2_integrand` exists only so the numpy analysis path and the JAX
+        training path can be cross-checked, so the identity
+        mean(c2_integrand) == et_cost == 1 - F_ET is its entire contract. It was
+        previously checked nowhere in the suite -- only by a print in
+        compare_warmstart.py and a notebook display. Note this is NOT eta: since
+        Eqs. 6-8 were transcribed, Eq. 8 is a Bloch distance and a different
+        quantity from C2.
+        """
+        from EST.diagnostics import c2_integrand
+        from EST.grape_jax import et_cost
+        H0, Hc = make_hamiltonian_est(self.n_t, self.n_c)
+        u = np.random.default_rng(19).uniform(-8, 8, size=(20, 4))
+        A, _, code, err = self._trajectories(H0, Hc, u)
+        self.assertAlmostEqual(float(c2_integrand(code, err, A).mean()),
+                               float(et_cost(code, err, A)), places=12)
 
     def test_propagate_states_matches_grape_core_step_data(self):
         from EST.diagnostics import propagate_states
@@ -345,7 +496,9 @@ class SubspaceEvolutionTest(unittest.TestCase):
         E = kitten_code.error_basis(self.n_t, self.n_c)
         tc, te = subspace_trajectories(u, H0, Hc, B, E, self.dt)
         UL, UE = subspace_blocks(tc, te, B, E)
-        return cardinal_states(tc), cardinal_states(te), UL, UE
+        # tc is the two evolved code WORDS, which Eq. 7 and Eq. 8 need in order
+        # to build the rank-2 instantaneous error space.
+        return cardinal_states(tc), cardinal_states(te), UL, UE, tc
 
     def test_initial_photon_numbers_are_fixed_by_the_code(self):
         """
@@ -395,13 +548,13 @@ class SubspaceEvolutionTest(unittest.TestCase):
         A, _ = make_ops(self.n_t, self.n_c)
         n_op = A.conj().T @ A
         H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
-        code, err, UL, UE = self._pieces(H0, np.zeros((self.N, 4)))
+        code, err, UL, UE, words = self._pieces(H0, np.zeros((self.N, 4)))
 
         for series in (photon_numbers(code, n_op), photon_numbers(err, n_op),
                        loss_image_photon_numbers(code, A, n_op)):
             np.testing.assert_allclose(
                 series, np.broadcast_to(series[0], series.shape), atol=1e-10)
-        self.assertGreater(eta_mismatch(code, err, A).max(), 1e-6,
+        self.assertGreater(eta_mismatch(words, code, err, A).max(), 1e-6,
                            "but eta must see it")
         self.assertGreater(map_mismatch(UL, UE).max(), 1e-6,
                            "Kerr should already break code/error equality")
@@ -416,7 +569,7 @@ class SubspaceEvolutionTest(unittest.TestCase):
         # simulates. Small in absolute terms, but the drift case above is
         # conserved to 1e-15, so the contrast is the point.
         u = np.random.default_rng(7).uniform(-25.0, 25.0, size=(self.N, 4))
-        code, err, _, _ = self._pieces(H0, u)
+        code, err, _, _, _ = self._pieces(H0, u)
 
         np.testing.assert_allclose(np.sum(np.abs(code) ** 2, axis=1), 1.0,
                                    atol=1e-10)
@@ -437,7 +590,7 @@ class SubspaceEvolutionTest(unittest.TestCase):
         """Nothing evolves: both blocks are the identity and agree exactly."""
         from EST.subspace_evolution import map_mismatch, subspace_weight
         H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
-        _, _, UL, UE = self._pieces(np.zeros_like(H0), np.zeros((self.N, 4)))
+        _, _, UL, UE, _ = self._pieces(np.zeros_like(H0), np.zeros((self.N, 4)))
         for U2 in (UL, UE):
             np.testing.assert_allclose(U2, np.broadcast_to(np.eye(2), U2.shape),
                                        atol=1e-12)
@@ -456,7 +609,7 @@ class SubspaceEvolutionTest(unittest.TestCase):
         """
         from EST.subspace_evolution import subspace_weight
         H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
-        _, _, UL, UE = self._pieces(H0, np.zeros((self.N, 4)))
+        _, _, UL, UE, _ = self._pieces(H0, np.zeros((self.N, 4)))
         self.assertLess(subspace_weight(UL).min(), 1.0 - 1e-8,
                         "Kerr should dephase |0> against |4> inside |0_L>")
         np.testing.assert_allclose(subspace_weight(UE), 1.0, atol=1e-10)
@@ -471,7 +624,7 @@ class SubspaceEvolutionTest(unittest.TestCase):
         H0, _ = make_hamiltonian_est(self.n_t, self.n_c)
         B = kitten_code.logical_basis(self.n_t, self.n_c)
         u = np.random.default_rng(7).uniform(-8, 8, size=(self.N, 4))
-        code, _, UL, _ = self._pieces(H0, u)
+        code, _, UL, _, _ = self._pieces(H0, u)
 
         direct = np.sum(np.abs(np.einsum('ik,tim->tkm', np.conj(B), code)) ** 2,
                         axis=1)

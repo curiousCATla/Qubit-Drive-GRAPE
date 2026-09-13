@@ -141,7 +141,9 @@ def main():
             "F1_rescore_eigh": met["F1"],
             "delta_qec_mean": float(met["delta_qec"].mean()),
             "leakage_mean": float(met["leakage"].mean()),
-            "eta_mean": float(met["eta"].mean()),
+            "eta_0L_mean": float(met["eta_0L"].mean()),
+            "eta_avg_mean": float(met["eta_avg"].mean()),
+            "c2_integrand_mean": float(met["c2_integrand"].mean()),
             "max_active_fock": met["max_active_fock"],
             "trunc_scan_spread": max(scan.values()) - min(scan.values()),
             # cross-scoring: same pulse, both cost implementations
@@ -180,7 +182,7 @@ def main():
 
     print("\n=== transparency metrics (Eqs. 6-8), scored identically ===")
     cols = ["pipeline", "F1_rescore_eigh", "delta_qec_mean", "leakage_mean",
-            "eta_mean", "max_active_fock", "trunc_scan_spread"]
+            "eta_0L_mean", "eta_avg_mean", "max_active_fock", "trunc_scan_spread"]
     print(df[cols].to_string(index=False, float_format="%.6g"))
 
     print("\n=== efficiency ===")

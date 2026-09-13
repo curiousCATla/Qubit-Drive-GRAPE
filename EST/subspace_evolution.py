@@ -43,9 +43,9 @@ photon distribution. Two states can share <n> to machine precision and still be
 orthogonal.
 
 So <n>_E == <n>_loss is NECESSARY for transparency and not sufficient. The
-sufficient statement is the state-overlap one, which is `diagnostics.eta_mismatch`
-(Eq. 8), and the map-level one, which is `map_mismatch` below. This module plots
-all three so the photon-number picture is never read on its own.
+sharper statements are the Bloch-vector one, `diagnostics.eta_mismatch` (Eq. 8),
+and the map-level one, `map_mismatch` below. This module plots all three so the
+photon-number picture is never read on its own.
 
 The two subspaces are directly comparable only because of a property of this
 specific code: a|0_L> = sqrt(2)|3> and a|1_L> = sqrt(2)|1> carry EQUAL weight, so
@@ -124,8 +124,9 @@ def loss_image_photon_numbers(code_states, A, n_op):
     <n> of the normalized photon-loss image a|psi_C(t)> / || a|psi_C(t)> ||.
 
     This is what the evolved error state must equal, instant by instant, for the
-    gate to be error transparent -- the same object `diagnostics.eta_mismatch`
-    takes the overlap against, read here through a physical observable instead.
+    gate to be error transparent. `diagnostics.c2_integrand` takes the overlap
+    against this same object; Eq. 8 (`diagnostics.eta_mismatch`) states the
+    condition on Bloch vectors instead. Read here through a physical observable.
     """
     img = np.einsum('ij,tjm->tim', A, code_states)
     nrm = np.sum(np.abs(img) ** 2, axis=1)
@@ -170,9 +171,11 @@ def map_mismatch(UL, UE):
     normalized by both blocks' norms, meaning leakage common to the two
     subspaces does not register as disagreement.
 
-    Note this is a different normalization from Eqs. 6-8; it is a companion to
-    the figure, not one of the paper's printed metrics, so its EsT:Ord ratio is
-    meaningful and its absolute value is not.
+    This normalization is THIS MODULE'S OWN CHOICE, so its EsT:Ord ratio is
+    meaningful and its absolute value is not. That caveat no longer extends to
+    Eqs. 6-8, which are now transcribed from the paper (see EST/diagnostics.py):
+    map_mismatch is a companion to the figure, not one of the paper's printed
+    metrics, and is the only quantity here still carrying it.
     """
     ov = np.abs(np.einsum('tij,tij->t', np.conj(UL), UE)) ** 2
     nl = np.einsum('tij,tij->t', np.conj(UL), UL).real

@@ -25,28 +25,28 @@ Fixed in `validation/outside_inputs.py`, identical for every gate:
 
 | Gate | L1 (code→out) | L2 (out→code) | Dominant leak destination | Flag |
 |------|---------------|---------------|---------------------------|------|
-| enc | 3.096013e-03 | 9.760694e-02 | g, odd photon (wrong parity) | watch+seepage_note |
-| X | 2.580545e-03 | 1.110431e-04 | transmon excited, odd photon | dangerous |
-| Y | 2.348341e-03 | 3.874921e-05 | g, odd photon (wrong parity) | watch |
-| dec | 2.001333e-03 | 7.696970e-02 | g, even photon (outside code / radial) | watch |
-| H | 1.668596e-03 | 8.417685e-05 | g, odd photon (wrong parity) | watch |
-| Z | 7.606574e-04 | 1.003622e-06 | transmon excited, even photon | watch |
-| I | 4.755784e-04 | 7.877761e-07 | g, even photon (outside code / radial) | document |
-| T | 2.091518e-04 | 2.588655e-06 | g, even photon (outside code / radial) | document |
+| dec | 3.617338e-03 | 9.623468e-02 | g, even photon (outside code / radial) | watch+seepage_note |
+| X | 1.781625e-03 | 2.348177e-05 | g, even photon (outside code / radial) | document |
+| H | 1.697523e-03 | 2.417924e-05 | g, even photon (outside code / radial) | document |
+| Y | 1.267731e-03 | 1.777679e-05 | g, odd photon (wrong parity) | watch |
+| enc | 1.143546e-03 | 9.725052e-02 | g, even photon (outside code / radial) | watch+seepage_note |
+| Z | 5.788654e-04 | 5.024072e-06 | transmon excited, even photon | watch |
+| I | 4.930576e-04 | 8.792398e-07 | g, even photon (outside code / radial) | document |
+| T | 2.103567e-04 | 2.667797e-06 | g, even photon (outside code / radial) | document |
 
 ## Three highest-L1 gates — plain language
 
-### 1. U_enc  (L1 = 3.0960e-03)
+### 1. U_dec  (L1 = 3.6173e-03)
 
-When amplitude leaves the intended subspace, it lands predominantly in **g, odd photon (wrong parity)** (`P_g_odd`). Seepage L2 = 9.7607e-02 (max single-probe P_logical from outside = 7.7069e-01). Flag: **watch+seepage_note**.
+When amplitude leaves the intended subspace, it lands predominantly in **g, even photon (outside code / radial)** (`P_g_even_nonlogical`). Seepage L2 = 9.6235e-02 (max single-probe P_logical from outside = 3.4972e-01). Flag: **watch+seepage_note**.
 
-### 2. U_X  (L1 = 2.5805e-03)
+### 2. U_X  (L1 = 1.7816e-03)
 
-When amplitude leaves the intended subspace, it lands predominantly in **transmon excited, odd photon** (`P_e_odd`). Seepage L2 = 1.1104e-04 (max single-probe P_logical from outside = 3.1025e-04). Flag: **dangerous**.
+When amplitude leaves the intended subspace, it lands predominantly in **g, even photon (outside code / radial)** (`P_g_even_nonlogical`). Seepage L2 = 2.3482e-05 (max single-probe P_logical from outside = 6.5585e-05). Flag: **document**.
 
-### 3. U_Y  (L1 = 2.3483e-03)
+### 3. U_H  (L1 = 1.6975e-03)
 
-When amplitude leaves the intended subspace, it lands predominantly in **g, odd photon (wrong parity)** (`P_g_odd`). Seepage L2 = 3.8749e-05 (max single-probe P_logical from outside = 1.3571e-04). Flag: **watch**.
+When amplitude leaves the intended subspace, it lands predominantly in **g, even photon (outside code / radial)** (`P_g_even_nonlogical`). Seepage L2 = 2.4179e-05 (max single-probe P_logical from outside = 7.1077e-05). Flag: **document**.
 
 ## Single-photon-loss error subspace
 
@@ -100,14 +100,14 @@ are measured against.
 
 | Gate | L1_E (E→out) | L2_E→C (E→code) | F_ET | Dominant destination |
 |------|--------------|-----------------|------|----------------------|
-| enc | 9.4073e-01 | 7.9425e-05 | — | `P_g_even_nonlogical` |
-| H | 9.3515e-01 | 2.0603e-05 | 0.0299 | `P_e_even` |
-| dec | 9.0792e-01 | 3.3344e-02 | — | `P_g_odd` |
-| X | 8.4053e-01 | 5.8259e-05 | 0.0748 | `P_e_odd` |
-| Y | 6.9838e-01 | 1.5669e-05 | 0.1016 | `P_g_odd` |
-| Z | 3.0342e-01 | 5.9165e-07 | 0.3423 | `P_g_odd` |
-| I | 6.3513e-02 | 1.7505e-08 | 0.9360 | `P_g_odd` |
-| T | 3.7955e-02 | 9.5114e-08 | 0.9466 | `P_g_odd` |
+| dec | 9.2593e-01 | 6.7498e-02 | — | `P_g_odd` |
+| X | 9.2467e-01 | 3.0460e-05 | 0.0606 | `P_e_even` |
+| enc | 9.1853e-01 | 7.4310e-05 | — | `P_g_even_nonlogical` |
+| Y | 8.6572e-01 | 1.7781e-05 | 0.0551 | `P_g_odd` |
+| H | 8.4617e-01 | 1.3488e-05 | 0.0661 | `P_g_odd` |
+| Z | 2.3463e-01 | 3.5387e-06 | 0.3327 | `P_g_odd` |
+| I | 8.9601e-02 | 1.1198e-07 | 0.9101 | `P_g_odd` |
+| T | 4.8343e-02 | 3.4942e-07 | 0.9382 | `P_g_odd` |
 
 Read enc's row as a robustness probe only: enc's input subspace is
 {|g,0>, |e,0>}, so a post-loss state is not an input it legitimately sees.
@@ -116,21 +116,21 @@ photon was lost before decode fired".
 
 ### Reading
 
-The trained gates are **not error-transparent**: on the six logical gates L1_E runs 3.80e-02–9.35e-01 and F_ET falls as low as 0.030, while the *code-space* L1 for the same gates stays at 2.58e-03 or below — the pulses protect C between 134× and 560× better than they protect E. Expected, since E was never in any objective, but it is the gap the `EST/` track's C2 cost is built to close on a different code.
+The trained gates are **not error-transparent**: on the six logical gates L1_E runs 4.83e-02–9.25e-01 and F_ET falls as low as 0.055, while the *code-space* L1 for the same gates stays at 1.78e-03 or below — the pulses protect C between 182× and 683× better than they protect E. Expected, since E was never in any objective, but it is the gap the `EST/` track's C2 cost is built to close on a different code.
 
-Seepage back into the code space stays small for the logical gates (L2_E→C ≤ 5.83e-05): a loss is still *detected*, it just stops being *correctable*. The exception is **U_dec** at L2_E→C = 3.33e-02 — that fraction of a post-loss state re-enters the even manifold, where the parity check reports no error at all.
+Seepage back into the code space stays small for the logical gates (L2_E→C ≤ 3.05e-05): a loss is still *detected*, it just stops being *correctable*. The exception is **U_dec** at L2_E→C = 6.75e-02 — that fraction of a post-loss state re-enters the even manifold, where the parity check reports no error at all.
 
 ## Truncation cross-check
 
 Top-L1 gates re-scored at n_c ∈ {22, 24, 26}. Quantitative bin weights may drift; destination **class** should not.
 
-- **U_enc**: fine bins {22: 'P_g_odd', 24: 'P_g_odd', 26: 'P_g_odd'} (STABLE); coarse class {22: 'g_odd_parity', 24: 'g_odd_parity', 26: 'g_odd_parity'} — STABLE
-- **U_X**: fine bins {22: 'P_e_odd', 24: 'P_e_odd', 26: 'P_e_even'} (shifts within class); coarse class {22: 'transmon_excited', 24: 'transmon_excited', 26: 'transmon_excited'} — STABLE
-- **U_Y**: fine bins {22: 'P_g_odd', 24: 'P_g_odd', 26: 'P_g_odd'} (STABLE); coarse class {22: 'g_odd_parity', 24: 'g_odd_parity', 26: 'g_odd_parity'} — STABLE
+- **U_dec**: fine bins {22: 'P_g_odd', 24: 'P_g_even_nonlogical', 26: 'P_g_even_nonlogical'} (shifts within class); coarse class {22: 'g_odd_parity', 24: 'g_even_radial', 26: 'g_even_radial'} — UNSTABLE
+- **U_X**: fine bins {22: 'P_g_even_nonlogical', 24: 'P_g_even_nonlogical', 26: 'P_g_even_nonlogical'} (STABLE); coarse class {22: 'g_even_radial', 24: 'g_even_radial', 26: 'g_even_radial'} — STABLE
+- **U_H**: fine bins {22: 'P_g_even_nonlogical', 24: 'P_g_even_nonlogical', 26: 'P_g_even_nonlogical'} (STABLE); coarse class {22: 'g_even_radial', 24: 'g_even_radial', 26: 'g_even_radial'} — STABLE
 
 ## Decision
 
-At least one gate is flagged **dangerous** (leaked amplitude prefers excited-transmon or truncation-edge subspaces). Consider a Phase-3 targeted constraint; do **not** retrain blindly.
+Some gates are flagged **watch** (non-negligible excited-transmon component of leakage and/or elevated seepage). Documented here; no pulse change in Phase 2. Revisit only if a protocol is sensitive to that landing.
 
 Seepage L2 is non-negligible on at least one gate: outside population can enter the code space under the pulse. For protocols that assume the code space is only entered via encode, this is more harmful than ordinary leakage — note for system-level design.
 

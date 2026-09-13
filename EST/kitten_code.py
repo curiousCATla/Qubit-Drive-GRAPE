@@ -157,3 +157,37 @@ def control_mask(gate):
     if gate not in CONTROL_MASK:
         raise KeyError(f"unknown gate {gate!r}; have {sorted(CONTROL_MASK)}")
     return CONTROL_MASK[gate].copy()
+
+
+def parked_fidelity(gate):
+    """
+    C1 fidelity of a do-nothing (identity) pulse: mean_m |<U c_m | c_m>|^2.
+
+    This is the floor a gate's C1 term sits at when the optimizer parks the
+    dynamics instead of driving the gate -- the local minimum C3 exists to
+    suppress (EST/grape_jax.py, cost term C3). It is GATE-DEPENDENT and is not
+    a universal 1/3:
+
+        X -> 1/3        (1.0 on +-X, 0 on the other four cardinals)
+        H -> 1/3        (0.5 on +-Z and +-X, 0 on +-Y)
+        T -> 0.902369   (1.0 on +-Z, 0.8536 on +-X and +-Y)
+
+    X and H coinciding at 2/6 is an arithmetic accident of two different
+    per-cardinal patterns, not a shared property. T's floor is high because a
+    diagonal phase gate leaves the +-Z cardinals invariant and moves the other
+    four only by pi/4, so "do nothing" is already most of the way to the target.
+
+    Consequence for reading any T result: a raw F1 for T is measured against
+    0.902369, not against 0 or 1/3, so it is not on the same scale as X's or
+    H's. Use the normalized progress (F1 - parked) / (1 - parked) to compare
+    across gates.
+
+    The overlap is taken on the COEFFICIENT vectors rather than the embedded
+    states, which is exact because `logical_basis` has orthonormal columns.
+    """
+    if gate not in IDEAL_LOGICAL_U:
+        raise KeyError(f"unknown gate {gate!r}; have {sorted(IDEAL_LOGICAL_U)}")
+    coeffs = _coeff_matrix()                       # (2, 6), columns in CARDINAL_ORDER
+    targets = IDEAL_LOGICAL_U[gate] @ coeffs       # identity evolution leaves coeffs put
+    overlaps = np.einsum("im,im->m", np.conj(targets), coeffs)
+    return float(np.mean(np.abs(overlaps) ** 2))

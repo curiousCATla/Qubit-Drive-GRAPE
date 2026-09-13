@@ -252,7 +252,7 @@ Training uses a **single** truncation $n_c = 20$, unlike the root pipeline's mul
 
 ### Test suite
 
-`python EST/test_grape_jax.py -v` — 24 tests, plain `unittest`, matching the repository convention.
+`python EST/test_grape_jax.py -v` — 38 tests, plain `unittest`, matching the repository convention.
 
 | Class | Tests | What it pins |
 |-------|-------|--------------|
@@ -260,7 +260,7 @@ Training uses a **single** truncation $n_c = 20$, unlike the root pipeline's mul
 | `FiniteDifferenceTest` | 5 | full $C_{\mathrm{tot}}$, the chain-constrained cost, and $C_2$/$C_3$/$C_4$ individually |
 | `ConstraintSatisfactionTest` | 5 | band-limit exactness, out-of-band leakage, endpoint ramp-down, T-gate masking, envelope shape |
 | `VelocityNormalizationTest` | 3 | that the raw $C_3$ would swamp the fidelity terms, and the normalized form is $O(1)$ and $dt$-stable |
-| `DiagnosticsTest` | 3 | Eqs. 6–8 against two cases with known answers |
+| `DiagnosticsTest` | 9 | Eqs. 6–8 against two cases with known answers, plus the algebraic identities the transcribed forms must satisfy: the rank-2 error basis, $\eta \in [0,2]$ with $\eta(0) = 0$, $\Delta_{\mathrm{QEC}} = 0$ under Knill–Laflamme, the $\sigma_{E_j}$ convention, and the `c2_integrand` identity |
 | `KittenCodeTest` | 4 | code words, error words as photon-loss images, gate targets |
 | `PreimagePersistenceTest` | 2 | that a saved $(u, x)$ pair still satisfies $u = \mathrm{constrain}(x)$, and that `deramp` inverts the chain only modulo the band-limit projection |
 
@@ -274,17 +274,25 @@ The anchor is `test_c1_gradient_matches_grape_core`: with $C_1$ alone and the co
 
 ### Diagnostics (Eqs. 6–8)
 
-| Metric | Condition tested | Range |
-|--------|------------------|-------|
-| $\Delta_{\mathrm{QEC}}(t)$ | instantaneous Knill–Laflamme validity of the evolved code | $\ge 0$, normalization chosen |
-| $L_{E_j}(t)$ | evolved error state remains inside the instantaneous error space | $[0,1]$ |
-| $\eta_{E_j,\psi}(t)$ | evolved error state matches the photon-loss image of the code state | $[0,1]$ |
+| Metric | Condition tested | Range | Source |
+|--------|------------------|-------|--------|
+| $\Delta_{\mathrm{QEC}}(t)$ | instantaneous Knill–Laflamme validity of the evolved code | $\ge 0$ | Eq. 6, via App. A Eqs. A8–A11 |
+| $L_{E_j}(t)$ | evolved error state remains inside the instantaneous error space | $[0,1]$ | Eq. 7 verbatim |
+| $\eta_{E_j,\psi}(t)$ | code and projected-error Bloch vectors coincide | $[0,2]$ | Eq. 8 verbatim |
 
-$\Delta_{\mathrm{QEC}}$ is computed from the two evolved code words alone — the error trajectory does not enter — as the RMS of the four independent KL residuals for $\{I, a\}$, normalized by mean photon number. $L$ measures the component of $|\psi_{E_j}(t)\rangle$ outside $\mathrm{span}\{a|\psi_0(t)\rangle, a|\psi_1(t)\rangle\}$; $\eta$ is strictly stronger, since one can be inside that subspace yet at the wrong point in it, so $L \le \eta$ is expected and observed.
+**All three are transcribed from the published equations, so both the absolute values and the EsT:Ord ratios are comparable to the paper.** They replace an earlier set of reconstructions whose normalizations were this module's own choice and which, on the paper comparison, were not.
 
-**These three are reconstructed from the transparency conditions, not transcribed from the paper.** $L$ and $\eta$ are bounded in $[0,1]$ by construction and have no free normalization; $\Delta_{\mathrm{QEC}}$'s does, and is this module's choice. The EsT-versus-Ord *ratio* is robust to that choice; absolute values are not. Note also that $\eta$ is exactly the time-resolved integrand of $C_2$, so $\mathrm{mean}(\eta) \equiv 1 - F_{\mathrm{ET}}$ — verified across the two independent code paths to $3\times10^{-13}$.
+$\Delta_{\mathrm{QEC}}$ is computed from the two evolved code words alone — the error trajectory does not enter. App. A expands $M_{ik}(t) = P_C(t) E_i^\dagger E_k P_C(t)$ in the instantaneous logical Pauli basis and sums the uncorrectable weight, giving the closed form $\Delta_{\mathrm{QEC}} = \sum_{i,k} 2\left(|x_{ik}|^2 + |y_{ik}|^2 + |z_{ik}|^2\right)$ over the error set $\{I,a\}$. It is **not normalized** — the paper normalizes by nothing, and the mean-photon division an earlier version applied is exactly what made it incomparable. Where main-text Eq. 6 says "2-norm" and App. A says Frobenius with $\|A\|_2 = \mathrm{Tr}(A^\dagger A)$, App. A wins: Eq. 6 sends the reader there for details.
 
-One result corroborates the reconstruction. Under free Kerr evolution with no drive, $\Delta_{\mathrm{QEC}}$ and $L$ sit at machine zero — Kerr is diagonal in the Fock basis and preserves the code's photon-number structure — while $\eta = 7\times10^{-4}$. That is the App. A obstruction appearing in exactly the channel $C_2$ targets and nowhere else. It is now a regression test.
+$L$ measures the component of $|\psi_{E_j}(t)\rangle$ outside $\mathrm{span}\{a|\psi_0(t)\rangle, a|\psi_1(t)\rangle\}$. The paper initializes the maximally mixed state on $E_j(0)$; averaging the six error cardinals is exactly that.
+
+$\eta$ is the Euclidean distance between the Bloch vector of the code state and that of the error state **projected into $E_j(t)$ and renormalized**. Two consequences worth internalizing: it is *leakage-insensitive* by construction, since the projection divides out whatever $L$ already measures — so **$L \le \eta$ is no longer true by construction**, as it was for the $[0,1]$ state infidelity this replaced — and it quotients out phases a state overlap keeps. The paper's Fig. 1f plots $\eta$ for the single initial state $|0_L\rangle$; both that trace and the six-cardinal mean are reported here.
+
+**One interpretive choice remains.** Eq. 8 fixes $\sigma_{E_j} \propto E_j \sigma_C E_j^\dagger$ only up to a constant. This is exact for the kitten code at $t = 0$, where $a|0_L\rangle$ and $a|1_L\rangle$ both have norm $\sqrt{2}$ so $aP_C$ is $\sqrt{2}$ times an isometry, and only approximate later — the singular values of $aP_C(t)$ drift apart by up to 19% mid-gate. It is resolved with the polar isometry, the canonical order-independent nearest isometry; measured sensitivity against the literal $a\sigma_C a^\dagger/\bar{n}$ reading is 0.4% of the time-averaged $\eta$, and `test_eta_basis_convention_is_pinned` fails if that drifts.
+
+$\mathrm{mean}(\eta) \equiv 1 - F_{\mathrm{ET}}$ no longer holds, because $\eta$ is no longer the $C_2$ integrand. That integrand is now `diagnostics.c2_integrand`, kept solely so the numpy analysis path and the JAX training path can still be cross-checked; it agrees with `grape_jax.et_cost` to $3.6\times10^{-13}$ and is pinned by a unit test rather than only by a print. It is **not** a transparency metric and must not be reported as one.
+
+One result corroborates the transcription. Under free Kerr evolution with no drive, $\Delta_{\mathrm{QEC}}$ and $L$ sit at machine zero — Kerr is diagonal in the Fock basis and preserves the code's photon-number structure — while $\eta = 2.7\times10^{-2}$. That is the App. A obstruction appearing in exactly the channel $C_2$ targets and nowhere else. It is a regression test.
 
 ## Results
 
@@ -294,10 +302,13 @@ Headline comparison — the EsT : Ord separation each run achieves, against the 
 
 | run | it/stage | $F_1$ | $F_{\mathrm{ET}}$ | $L_{E_j}$ | Ord : EsT on $L$ | Ord : EsT on $\eta$ |
 |---|---|---|---|---|---|---|
-| X, cold | 600 | 0.99920 | 0.679 | 0.208 | 2.18× | 2.53× |
-| X, warm | 1000 | 0.99904 | 0.736 | 0.149 | 3.05× | 3.07× |
-| **X, cold** | **2000** | **0.99929** | **0.730** | **0.148** | **3.15×** | **2.99×** |
-| H, cold | 2000 | 0.99968 | 0.818 | 0.113 | 4.65× | 4.58× |
+| X, cold | 600 | 0.99920 | 0.679 | 0.299 | 2.48× | 2.80× |
+| X, warm | 1000 | 0.99904 | 0.736 | 0.254 | 2.91× | 11.60× |
+| **X, cold** | **2000** | **0.99929** | **0.730** | **0.258** | **2.87×** | **6.59×** |
+| H, cold | 2000 | 0.99968 | 0.818 | 0.172 | 4.52× | 5.19× |
+| T, cold | 2000 | 0.99998 | 0.945 | 0.054 | 6.97× | n/a |
+
+$\eta$ here is the $|0_L\rangle$ trace, matching the paper's Fig. 1f. T's $\eta$ ratio is undefined because both variants sit at machine zero on that trace — see the T caveat in the limitations.
 
 $F_{\mathrm{ET}}$ does not improve monotonically with iteration count within a gate: cold-starting X at 2000 it/stage moves $F_{\mathrm{ET}}$ only from 0.679 (600 it) to 0.730, and even *undershoots* the 1000-it warm restart's 0.736. This is the controlled rerun limitation 1 called for — same gate, same cold start, same everything except iteration budget, run against H at an identical 2000-it/stage budget — and it settles the question: **the H run's higher $F_{\mathrm{ET}}$ is not an iteration-count artifact.** X gets a real but modest gain from the extra iterations (+0.051 over the 600-it cold baseline) and plateaus well short of H's 0.818, despite identical per-iteration cost (same $N$, $n_t$, $n_c$; only the target unitary differs). See limitation 1 for the full discussion.
 
@@ -307,13 +318,13 @@ Because the warm run saved both stages, the stage-1 → stage-2 transition can b
 
 | run | stage | $F_1$ | $F_{\mathrm{ET}}$ | $C_3$ (vel. var.) | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ |
 |---|---|---|---|---|---|---|---|
-| 600/1000 it | start (= cold EsT) | 0.99920 | 0.679 | 0.1126 | $4.32\times10^{-2}$ | $2.08\times10^{-1}$ | 0.3213 |
-| 600/1000 it | after stage 1 | 0.96566 | **0.747** | **0.0072** | $3.99\times10^{-2}$ | $1.54\times10^{-1}$ | 0.2533 |
-| 600/1000 it | after stage 2 | **0.99904** | 0.736 | 0.1203 | $4.65\times10^{-2}$ | $1.49\times10^{-1}$ | 0.2644 |
+| 600/1000 it | start (= cold EsT) | 0.99920 | 0.679 | 0.1126 | $1.83\times10^{-1}$ | $2.99\times10^{-1}$ | 0.3049 |
+| 600/1000 it | after stage 1 | 0.96566 | **0.747** | **0.0072** | $1.55\times10^{-1}$ | $2.42\times10^{-1}$ | 0.1255 |
+| 600/1000 it | after stage 2 | **0.99904** | 0.736 | 0.1203 | $2.43\times10^{-1}$ | $2.54\times10^{-1}$ | 0.0958 |
 | 2000 it | after stage 1 | 0.95706 | **0.729** | **0.00949** | — | — | — |
 | 2000 it | after stage 2 | **0.99929** | 0.730 | 0.14772 | — | — | — |
 
-Stage 1 buys transparency with fidelity exactly as intended: for the 600/1000-it run, infidelity worsens 43× while $F_{\mathrm{ET}}$ climbs to 0.747 and velocity variance drops 16×. Stage 2 then recovers essentially all of the fidelity — infidelity $3.43\times10^{-2} \to 9.63\times10^{-4}$, a 36× improvement — and gives back only a small part of the transparency gain: $F_{\mathrm{ET}}$ falls 1.5% relative, $\eta$ rises 4.4%, $\Delta_{\mathrm{QEC}}$ rises 17%, while $L$ continues to *improve*.
+Stage 1 buys transparency with fidelity exactly as intended: for the 600/1000-it run, infidelity worsens 43× while $F_{\mathrm{ET}}$ climbs to 0.747 and velocity variance drops 16×. Stage 2 then recovers essentially all of the fidelity — infidelity $3.43\times10^{-2} \to 9.63\times10^{-4}$, a 36× improvement — and gives back only a small part of the transparency gain: $F_{\mathrm{ET}}$ falls 1.5% relative, $L$ worsens 5.2% and $\Delta_{\mathrm{QEC}}$ worsens 57%, while $\eta$ continues to *improve* (0.1255 → 0.0958, a further 24%). Which metric moves the wrong way at the stage boundary flipped when Eqs. 6–8 were transcribed — under the old reconstructions $\eta$ degraded and $L$ improved — so do not quote a pre-transcription version of this sentence.
 
 One caveat on the schedule as documented: `train_est.py`'s docstring says stage 2 moves the ET **and velocity** metrics by ~1%. That holds for $F_{\mathrm{ET}}$ but not for $C_3$, which regresses 17× ($0.0072 \to 0.1203$, back to Ord's 0.1208) because $w_3 = 0$ in stage 2 and nothing then holds uniform speed. Velocity uniformity is not a property of the delivered pulse; it is scaffolding that stage 1 uses to stop the optimizer parking the dynamics to cheat $C_2$.
 
@@ -338,22 +349,22 @@ Each cold run trains its own Ord baseline, so the 600/1000-it comparisons and th
 
 | run | $F_1$ | $F_{\mathrm{ET}}$ | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ | max active Fock |
 |---|---|---|---|---|---|---|
-| EsT, cold, 600 it | 0.99920 | 0.679 | $4.32\times10^{-2}$ | $2.08\times10^{-1}$ | $3.21\times10^{-1}$ | 9 |
-| EsT, warm, 1000 it | 0.99904 | 0.736 | $4.65\times10^{-2}$ | $1.49\times10^{-1}$ | $2.64\times10^{-1}$ | 10 |
-| **EsT, cold, 2000 it** | **0.99929** | **0.730** | $3.58\times10^{-2}$ | **$1.48\times10^{-1}$** | **$2.70\times10^{-1}$** | 9 |
-| Ord, 600/1000 it | 0.99999 | 0.188 | $6.92\times10^{-2}$ | $4.54\times10^{-1}$ | $8.12\times10^{-1}$ | 8 |
-| Ord, 2000 it | 1.00000 | 0.194 | $6.92\times10^{-2}$ | $4.66\times10^{-1}$ | $8.06\times10^{-1}$ | 8 |
-| ratio, Ord : EsT (600 it) | — | 3.6× | 1.60× | 2.18× | 2.53× | — |
-| ratio, Ord : EsT (warm, 1000 it) | — | 3.9× | 1.49× | 3.05× | 3.07× | — |
-| **ratio, Ord : EsT (2000 it)** | — | **3.76×** | **1.93×** | **3.15×** | **2.99×** | — |
+| EsT, cold, 600 it | 0.99920 | 0.679 | $1.83\times10^{-1}$ | $2.99\times10^{-1}$ | $3.05\times10^{-1}$ | 9 |
+| EsT, warm, 1000 it | 0.99904 | 0.736 | $2.43\times10^{-1}$ | $2.54\times10^{-1}$ | $9.58\times10^{-2}$ | 10 |
+| **EsT, cold, 2000 it** | **0.99929** | **0.730** | $1.56\times10^{-1}$ | **$2.58\times10^{-1}$** | **$1.69\times10^{-1}$** | 9 |
+| Ord, 600/1000 it | 0.99999 | 0.188 | $4.87\times10^{-1}$ | $7.41\times10^{-1}$ | $8.54\times10^{-1}$ | 8 |
+| Ord, 2000 it | 1.00000 | 0.194 | $4.81\times10^{-1}$ | $7.40\times10^{-1}$ | $1.11$ | 8 |
+| ratio, Ord : EsT (600 it) | — | 3.6× | 2.67× | 2.48× | 2.80× | — |
+| ratio, Ord : EsT (warm, 1000 it) | — | 3.9× | 1.98× | 2.91× | 11.60× | — |
+| **ratio, Ord : EsT (2000 it)** | — | **3.76×** | **3.08×** | **2.87×** | **6.59×** | — |
 
 The EsT pulse improves every transparency metric while giving up ordinary fidelity, $0.99920$ against $0.99999$ at 600 it. That trade is the expected behaviour rather than a defect: Ord optimizes $C_1$ alone and drives it as far as it can, while EsT spends part of that budget on transparency. Time-resolved curves for the 600-it pair are in `figures/est/fig1def_est_vs_ord_X_it600.png`; summary metrics in `tables/est_fig1_metrics_X_it600.csv` (the unsuffixed `tables/est_fig1_metrics.csv` and `figures/est/fig1def_est_vs_ord[_linear].png` now hold the 2000-it pair — see below).
 
-The warm restart improves the two error-space metrics substantially over the 600-it cold run — $\eta$ by 18% and $L$ by 29%, lifting both EsT : Ord ratios from ~2.2–2.5× to ~3.05× — at essentially no fidelity cost ($0.99920 \to 0.99904$). $\Delta_{\mathrm{QEC}}$ is the exception: it degrades 8%, the only transparency metric to move the wrong way, and its ratio falls from 1.60× to 1.49×. Note also that the restart did **not** merely polish the starting pulse: $\lVert u_{\mathrm{warm}} - u_{\mathrm{EsT}}\rVert / \lVert u_{\mathrm{EsT}}\rVert = 1.21$, so this is a different waveform, not a refinement of the old one.
+The warm restart improves the two error-space metrics substantially over the 600-it cold run — $\eta$ by 69% and $L$ by 15%, lifting the $\eta$ ratio from 2.80× to 11.60× — at essentially no fidelity cost ($0.99920 \to 0.99904$). $\Delta_{\mathrm{QEC}}$ is the exception: it degrades 33%, the only transparency metric to move the wrong way, and its ratio falls from 2.67× to 1.98×. Note also that the restart did **not** merely polish the starting pulse: $\lVert u_{\mathrm{warm}} - u_{\mathrm{EsT}}\rVert / \lVert u_{\mathrm{EsT}}\rVert = 1.21$, so this is a different waveform, not a refinement of the old one.
 
 Reproduce the cold/warm comparison with `python EST/compare_warmstart.py` → `tables/est_warmstart_comparison.csv`, `figures/est/warmstart_est_vs_stages.png`. (`diagnostics.py --gate X` scores only `u_X_est` and `u_X_ord` — it has no `--tag`, so it does not pick the warm pulses up.)
 
-This is the direct answer to limitation 1: at an identical 2000-it/stage cold-start budget, X's $F_{\mathrm{ET}}$ reaches only 0.730 against H's 0.818 — a gap of 0.088. The extra 1400 iterations over the 600-it cold run bought X +0.051 in $F_{\mathrm{ET}}$ (0.679 → 0.730), and did not even clear the 1000-it warm restart's 0.736; since H's $F_{\mathrm{ET}}$ is fixed at 0.818 regardless, that +0.051 narrows the original 0.679-vs-0.818 gap (0.139) by exactly its own size and no more, leaving the majority of the gap (0.088, i.e. 63% of the original 0.139) unexplained by iteration count. H's schedule reaches a materially higher transparency ceiling under an identical budget. **So the earlier hypothesis — that iteration count alone explained H's advantage — does not hold**; something about the H gate itself, not just training time, lets the optimizer reach deeper transparency. $\Delta_{\mathrm{QEC}}$ is the one metric where X-2000 leads the whole field — its 1.93× ratio beats every other run reported here, including H's 1.30× — so the gate-dependent effect does not favor H uniformly across every metric, even though $F_{\mathrm{ET}}$, $L$, and $\eta$ all do.
+This is the direct answer to limitation 1: at an identical 2000-it/stage cold-start budget, X's $F_{\mathrm{ET}}$ reaches only 0.730 against H's 0.818 — a gap of 0.088. The extra 1400 iterations over the 600-it cold run bought X +0.051 in $F_{\mathrm{ET}}$ (0.679 → 0.730), and did not even clear the 1000-it warm restart's 0.736; since H's $F_{\mathrm{ET}}$ is fixed at 0.818 regardless, that +0.051 narrows the original 0.679-vs-0.818 gap (0.139) by exactly its own size and no more, leaving the majority of the gap (0.088, i.e. 63% of the original 0.139) unexplained by iteration count. H's schedule reaches a materially higher transparency ceiling under an identical budget. **So the earlier hypothesis — that iteration count alone explained H's advantage — does not hold**; something about the H gate itself, not just training time, lets the optimizer reach deeper transparency. $\Delta_{\mathrm{QEC}}$ is the one metric where X-2000 leads the whole field — its 3.08× ratio beats every other run reported here, including H's 1.90× — so the gate-dependent effect does not favor H uniformly across every metric, even though $F_{\mathrm{ET}}$ and $L$ do. On $\eta$, X-2000's 6.59× also beats H's 5.19×, which it did not under the pre-transcription definition.
 
 The stage-1 → stage-2 breakdown for the 2000-it run is in [What the second stage does](#what-the-second-stage-does) above, alongside the 600/1000-it breakdown.
 
@@ -370,13 +381,13 @@ python EST/train_est.py --gate H --variant ord --maxiter 2000   # 10.1 h (loaded
 
 | | $F_1$ | $F_{\mathrm{ET}}$ | $\Delta_{\mathrm{QEC}}$ | $L_{E_j}$ | $\eta$ | max active Fock |
 |---|---|---|---|---|---|---|
-| **EsT** | 0.99968 | **0.818** | $4.08\times10^{-2}$ | $1.13\times10^{-1}$ | $1.82\times10^{-1}$ | 10 |
-| **Ord** | 1.00000 | 0.165 | $5.31\times10^{-2}$ | $5.28\times10^{-1}$ | $8.35\times10^{-1}$ | 8 |
-| ratio, Ord : EsT | — | **5.0×** | 1.30× | **4.65×** | **4.58×** | — |
+| **EsT** | 0.99968 | **0.818** | $1.51\times10^{-1}$ | $1.72\times10^{-1}$ | $1.98\times10^{-1}$ | 10 |
+| **Ord** | 1.00000 | 0.165 | $2.87\times10^{-1}$ | $7.80\times10^{-1}$ | $1.03$ | 8 |
+| ratio, Ord : EsT | — | **5.0×** | 1.90× | **4.52×** | **5.19×** | — |
 
-This is the strongest separation the replication has produced, and it beats the best result from *any* of the three X runs — 600-it cold, 1000-it warm, or the matched-budget 2000-it cold rerun (see "X gate" above) — on every error-space metric, at *higher* ordinary fidelity: the best X $L$ is $0.148$ (2000-it cold) against H's $0.113$, the best X $\eta$ is $0.264$ (1000-it warm) against H's $0.182$, and the best X $F_1$ is $0.99929$ (2000-it cold) against H's $0.99968$. Since the 2000-it cold X and H runs share an identical iteration budget and per-iteration cost, this is no longer confounded by training time — H reaches a better point on every one of these metrics under the same schedule. The Ord baselines are comparable across the two gates ($L = 0.528$ here versus $0.466$ for X at 2000 it), so the improvement lives in the EsT pulse rather than in a shifted control.
+This is the strongest separation the replication has produced, and it beats the best result from *any* of the three X runs — 600-it cold, 1000-it warm, or the matched-budget 2000-it cold rerun (see "X gate" above) — on every error-space metric, at *higher* ordinary fidelity: the best X $L$ is $0.254$ (1000-it warm) against H's $0.172$, and the best X $F_1$ is $0.99929$ (2000-it cold) against H's $0.99968$. $\eta$ is now the exception rather than part of the pattern: the warm X run's $0.096$ beats H's $0.198$. Since the 2000-it cold X and H runs share an identical iteration budget and per-iteration cost, this is no longer confounded by training time — H reaches a better point on every one of these metrics under the same schedule. The Ord baselines are comparable across the two gates ($L = 0.780$ here versus $0.740$ for X at 2000 it), so the improvement lives in the EsT pulse rather than in a shifted control.
 
-$\Delta_{\mathrm{QEC}}$ is the one metric that does *not* favor H: its 1.30× ratio is the weakest of any run reported here, behind X's 1.49–1.93× across all three X runs (best at 2000-it cold), consistent with limitation 4 below.
+$\Delta_{\mathrm{QEC}}$ is the one metric that does *not* favor H: its 1.90× ratio is the weakest of any run reported here, behind X's 1.98–3.08× across all three X runs (best at 2000-it cold).
 
 The stage decomposition:
 
@@ -413,7 +424,7 @@ $$
 
 The $+Z_L$ panel is the clearest single view: the Ord error state's photon number runs away to $\approx 5$ and stays there while its loss-image target sits near 2, whereas the EsT error state tracks its target across the whole gate. Both variants' code curves start at exactly $\langle n\rangle = 2$, which is fixed by the code rather than by the pulse — both code words carry $\langle n\rangle = 2$ and $\langle 0_L|n|1_L\rangle = 0$, so no superposition of them can differ. The error cardinals start split 3 / 1 / 2 / 2 / 2 / 2 over $+Z$ / $-Z$ / $+X$ / $-X$ / $+Y$ / $-Y$, since $\lvert 0_E\rangle = \lvert3\rangle$ and $\lvert1_E\rangle = \lvert1\rangle$.
 
-**What $\langle n\rangle$ cannot show.** $H_0$ is a function of the number operators alone, so $[H_0, n] = 0$ and $\langle n\rangle$ is *exactly* conserved under drift — every feature in these curves is drive-induced. It also means $\langle n\rangle$ is blind to App. A's obstruction: free Kerr evolution drives $\eta$ away from zero while leaving all three photon-number curves flat, because it rearranges phases within a fixed photon distribution. Two states can share $\langle n\rangle$ to machine precision and still be orthogonal. So $\langle n\rangle_E = \langle n\rangle_{\rm loss}$ is **necessary for transparency and not sufficient**; the sufficient statements are $\eta$ (Eq. 8) and $\mathcal{M}$, which is why the figure carries the mismatch panel beside the photon-number panels. This is pinned in `test_grape_jax.SubspaceEvolutionTest`.
+**What $\langle n\rangle$ cannot show.** $H_0$ is a function of the number operators alone, so $[H_0, n] = 0$ and $\langle n\rangle$ is *exactly* conserved under drift — every feature in these curves is drive-induced. It also means $\langle n\rangle$ is blind to App. A's obstruction: free Kerr evolution drives $\eta$ away from zero while leaving all three photon-number curves flat, because it rearranges phases within a fixed photon distribution. Two states can share $\langle n\rangle$ to machine precision and still be orthogonal. So $\langle n\rangle_E = \langle n\rangle_{\rm loss}$ is **necessary for transparency and not sufficient**; the sharper statements are $\eta$ (Eq. 8) and $\mathcal{M}$, which is why the figure carries the mismatch panel beside the photon-number panels. This is pinned in `test_grape_jax.SubspaceEvolutionTest`.
 
 $\mathcal{M}$ and $\overline{|\Delta\langle n\rangle|}$ are companions to the figure, not the paper's printed metrics: their normalizations are this module's choice, so EsT-vs-Ord ratios are meaningful and absolute values are not, exactly as for Eqs. 6–8.
 
@@ -428,8 +439,8 @@ The $r^2$ curves in the right-hand panel are the surviving weight inside each fi
    One caveat carries over unchanged: both the X-2000 and H stage-1 runs stopped on `maxiter` rather than converging, so $0.730$ and $0.818$ are lower bounds on where their schedules would eventually converge, not final answers — a longer stage 1 could still narrow or widen the gap.
 2. **The comparison is not like-for-like.** Max active Fock level is 9 (X EsT cold, both 600 and 2000 it), 10 (X EsT warm), 10 (H EsT), against 8 for all three Ord pulses. The paper's fair-comparison criterion matches on this quantity rather than on gate duration, so every ratio above should be regarded as provisional — the EsT pulses are being scored across a wider Fock spread than the controls they are compared to. `diagnostics.py` reports the mismatch automatically.
 3. **The X warm run trained against a binding box.** `max_abs_preimage` sat at exactly 120.0 — the `--hard-bound` value — at the end of both warm stages, so L-BFGS-B spent the whole run pressed against a constraint that has no physical meaning (see *Bounds versus penalties*). Side effects are visible but small: out-of-band energy rose from 0.50% to 0.70% on the cavity drive and the endpoint/mid amplitude ratio from 0.016 to 0.040, both indicating extra amplitude pushed into the 48 ns ramp windows. The amplitude cap is still satisfied (25.15 rad/μs, the same 0.2% $C_4$ overshoot as the cold pulse). This affects only that one pulse — the H runs are cold and show 0.125% of components at the bound — and `--init-x` prevents it recurring.
-4. **The $\Delta_{\mathrm{QEC}}$ endpoint is an artifact.** At $t = T$, $\Delta_{\mathrm{QEC}}$ is $8\times10^{-5}$ for Ord against $5.3\times10^{-3}$ for EsT — purely because Ord's terminal fidelity is higher, and a gate landing exactly on the ideal code words has zero KL violation by construction. Mid-gate, where transparency matters, EsT leads 1.9×.
-5. **Absolute transparency is improving but still short.** $L = 0.208$ (X cold, 600 it), $0.149$ (X warm, 1000 it), $0.148$ (X cold, 2000 it), $0.113$ (H, 2000 it) — so between a fifth and a ninth of the error state has left the instantaneous error space on average. The hierarchy is reproduced throughout: H's $L$ roughly halves the 600-it X cold figure, but is only ~24% below the best (2000-it) X cold figure at the same iteration budget — consistent with limitation 1, where the H-vs-X gap survives holding iterations fixed. A residual floor is still expected on principle: App. A rules out exact transparency with linear drives.
+4. **The $\Delta_{\mathrm{QEC}}$ endpoint is an artifact.** At $t = T$, $\Delta_{\mathrm{QEC}}$ is $4.0\times10^{-9}$ for Ord against $8.8\times10^{-4}$ for EsT — purely because Ord's terminal fidelity is higher, and a gate landing exactly on the ideal code words has zero KL violation by construction. Mid-gate, where transparency matters, EsT leads 3.1×.
+5. **Absolute transparency is improving but still short.** $L = 0.299$ (X cold, 600 it), $0.254$ (X warm, 1000 it), $0.258$ (X cold, 2000 it), $0.172$ (H, 2000 it), $0.054$ (T, 2000 it) — so between a quarter and a sixth of the error state has left the instantaneous error space on average, T excepted. For scale, the paper's own X/EsT sits at $0.22$ against the $0.258$ here, so this replication is close to but short of the published gate rather than far from it. A residual floor is expected on principle: App. A rules out exact transparency with linear drives.
 6. **Scope.** X and H are trained; **T is not**. T is a parameter change against the same pipeline, but not a free one — it is 0.6 μs rather than 1.0 ($N = 600$) and its `CONTROL_MASK` is transmon-only `[0,0,1,1]`, which is the one case where `deramp` cannot round-trip the masked-out cavity columns. The **LE** control variant is not implemented — it requires an error-space terminal-fidelity term, which is a new cost function rather than a reweighting — and neither is the AQEC recovery pulse needed for the paper's Figs. 4–5.
 
 ## Project layout

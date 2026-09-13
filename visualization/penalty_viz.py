@@ -10,8 +10,10 @@ against pulse hardware cost. These helpers aggregate over seeds, draw the
 trade-off, and apply a **spectral-width budget** to turn the Pareto front into
 a single recommended recipe.
 
-Selection rule (`recommend`): among configurations whose mean cost statistic is
-within `max_cost`, take the highest mean F_held. Ties break toward lower cost.
+Selection rule (`recommend`), two filters then a sort: keep configurations whose
+mean cost statistic is within `max_cost` AND whose mean fidelity is at least
+`min_fidelity`; among those, take the highest mean F_held. Ties break toward
+lower cost.
 
 The cost statistic is `occ99_frac` and the budget is a **percentage**: each drive
 may occupy at most `BUDGET_FRAC` of its **own** band mask. Both choices are
@@ -34,6 +36,13 @@ deliberate and load-bearing:
     recommendation to a lambda_deriv = 0 negative control -- the exact
     configuration the study exists to reject. A percentage cannot be mis-ported
     that way.
+
+The **fidelity floor** `MIN_FIDELITY` is the second filter. It is deliberately
+stated on the SAME column the ranking uses (`F_ped_heldout_mean` by default), so
+the horizontal line `plot_pareto` draws and the rows `recommend` keeps can never
+disagree: both read `metric`/`y`. Pass `min_fidelity=0.0` to disable it and
+recover the historical cost-only rule -- which is what the pre-ramp fixtures in
+`validation/test_pulse_metrics.py` do.
 
 Color: the categorical hues are the Okabe-Ito colorblind-safe set, assigned to
 penalty names in a FIXED order (`SWEPT_COLORS`) so a penalty keeps its hue
@@ -69,10 +78,19 @@ PENALTY_NAMES = ("deriv", "boundary", "amp", "disc")
 # dimensionless and the budget is a percentage. Per-drive allowances live in
 # analysis.penalty_sweep.BAND_LIMITS_MHz; this module reads only the already-
 # normalised column from the CSV, which keeps it decoupled from the sweep code.
-BUDGET_FRAC = 0.70
+BUDGET_FRAC = 0.50
 DEFAULT_COST = "occ99_frac"
 DEFAULT_MAX_COST = BUDGET_FRAC          # dimensionless, NOT MHz
 LEGACY_MASK_WIDTH_MHz = 66.0            # back-compat fallback only
+
+# --- The fidelity floor -----------------------------------------------------
+#
+# The second half of the selection rule: a configuration must ALSO clear this on
+# the ranking metric. Stated on `F_ped_heldout_mean`, the same column `recommend`
+# sorts by and `plot_pareto` puts on its y-axis, so the drawn line and the applied
+# filter are the same number by construction.
+MIN_FIDELITY = 0.995
+DEFAULT_MIN_FIDELITY = MIN_FIDELITY
 
 
 def _fmt_cost(cost, value):
@@ -105,6 +123,17 @@ def _resolve_cost(max_cost, max_bandwidth):
         )
         return float(max_bandwidth)
     return DEFAULT_MAX_COST if max_cost is None else float(max_cost)
+
+
+def _resolve_floor(min_fidelity):
+    """
+    Resolve the fidelity floor. `None` means "use the module default"; pass 0.0
+    to disable the filter and recover the historical cost-only rule.
+
+    Same shape as `_resolve_cost`'s tail so the two halves of the selection rule
+    are resolved the same way at every entry point.
+    """
+    return DEFAULT_MIN_FIDELITY if min_fidelity is None else float(min_fidelity)
 
 
 def _fallback_cost(agg, cost, max_cost):
@@ -146,12 +175,17 @@ def _fallback_cost(agg, cost, max_cost):
 #     points rather than as the OFAT rows they are.
 #
 # Order fixes panel order in plot_ofat. Do not "sync" this with the sweep's list.
-AXIS_NAMES = ("deriv", "boundary", "disc", "amp_max")
+AXIS_NAMES = ("deriv", "boundary", "disc", "amp_max", "ramp_ns")
+
+# Axes whose dataframe column is the bare axis name. These are the FIXED-dict
+# knobs (penalty_sweep.FIXED_AXES) rather than penalty weights: a threshold in
+# rad/us and a duration in ns, neither of which is a `lambda_`.
+_BARE_COLUMNS = {"amp_max", "ramp_ns"}
 
 
 def axis_column(name):
     """Dataframe column holding the value of sweep axis `name`."""
-    return "amp_max" if name == "amp_max" else f"lambda_{name}"
+    return name if name in _BARE_COLUMNS else f"lambda_{name}"
 
 
 # Okabe-Ito, fixed assignment -- an axis keeps its hue in every figure.
@@ -160,10 +194,18 @@ SWEPT_COLORS = {
     "boundary": "#D55E00",  # vermillion
     "amp_max": "#009E73",   # green
     "disc": "#CC79A7",      # purple
+    "ramp_ns": "#56B4E9",   # sky blue
     "amp": "#999999",       # legacy inert axis, if present in old CSVs
 }
 BASELINE_COLOR = "#000000"
 SEQUENTIAL_CMAP = "Blues"   # single hue, light -> dark (magnitude)
+
+# Constraint lines. Deliberately NOT drawn from SWEPT_COLORS: a budget or a floor
+# is not a data series, and every Okabe-Ito hue except the low-contrast yellow is
+# already bound to a swept axis above (a floor drawn in vermillion would read as
+# the retired `boundary` ladder on Figure 8, which still plots it).
+BUDGET_COLOR = "#555555"    # vertical, dashed -- the spectral budget
+FLOOR_COLOR = "#B2182B"     # horizontal, dotted -- the fidelity floor
 
 PENALTY_LABEL = {
     "deriv": r"$\lambda_{\mathrm{deriv}}$",
@@ -171,6 +213,7 @@ PENALTY_LABEL = {
     "amp": r"$\lambda_{\mathrm{amp}}$",
     "disc": r"$\lambda_{\mathrm{disc}}$",
     "amp_max": r"$\epsilon_{\max}$ (rad/$\mu$s)",
+    "ramp_ns": r"$T_{\mathrm{ramp}}$ (ns)",
 }
 
 METRIC_LABEL = {
@@ -187,6 +230,13 @@ METRIC_LABEL = {
     "peak_amp": "Peak amplitude (rad/$\\mu$s)",
     "roughness": "Roughness (rad/$\\mu$s per step)",
     "F_coh_train": "Training $F_{\\mathrm{coh}}$",
+    # What the ramp actually controls (see penalty_sweep.pulse_metrics).
+    "endpoint_rel_to_peak": "Endpoint amplitude (frac. of peak)",
+    "endpoint_rel_to_mid": "Endpoint amplitude (frac. of mid-pulse RMS)",
+    "out_of_band_cav": "Cavity out-of-band energy (frac.)",
+    "out_of_band_tra": "Transmon out-of-band energy (frac.)",
+    "max_abs_preimage": r"$\max|x|$ (pre-image, rad/$\mu$s)",
+    "preimage_at_bound_frac": "Pre-image entries at the box (frac.)",
 }
 
 # Anything not listed here is dropped by `aggregate_seeds`.
@@ -201,6 +251,14 @@ _AGG_METRICS = [
     "centroid_cav_MHz", "centroid_tra_MHz", "n_bar_drive",
     "bandwidth_MHz", "bandwidth_cav_MHz", "bandwidth_tra_MHz",
     "F_coh_train", "overfit_gap", "iterations",
+    # Ramp diagnostics. Without these in the whitelist `aggregate_seeds`
+    # silently drops them and the ramp ladder cannot be plotted at all.
+    # `max_abs_preimage` / `preimage_at_bound_frac` are NaN on rows whose pulse
+    # came from cache (no pre-image is written to disk) -- the mean is skipna,
+    # so a mixed group still aggregates.
+    "endpoint_rel_to_peak", "endpoint_rel_to_mid",
+    "out_of_band_cav", "out_of_band_tra",
+    "max_abs_preimage", "preimage_at_bound_frac",
 ]
 
 
@@ -293,8 +351,15 @@ def aggregate_seeds(df):
     if {"config_hash", "seed"}.issubset(df.columns):
         df = df.drop_duplicates(subset=["config_hash", "seed"])
 
+    # Every axis's value column must be a group key. A FIXED-dict knob shares
+    # all its lambda_* values with the baseline, so omitting its column silently
+    # collapses that entire ladder onto the incumbent -- five ramp configs
+    # averaged into one row, with no error and nothing obviously wrong in the
+    # output. Filtered to columns actually present, so pre-ramp CSVs (which have
+    # `lambda_boundary` but no `ramp_ns`) keep aggregating unchanged.
     keys = ["gate", "label", "swept", "multiplier", "is_baseline"] + \
-           [f"lambda_{p}" for p in PENALTY_NAMES] + ["amp_max"]
+           [f"lambda_{p}" for p in PENALTY_NAMES] + \
+           [c for c in sorted(_BARE_COLUMNS)]
     keys = [k for k in keys if k in df.columns]
 
     present = [m for m in _AGG_METRICS if m in df.columns]
@@ -339,10 +404,27 @@ def pareto_front(agg, x=DEFAULT_COST, y="F_ped_heldout_mean"):
     return [keep[j] for j in order]
 
 
-def recommend(agg_or_df, max_cost=None, metric="F_ped_heldout_mean",
-              cost=DEFAULT_COST, max_bandwidth=None):
+def _infeasible_message(agg, cost, max_cost, metric, min_fidelity):
     """
-    Best-fidelity configuration subject to a spectral-width budget.
+    Why the feasible set is empty. With two filters, "nothing is feasible" is
+    ambiguous, so name the observed extreme of each and which one actually bit.
+    """
+    n_cost = int((agg[cost] <= max_cost).sum())
+    n_fid = int((agg[metric] >= min_fidelity).sum())
+    return (
+        f"No configuration satisfies both filters: {cost} <= "
+        f"{_fmt_cost(cost, max_cost)} ({n_cost}/{len(agg)} pass; minimum "
+        f"observed {_fmt_cost(cost, agg[cost].min())}) AND {metric} >= "
+        f"{min_fidelity:.4f} ({n_fid}/{len(agg)} pass; maximum observed "
+        f"{agg[metric].max():.6f})"
+    )
+
+
+def recommend(agg_or_df, max_cost=None, metric="F_ped_heldout_mean",
+              cost=DEFAULT_COST, max_bandwidth=None, min_fidelity=None):
+    """
+    Best-fidelity configuration subject to a spectral-width budget AND a floor on
+    the ranking metric.
 
     `agg_or_df` may be either a raw per-seed frame or an already-aggregated one;
     it is aggregated if it still has a `seed` column.
@@ -352,11 +434,15 @@ def recommend(agg_or_df, max_cost=None, metric="F_ped_heldout_mean",
     each drive's own band mask -- NOT MHz). `max_bandwidth` is a deprecated alias
     for `max_cost` -- see `_resolve_cost`.
 
+    `min_fidelity` is the floor, applied to `metric` itself (default
+    `MIN_FIDELITY`); pass 0.0 for the historical cost-only rule.
+
     Returns a pandas Series (the winning row) with `F`, `cost` and `cost_metric`
     convenience fields added, plus `bandwidth` as a legacy alias for `cost`.
-    Raises if nothing meets the budget.
+    Raises if nothing meets both constraints.
     """
     max_cost = _resolve_cost(max_cost, max_bandwidth)
+    min_fidelity = _resolve_floor(min_fidelity)
     agg = aggregate_seeds(agg_or_df) if "seed" in agg_or_df.columns else agg_or_df.copy()
     cost, max_cost = _fallback_cost(agg, cost, max_cost)
 
@@ -367,12 +453,10 @@ def recommend(agg_or_df, max_cost=None, metric="F_ped_heldout_mean",
             f"retraining), or pass cost='bandwidth_MHz' with a rescaled budget."
         )
 
-    feasible = agg[agg[cost] <= max_cost]
+    feasible = agg[(agg[cost] <= max_cost) & (agg[metric] >= min_fidelity)]
     if feasible.empty:
         raise ValueError(
-            f"No configuration has {cost} <= {_fmt_cost(cost, max_cost)} "
-            f"(minimum observed: {_fmt_cost(cost, agg[cost].min())})"
-        )
+            _infeasible_message(agg, cost, max_cost, metric, min_fidelity))
 
     # Highest fidelity; ties -> lower cost.
     feasible = feasible.sort_values([metric, cost], ascending=[False, True])
@@ -458,8 +542,10 @@ def plot_ofat(df, save_path=None, metrics=("F_ped_heldout_mean", DEFAULT_COST)):
                            color=BASELINE_COLOR, linestyle=":", linewidth=1.2,
                            alpha=0.7)
 
-            # amp_max is a linear physical threshold, not a log-spanning weight.
-            if pname == "amp_max":
+            # The FIXED-dict knobs are linear physical quantities (a threshold
+            # in rad/us, a duration in ns), not log-spanning weights, and
+            # neither ladder contains a zero rung that symlog exists to place.
+            if pname in _BARE_COLUMNS:
                 ax.set_xscale("linear")
             else:
                 ax.set_xscale("symlog", linthresh=linthresh)
@@ -494,18 +580,61 @@ def plot_ofat(df, save_path=None, metrics=("F_ped_heldout_mean", DEFAULT_COST)):
     return fig
 
 
+def _draw_constraints(ax, frame, x, y, max_cost, min_fidelity):
+    """
+    Draw both halves of the selection rule onto a fidelity-vs-cost axis.
+
+    Call this LAST, after every data artist: the shading is anchored to the
+    limits the data has already set, and both labels use a blended transform
+    (one axes-fraction coordinate, one data coordinate) so placing a label can
+    never drag the corresponding axis out to that value.
+
+    The two constraints are deliberately drawn differently -- vertical/dashed/grey
+    for the budget, horizontal/dotted/dark-red for the floor -- so neither can be
+    misread as the other, and neither takes a legend entry (both are labelled in
+    the axes). Returns nothing; mutates `ax`.
+    """
+    # --- spectral budget: vertical, dashed ---------------------------------
+    x_hi = max(float(frame[x].max()) * 1.05, max_cost * 1.05)
+    ax.axvspan(max_cost, x_hi, color="#999999", alpha=0.12, zorder=0)
+    ax.axvline(max_cost, color=BUDGET_COLOR, linestyle="--", linewidth=1.3,
+               zorder=1)
+    ax.text(max_cost, 0.98, f"  budget {_fmt_cost(x, max_cost)}",
+            transform=ax.get_xaxis_transform(), rotation=90, va="top",
+            ha="left", fontsize=9, color=BUDGET_COLOR)
+    ax.set_xlim(right=x_hi)
+
+    # --- fidelity floor: horizontal, dotted --------------------------------
+    if min_fidelity is None or min_fidelity <= 0:
+        return
+    # A floor below every point would otherwise be clipped off the bottom of the
+    # axis, drawing nothing and silently implying the filter is inactive.
+    y_lo = min(float(frame[y].min()), float(min_fidelity))
+    y_bottom = min(ax.get_ylim()[0], y_lo - 0.04 * abs(float(frame[y].max()) - y_lo or 1e-3))
+    ax.set_ylim(bottom=y_bottom)
+    ax.axhspan(y_bottom, min_fidelity, color="#999999", alpha=0.08, zorder=0)
+    ax.axhline(min_fidelity, color=FLOOR_COLOR, linestyle=":", linewidth=1.6,
+               zorder=1)
+    ax.text(0.995, min_fidelity, f"floor $F$ = {min_fidelity:.3f}  ",
+            transform=ax.get_yaxis_transform(), ha="right", va="bottom",
+            fontsize=9, color=FLOOR_COLOR)
+
+
 def plot_pareto(df, save_path=None, max_cost=None,
-                x=DEFAULT_COST, y="F_ped_heldout_mean", max_bandwidth=None):
+                x=DEFAULT_COST, y="F_ped_heldout_mean", max_bandwidth=None,
+                min_fidelity=None):
     """
     Fidelity-vs-cost scatter with the non-dominated front and the budgeted
     recommendation starred.
 
     `x` is the cost statistic and doubles as the column the budget applies to.
+    `y` is the ranking metric and doubles as the column `min_fidelity` floors.
     `max_bandwidth` is a deprecated alias for `max_cost`.
 
     Returns (fig, recommended_row).
     """
     max_cost = _resolve_cost(max_cost, max_bandwidth)
+    min_fidelity = _resolve_floor(min_fidelity)
     agg = aggregate_seeds(df) if "seed" in df.columns else df.copy()
     x, max_cost = _fallback_cost(agg, x, max_cost)
 
@@ -538,24 +667,15 @@ def plot_pareto(df, save_path=None, max_cost=None,
 
     rec = None
     try:
-        rec = recommend(agg, max_cost=max_cost, metric=y, cost=x)
+        rec = recommend(agg, max_cost=max_cost, metric=y, cost=x,
+                        min_fidelity=min_fidelity)
         ax.scatter([rec[x]], [rec[y]], s=340, marker="*", color="#E69F00",
                    edgecolor="#333333", linewidth=1.0, zorder=5,
                    label="recommended")
     except ValueError as exc:
         print(f"[plot_pareto] {exc}")
 
-    # Budget region drawn LAST, so the data has already set the y-limits. The
-    # label uses a blended transform (data x, axes-fraction y) -- placing it at
-    # a data-space y would drag the y-axis out to that value.
-    x_hi = max(float(agg[x].max()) * 1.05, max_cost * 1.05)
-    ax.axvspan(max_cost, x_hi, color="#999999", alpha=0.12, zorder=0)
-    ax.axvline(max_cost, color="#555555", linestyle="--", linewidth=1.3,
-               zorder=1)
-    ax.text(max_cost, 0.98, f"  budget {_fmt_cost(x, max_cost)}",
-            transform=ax.get_xaxis_transform(), rotation=90, va="top",
-            ha="left", fontsize=9, color="#555555")
-    ax.set_xlim(right=x_hi)
+    _draw_constraints(ax, agg, x, y, max_cost, min_fidelity)
 
     if x.endswith("_frac"):
         ax.xaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(xmax=1))
@@ -582,13 +702,14 @@ def _dedup_trials(df):
 
 
 def find_best_trial(df, max_cost=None, metric="F_ped_heldout_mean",
-                    cost=DEFAULT_COST, max_bandwidth=None):
+                    cost=DEFAULT_COST, max_bandwidth=None, min_fidelity=None):
     """
     Single best INDIVIDUAL trial (one specific (config, seed) run), not a
     seed-averaged config -- the raw-data analogue of `recommend`.
 
-    Same feasible-filter-then-sort rule as `recommend` (cost <= max_cost, then
-    highest `metric`, ties toward lower cost) but applied to `df` UNAGGREGATED,
+    Same feasible-filter-then-sort rule as `recommend` (cost <= max_cost and
+    metric >= min_fidelity, then highest `metric`, ties toward lower cost) but
+    applied to `df` UNAGGREGATED,
     so a config that only wins on the strength of one lucky seed can surface
     here even though it would not win `recommend`'s seed-mean comparison. That
     is the point of this function and also its caveat: picking the best of many
@@ -598,18 +719,18 @@ def find_best_trial(df, max_cost=None, metric="F_ped_heldout_mean",
     question.
     """
     max_cost = _resolve_cost(max_cost, max_bandwidth)
+    min_fidelity = _resolve_floor(min_fidelity)
     trials = _dedup_trials(df)
     cost, max_cost = _fallback_cost(trials, cost, max_cost)
 
     if cost not in trials.columns:
         raise KeyError(f"cost column {cost!r} not in this table")
 
-    feasible = trials[trials[cost] <= max_cost]
+    feasible = trials[(trials[cost] <= max_cost) & (trials[metric] >= min_fidelity)]
     if feasible.empty:
         raise ValueError(
-            f"No trial has {cost} <= {_fmt_cost(cost, max_cost)} "
-            f"(minimum observed: {_fmt_cost(cost, trials[cost].min())})"
-        )
+            "No trial satisfies both filters. "
+            + _infeasible_message(trials, cost, max_cost, metric, min_fidelity))
 
     feasible = feasible.sort_values([metric, cost], ascending=[False, True])
     best = feasible.iloc[0].copy()
@@ -620,7 +741,8 @@ def find_best_trial(df, max_cost=None, metric="F_ped_heldout_mean",
 
 
 def plot_all_trials(df, save_path=None, max_cost=None,
-                    x=DEFAULT_COST, y="F_ped_heldout_mean", max_bandwidth=None):
+                    x=DEFAULT_COST, y="F_ped_heldout_mean", max_bandwidth=None,
+                    min_fidelity=None):
     """
     Every individual trial -- one marker per (config, seed) run, NO seed
     averaging -- on the same fidelity-vs-cost axes as `plot_pareto`.
@@ -633,9 +755,13 @@ def plot_all_trials(df, save_path=None, max_cost=None,
     seed-mean config, and is subject to the same selection-bias caveat spelled
     out in `find_best_trial`'s docstring.
 
+    Both constraint lines come from the same `_draw_constraints` helper Figure 4
+    uses, so this figure's caption can keep claiming they are identical.
+
     Returns (fig, best_trial).
     """
     max_cost = _resolve_cost(max_cost, max_bandwidth)
+    min_fidelity = _resolve_floor(min_fidelity)
     trials = _dedup_trials(df)
     x, max_cost = _fallback_cost(trials, x, max_cost)
 
@@ -669,20 +795,17 @@ def plot_all_trials(df, save_path=None, max_cost=None,
 
     best = None
     try:
-        best = find_best_trial(trials, max_cost=max_cost, metric=y, cost=x)
+        best = find_best_trial(trials, max_cost=max_cost, metric=y, cost=x,
+                               min_fidelity=min_fidelity)
         ax.scatter([best[x]], [best[y]], s=340, marker="*", color="#E69F00",
                    edgecolor="#333333", linewidth=1.0, zorder=5,
                    label="best trial")
     except ValueError as exc:
         print(f"[plot_all_trials] {exc}")
 
-    x_hi = max(float(trials[x].max()) * 1.05, max_cost * 1.05)
-    ax.axvspan(max_cost, x_hi, color="#999999", alpha=0.12, zorder=0)
-    ax.axvline(max_cost, color="#555555", linestyle="--", linewidth=1.3, zorder=1)
-    ax.text(max_cost, 0.98, f"  budget {_fmt_cost(x, max_cost)}",
-            transform=ax.get_xaxis_transform(), rotation=90, va="top",
-            ha="left", fontsize=9, color="#555555")
-    ax.set_xlim(right=x_hi)
+    # Same convention as plot_pareto (Figure 4) -- shared helper, so the two
+    # cannot drift apart.
+    _draw_constraints(ax, trials, x, y, max_cost, min_fidelity)
 
     if x.endswith("_frac"):
         ax.xaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(xmax=1))
@@ -762,31 +885,38 @@ def plot_grid_heatmap(df, x_name, y_name, save_path=None,
 # ============================================================
 
 def summary_table(df, out_csv=None, max_cost=None, top_k=12,
-                  cost_column=DEFAULT_COST, max_bandwidth=None):
+                  cost_column=DEFAULT_COST, max_bandwidth=None,
+                  min_fidelity=None, metric="F_ped_heldout_mean"):
     """
     Ranked summary of the sweep, plus a LaTeX version written next to the CSV.
 
-    Rows are ordered by held-out fidelity among budget-feasible configs first,
-    then the infeasible ones. `within_budget` makes the constraint explicit so
-    the table stands alone in the report.
+    Rows are ordered by held-out fidelity among configurations that clear BOTH
+    filters first, then the rest. `within_budget` and `above_floor` make the two
+    constraints explicit and separable, so the table stands alone in the report
+    and a reader can see which filter rejected a given row. `within_budget` stays
+    cost-only -- it is a named column in the published CSV and `.tex`.
 
     `cost_column` is the statistic the budget applies to (default `occ99_frac`);
-    `max_bandwidth` is a deprecated alias for `max_cost`.
+    `max_bandwidth` is a deprecated alias for `max_cost`. `min_fidelity` floors
+    `metric` (default `MIN_FIDELITY`); pass 0.0 for the historical cost-only rule.
     """
     max_cost = _resolve_cost(max_cost, max_bandwidth)
+    min_fidelity = _resolve_floor(min_fidelity)
     agg = aggregate_seeds(df) if "seed" in df.columns else df.copy()
     agg = agg.copy()
     cost_column, max_cost = _fallback_cost(agg, cost_column, max_cost)
     if cost_column not in agg.columns:      # much older CSV
         cost_column = "bandwidth_MHz"
     agg["within_budget"] = agg[cost_column] <= max_cost
+    agg["above_floor"] = agg[metric] >= min_fidelity
+    agg["feasible"] = agg["within_budget"] & agg["above_floor"]
 
     agg = agg.sort_values(
-        ["within_budget", "F_ped_heldout_mean"], ascending=[False, False]
+        ["feasible", "F_ped_heldout_mean"], ascending=[False, False]
     )
 
     cols = ["label", "swept"] + [f"lambda_{p}" for p in PENALTY_NAMES] + [
-        "amp_max",
+        "amp_max", "ramp_ns",
         "F_ped_heldout_mean", "F_ped_heldout_std", "F_ped_heldout_min",
         "robustness_spread", cost_column,
         # Per-drive breakdown of the scored cost, and which drive it binds on.
@@ -797,7 +927,11 @@ def summary_table(df, out_csv=None, max_cost=None, top_k=12,
         # photon number.
         "sigma_f_MHz", "centroid_tra_MHz", "n_bar_drive", "bandwidth_MHz",
         "peak_amp", "roughness",
-        "F_coh_train", "overfit_gap", "within_budget", "n_seeds",
+        # What the ramp delivered, and whether the optimizer was clipped
+        # getting there. Absent from pre-ramp CSVs; the `in agg.columns`
+        # filter below drops them silently in that case.
+        "endpoint_rel_to_peak", "max_abs_preimage", "preimage_at_bound_frac",
+        "F_coh_train", "overfit_gap", "within_budget", "above_floor", "n_seeds",
     ]
     # dict.fromkeys dedups while preserving order -- `cost_column` may itself be
     # one of the columns listed after it.
@@ -805,7 +939,11 @@ def summary_table(df, out_csv=None, max_cost=None, top_k=12,
     table = agg[cols]
 
     print(f"budget: {cost_column} <= {_fmt_cost(cost_column, max_cost)}  "
-          f"({int(table['within_budget'].sum())}/{len(table)} feasible)")
+          f"({int(table['within_budget'].sum())}/{len(table)} pass)")
+    print(f"floor : {metric} >= {min_fidelity:.4f}  "
+          f"({int(table['above_floor'].sum())}/{len(table)} pass)")
+    print(f"both  : {int((table['within_budget'] & table['above_floor']).sum())}"
+          f"/{len(table)} feasible")
 
     if out_csv:
         os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
@@ -813,19 +951,22 @@ def summary_table(df, out_csv=None, max_cost=None, top_k=12,
         print(f"Saved {out_csv}")
 
         tex_path = os.path.splitext(out_csv)[0] + ".tex"
-        _write_latex(table, tex_path, max_cost, top_k, cost_column)
+        _write_latex(table, tex_path, max_cost, top_k, cost_column,
+                     min_fidelity=min_fidelity)
 
     return table
 
 
-def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST):
+def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST,
+                 min_fidelity=None):
     """
     Compact booktabs table of the top-k rows, for \\input into the report.
 
-    Also defines \\penaltybudget, so the report's caption states the statistic
-    and threshold actually used rather than a hand-copied number that can drift
-    out of date.
+    Also defines \\penaltybudget, so the report's caption states BOTH halves of
+    the selection rule actually used rather than hand-copied numbers that can
+    drift out of date.
     """
+    min_fidelity = _resolve_floor(min_fidelity)
     sub = table.head(top_k)
     cost_tex = cost_column.replace("_", r"\_")
     # The scored cost is the max of the two per-drive fractions, both of which
@@ -844,6 +985,7 @@ def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST):
         ("lambda_boundary", r"$\lambda_{\mathrm{b}}$", "{:.2g}"),
         ("lambda_disc", r"$\lambda_{\mathrm{disc}}$", "{:.2g}"),
         ("amp_max", r"$\epsilon_{\max}$", "{:.0f}"),
+        ("ramp_ns", r"$T_{\mathrm{ramp}}$", "{:.0f}"),
         ("F_ped_heldout_mean", r"$F_{\mathrm{held}}$", "{:.5f}"),
         ("F_ped_heldout_min", r"$F_{\min}$", "{:.5f}"),
         (None if per_drive else "robustness_spread", r"spread", "{:.2e}"),
@@ -856,6 +998,7 @@ def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST):
         ("n_bar_drive", r"$\bar n_{\mathrm{drv}}$", "{:.2f}"),
         ("peak_amp", r"peak", "{:.1f}"),
         ("within_budget", r"in budget", "{}"),
+        ("above_floor", r"$\geq F_{\min}$", "{}"),
     ]
     cols = [c for c in dict.fromkeys(cols) if c[0] is not None and c[0] in sub.columns]
 
@@ -866,10 +1009,13 @@ def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST):
         budget_desc = rf"$W_{{99}} \leq \SI{{{max_cost:.1f}}}{{\mega\hertz}}$"
     else:
         budget_desc = rf"\texttt{{{cost_tex}}} $\leq {max_cost:.1f}$ MHz"
+    if min_fidelity > 0:
+        budget_desc += (r", and $F_{\mathrm{held}} \geq " +
+                        rf"{min_fidelity:.3f}$")
     lines = [
         r"% Auto-generated by visualization/penalty_viz.summary_table -- do not hand-edit.",
         rf"% cost statistic: {cost_column}   budget: "
-        rf"{_fmt_cost(cost_column, max_cost)}",
+        rf"{_fmt_cost(cost_column, max_cost)}   floor: F >= {min_fidelity:.4f}",
         r"\providecommand{\penaltybudget}{}%",
         r"\renewcommand{\penaltybudget}{" + budget_desc + r"}%",
         # 13 columns of numbers do not fit at the default column separation.
@@ -884,7 +1030,7 @@ def _write_latex(table, tex_path, max_cost, top_k, cost_column=DEFAULT_COST):
         cells = []
         for key, _, fmt in cols:
             v = row[key]
-            if key == "within_budget":
+            if key in ("within_budget", "above_floor"):
                 cells.append(r"\checkmark" if bool(v) else "--")
             elif pd.isna(v):
                 cells.append("--")
