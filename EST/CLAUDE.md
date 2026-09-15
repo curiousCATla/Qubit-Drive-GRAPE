@@ -95,14 +95,14 @@ different device and code. Full details in `EST/README.md`.
   stage 1): `est_c3s2` keeps w3=7, `est_d2` adds C6, `est_c3s2_d2` both; `*_d2` **require**
   an explicit `--w-smooth` (no silent default). Weights per stage come from
   `train_est_eigh.stage_weights`, pinned by `StageWeightScheduleTest`. `EST/stage2_t.py` is
-  the T-gate end-of-pulse drive study built on them (notebook §12). Measured (T, seed 1,
+  the T-gate end-of-pulse drive study built on them (`est_optimization.ipynb` §2). Measured (T, seed 1,
   2000 it/stage, single seed): `est_d2` at w6=1e-4 (the top of the screened grid) evens the drive
   (closing-48-ns energy 35.4% -> 7.1%, peak 25.1@584 ns -> 6.7@304 ns) at F1 0.99994, F_ET
   0.939 (vs 0.945), and *improves* the endpoint (L(T) 0.120 -> 0.048, F_err(T) 0.874 -> 0.950).
   Keeping w3=7 in stage 2 (`est_c3s2`, `est_c3s2_d2`) does **not** give a gate (F1 ~0.98 at
   maxiter; 7*C3 dominates stage 2) and front-loads the drive instead. C3 flattens state
   *speed*, not the waveform.
-  Measured (X, seed 6, 2000 it/stage, notebook §11, single seed): `est_err` at w_err=0.3
+  Measured (X, seed 6, 2000 it/stage, `est_optimization.ipynb` §1, single seed): `est_err` at w_err=0.3
   takes L(T) 0.398 -> 0.0049 and F_err(T) 0.538 -> 0.996 at F1 0.9995, F_ET 0.750 (vs 0.744).
   That makes limitation 3's endpoint leak a property of the objective, not the device.
   `est_dn` (w5=30) halves Δ_QEC but makes L(T) worse (0.589). Combining the two is not

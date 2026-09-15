@@ -35,7 +35,7 @@ Outputs
     tables/est_stage2_T_seed1_scan.csv      one row per scan run (+ control)
     tables/est_stage2_T_seed1.csv           one row per (run, stage)
     tables/est_stage2_T_seed1_traces.npz    per-time traces, keys "<run>/<stage>/<name>"
-The figures are drawn in est_experiments.ipynb §12.
+The figures are drawn in est_optimization.ipynb §2.
 """
 
 import argparse

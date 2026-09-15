@@ -17,7 +17,7 @@ Every pulse is scored the same way: the extended grape_eigh report at n_c = 20
 columns average over the last 10% of the gate, t >= 0.9 T, where the endpoint
 leak of limitation 3 lives.
 
-Outputs (the figures are drawn in est_experiments.ipynb section 11)
+Outputs (the figures are drawn in est_optimization.ipynb section 1)
     tables/est_newterms_X_seed6.csv            one row per (run, stage)
     tables/est_newterms_X_seed6_traces.npz     per-time traces, keys "<run>/<stage>/<name>"
 """

@@ -103,7 +103,7 @@ cached pulses and forces a multi-hour retrain.
 
 EsT module (`EST/`): commands, per-module notes and conventions live in `EST/CLAUDE.md`, which loads
 when working with files under `EST/`. Read it explicitly before EsT work that starts elsewhere
-(`est_experiments.ipynb`, `pulses/est/`, `logs/est_*`).
+(`est_experiments.ipynb`, `est_optimization.ipynb`, `pulses/est/`, `logs/est_*`).
 
 All scripts assume they are run from the repository root (several insert `REPO_ROOT` onto
 `sys.path` explicitly, e.g. `analysis/logical_gate_analysis1.py`).

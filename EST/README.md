@@ -531,8 +531,8 @@ python EST/train_est.py --gate X --variant est --maxiter 1000 \
 python EST/compare_warmstart.py
 
 # T gate, end-of-pulse drive: stage-2-only schedule changes on the eigh pipeline
-# (STAGE2_VARIANTS in EST/train_est_eigh.py; notebook §12). Seed 1, cold starts;
-# the control is §9.2's u_T_est_best2000. *_d2 variants require --w-smooth.
+# (STAGE2_VARIANTS in EST/train_est_eigh.py; est_optimization.ipynb §2). Seed 1, cold starts;
+# the control is est_experiments.ipynb §9.2's u_T_est_best2000. *_d2 variants require --w-smooth.
 python EST/stage2_t.py commands     # prints the scan + full-run commands
 python EST/stage2_t.py scan         # picks w6 by the rule in the module docstring
 python EST/stage2_t.py compare      # -> tables/est_stage2_T_seed1{.csv,_traces.npz}

@@ -60,7 +60,7 @@ DEFAULT_W_SMOOTH = 5e-6   # half the cat-code production lambda_deriv = 1e-5
 # the plain `est` stage 1, so at the same --seed it is the same run as `est`.
 #   c3     keep w3 at its stage-1 value in stage 2, instead of dropping it to 0
 #   smooth add the C6 smoothness penalty in stage 2, at --w-smooth (required)
-# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py, notebook §12).
+# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py, est_optimization.ipynb §2).
 STAGE2_VARIANTS = {
     "est_c3s2": ("c3",),
     "est_d2": ("smooth",),
