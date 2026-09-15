@@ -109,13 +109,31 @@ $$
 C_3 = \Bigl\langle \frac{\mathrm{Var}_t(v)}{\bigl(\mathrm{mean}_t\, v\bigr)^2} \Bigr\rangle_j
 $$
 
-This term exists only to stop the optimizer parking the dynamics in order to satisfy $C_2$ trivially — a state that does not move is transparent by default. Note that it penalizes *uneven* motion, not slow motion: a trajectory that sprints to the target and then sits still has high velocity variance, while a uniformly paced one does not. It does not itself improve transparency, which is why the second stage drops it to zero.
+The paper's stated purpose is that it "ensures there is some dynamics at each step and thereby incentivizes the optimizer to not minimize the effective pulse duration" — i.e. it is there to stop the optimizer parking the dynamics in order to satisfy $C_2$ trivially, since a state that does not move is transparent by default. In the normalized form used here it penalizes *uneven* motion, not slow motion: a trajectory that sprints to the target and then sits still has high velocity variance, while a uniformly paced one does not. It does not itself improve transparency, which is why the second stage drops it to zero.
 
 **$C_4$** is described under [Bounds versus penalties](#bounds-versus-penalties).
 
 ### Deviations from the published equations
 
 Two cost terms depart from the paper as printed. Both are deliberate, documented at the point of definition, and **unverified against the authors' released code** — check them before comparing absolute numbers.
+
+*The printed form is still available, opt-in.* `python EST/train_est.py --variant paper` trains with `grape_jax.PAPER_COST_FORM`:
+- $C_2$ over $N_{\mathrm{norm}}$, summed over $i = 0\dots N-1$ as printed, so $t = T$ is excluded.
+- Raw $C_3$ with $v$ in rad/ns, at the paper's $\Delta t = 1$ ns.
+- Weights $(1, 0.6, 6)$ then $(1, 0.1, 0)$.
+
+Two consequences are measured on the seed-0 X pulses:
+- **$C_2$ is unbounded below.** $F_{\mathrm{ET}} \le \sqrt{\langle n\rangle} \approx 1.5$, so the cost rewards photon number. It already reads $-0.07$ on `u_X_est_stage1`.
+- **$C_3$ is nearly inert.** Raw $C_3$ is $7\times10^{-5}$ to $1.4\times10^{-3}$ (rad/ns)², so $w_3 C_3 \le 0.006$.
+
+That variant's logged `c2` and `c3` are therefore not comparable to an `est` log. Every default is unchanged.
+
+*Result, X at seed 0* (`est_experiments.ipynb` Appendix A): the printed form is **not** more transparent, and it leaks more at the end of the gate.
+- **End of gate:** $L(T)$ is 0.470, against 0.396 for the delivered `u_X_est`, and the error-basis overlap at $T$ is 0.411 against 0.589.
+- **Costs:** max active Fock 13 against 9, and 2.9× the infidelity.
+- **Photon number:** the extra photons are bought with a cavity drive that sits at the amplitude cap 24% of the time, against 11%.
+- **Implication:** the $C_2$ normalization deviation is not what separates this replication's endpoint from the paper's.
+- **Caveats:** single seed, and confounded with the weight change $(0.7, 7) \to (0.6, 6)$.
 
 **1. $C_2$ normalization.** Eq. (C2) as printed divides the squared overlap by a single power of $N_{\mathrm{norm}} = \sqrt{\langle\psi_C|a^\dagger a|\psi_C\rangle}$, which does not bound $F_{\mathrm{ET}}$ in $[0,1]$. Dividing by $N_{\mathrm{norm}}^2$ does, via Cauchy–Schwarz:
 $|\langle\psi_E|a|\psi_C\rangle|^2 \le \langle\psi_C|a^\dagger a|\psi_C\rangle\,\langle\psi_E|\psi_E\rangle$ with $\psi_E$ of unit norm. The implementation uses $N_{\mathrm{norm}}^2$, so $F_{\mathrm{ET}}$ is a genuine fidelity.
@@ -134,7 +152,7 @@ $$
 
 so $v_i \to 2\Delta E(t)$, the Anandan–Aharonov speed, with $\Delta E = \sqrt{\langle H^2\rangle - \langle H\rangle^2}$ the instantaneous energy uncertainty. The factor 2 in Eq. (C4) is precisely the convention that makes this identity hold. $v$ is therefore a well-defined continuum quantity and Eq. (C5) is a convergent finite-difference estimate of it, not a $dt$-amplified one — the Fubini–Study *distance* $d_{\mathrm{FS}}$ shrinks $\propto dt$ at exactly the rate the prefactor grows.
 
-Measured directly, by sub-dividing the trained `u_X_est.npy` into $r$ identical sub-steps (which leaves the *continuous* evolution untouched and only samples the trajectory more finely) at $n_c = 20$:
+Measured directly, by sub-dividing `u_X_est_it600.npy` (the 600 it/stage X pulse) into $r$ identical sub-steps (which leaves the *continuous* evolution untouched and only samples the trajectory more finely) at $n_c = 20$:
 
 | $r$ | $dt$ (ns) | $\mathrm{mean}(v)$ | $\mathrm{Var}(v)$ raw | $\mathrm{Var}/\mathrm{mean}^2$ | FS path length |
 |---|---|---|---|---|---|
@@ -146,27 +164,38 @@ Measured directly, by sub-dividing the trained `u_X_est.npy` into $r$ identical 
 
 The raw variance moves by 0.12% over a 16× refinement, converging from below as the $O(dt^2)$ term dies — it is not $dt$-sensitive at all. Pointwise, $v_i$ agrees with $2\Delta E(t_i)$ computed from the instantaneous $H_k$ to a max relative deviation of $2.0\times10^{-3}$ at $dt = 1$ ns. **So the answer to "is the problem the $2/dt$?" is no** — the printed $C_3$ is a perfectly well-posed continuum functional, $\langle\mathrm{Var}_t\, 2\Delta E_j(t)\rangle_j$. Any $dt$-invariance claimed for the normalized form is a property both forms already have.
 
-*The problem is that $v$ is physically large on this device.* $2\Delta E$ is set by the Hamiltonian, and on this chip the drives dominate it. On the trained X pulses at $dt=1$ ns, $n_c=20$:
+*The problem is that $v$ is physically large on this device.* $2\Delta E$ is set by the Hamiltonian, and on this chip the drives dominate it. On the 600 it/stage X pulses at $dt=1$ ns, $n_c=20$:
 
 | | $\mathrm{mean}(v)$ (rad/μs) | $\mathrm{std}(v)$ | $\mathrm{Var}(v)$ raw | $\mathrm{Var}/\mathrm{mean}^2$ |
 |---|---|---|---|---|
-| `u_X_est` | 92.41 | 31.06 | 964.7 | 0.1126 |
-| `u_X_ord` | 85.29 | 29.65 | 878.9 | 0.1208 |
+| `u_X_est_it600` | 92.41 | 31.06 | 964.7 | 0.1126 |
+| `u_X_ord_it600` | 85.29 | 29.65 | 878.9 | 0.1208 |
 
-$\mathrm{mean}(v) = 92.4\ \mathrm{rad}/\mu s$ is $2\pi \times 14.7$ MHz — the state sweeps ~92 rad of Fubini–Study path in the 1 μs gate. For contrast, $2\Delta E$ of the code cardinals under $H_0$ *alone* is $0.56\ \mathrm{rad}/\mu s$: **99.4% of the trajectory speed is drive-induced**, which is what one expects when $\varepsilon_{\max} = 25.13\ \mathrm{rad}/\mu s$ enters $H$ multiplied by $\sqrt{n}$ matrix elements. So $v \sim 10^2$ and $\mathrm{Var}(v) \sim 10^3$, and with the paper's $w_3 = 5\text{–}10$ the raw $C_3$ contribution to $C_{\mathrm{tot}}$ is $\approx 5\times10^3$ to $10^4$, against $C_1, C_2 \in [0,1]$. **The fidelity terms would be numerically invisible and the optimizer would minimize the regularizer alone.** (An earlier revision of this section quoted $\mathrm{Var} \approx 100$ and a normalized 0.745; those were measured on an untrained pulse at a different $N$ and $n_c$ and do not reproduce. The conclusion is unchanged and the margin is an order of magnitude wider than stated.)
+$\mathrm{mean}(v) = 92.4\ \mathrm{rad}/\mu s$ is $2\pi \times 14.7$ MHz — the state sweeps ~92 rad of Fubini–Study path in the 1 μs gate. For contrast, $2\Delta E$ of the code cardinals under $H_0$ *alone* is $0.56\ \mathrm{rad}/\mu s$: **99.4% of the trajectory speed is drive-induced**, which is what one expects when $\varepsilon_{\max} = 25.13\ \mathrm{rad}/\mu s$ enters $H$ multiplied by $\sqrt{n}$ matrix elements. So $v \sim 10^2$ and $\mathrm{Var}(v) \sim 10^3$, and — in rad/μs, a qualifier the next paragraph shows is load-bearing — with the paper's $w_3 = 5\text{–}10$ the raw $C_3$ contribution to $C_{\mathrm{tot}}$ is $\approx 5\times10^3$ to $10^4$, against $C_1, C_2 \in [0,1]$. **The fidelity terms would be numerically invisible and the optimizer would minimize the regularizer alone.** (An earlier revision of this section quoted $\mathrm{Var} \approx 100$ and a normalized 0.745; those were measured on an untrained pulse at a different $N$ and $n_c$ and do not reproduce. The conclusion is unchanged and the margin is an order of magnitude wider than stated.)
 
-*A dimensionful term cannot carry a portable weight.* Because $\mathrm{Var}(v)$ has units of (time)$^{-2}$, its numerical value — and hence the meaning of $w_3$ — depends on the time unit. In rad/μs the raw variance is 965; write the identical physics in rad/ns and it is $9.7\times10^{-4}$, at which point $w_3 = 5\text{–}10$ is negligible rather than dominant. The unit that would make raw $C_3$ genuinely $O(1)$ is $\tau = 1/\mathrm{mean}(v) \approx 10.8$ ns, which is not a natural constant of anything — it is a property of this pulse. Supplying that scale from the trajectory itself is exactly what dividing by $\mathrm{mean}(v)^2$ does.
+*A dimensionful term cannot carry a portable weight.* Because $\mathrm{Var}(v)$ has units of (time)$^{-2}$, its numerical value — and hence the meaning of $w_3$ — depends on the time unit. In rad/μs the raw variance is 965; write the identical physics in rad/ns — the paper's own $\Delta t$ — and it is $9.6\times10^{-4}$, at which point $w_3 = 5\text{–}10$ is negligible rather than dominant. The paper does not state the unit of $\arccos$ either; radians is the only reading consistent with $v \to 2\Delta E$ above, but in deg/ns the same variance is $3.17$, $O(1)$ purely by coincidence of units. The unit that would make raw $C_3$ genuinely $O(1)$ is $\tau = 1/\mathrm{mean}(v) \approx 10.8$ ns, which is not a natural constant of anything — it is a property of this pulse. Supplying that scale from the trajectory itself is exactly what dividing by $\mathrm{mean}(v)^2$ does.
 
-*Scale invariance is the real reason, not just the magnitude.* Under a uniform slowdown $v \to \lambda v$, raw $\mathrm{Var} \to \lambda^2 \mathrm{Var}$ while $\mathrm{Var}/\mathrm{mean}^2$ is invariant. So the raw form penalizes *slow* motion as well as *uneven* motion, and its steepest descent direction is "turn the drives down." Scaling the trained pulse by $\lambda$:
+*Scale invariance is the real reason, not just the magnitude.* Under a uniform slowdown $v \to \lambda v$, raw $\mathrm{Var} \to \lambda^2 \mathrm{Var}$ while $\mathrm{Var}/\mathrm{mean}^2$ is invariant. Equivalently, $\mathrm{Var}(v) = \mathrm{mean}(v)^2 \cdot \mathrm{Var}/\mathrm{mean}^2$ = (how fast)$^2$ × (how uneven), so the raw form penalizes *fast* motion — it rewards slowing down — as well as *uneven* motion, and its steepest descent direction is "turn the drives down." (A toy trajectory that moves at speed $V$ for a fraction $f$ of the gate and idles otherwise has $\mathrm{Var}/\mathrm{mean}^2 = (1-f)/f$, independent of $V$, but raw $\mathrm{Var} = f(1-f)V^2$.) The invariance is exact under $v \to \lambda v$ and only approximate under $u \to \lambda u$, because the drift and the nonlinear dynamics do not scale. Scaling `u_X_est_it600` by $\lambda$:
 
 | $\lambda$ | 1.0 | 0.5 | 0.25 | 0.1 | 0.01 | 0.0 |
 |---|---|---|---|---|---|---|
 | $\mathrm{Var}(v)$ raw | 964.70 | 359.27 | 153.06 | 28.53 | 0.237 | **0.000** |
 | $\mathrm{Var}/\mathrm{mean}^2$ | 0.1126 | 0.1213 | 0.1761 | 0.2000 | 0.1399 | 0.000 |
 
-Raw $C_3$ falls by 4000× for a 100× amplitude reduction and reaches its **global minimum, exactly zero, at $\lambda = 0$** — the drift alone moves the code cardinals at a constant $0.57\ \mathrm{rad}/\mu s$, so the variance vanishes identically. The literal Eq. (C6)–(C7) term is therefore minimized by the parked trajectory, which is the precise failure mode $C_3$ was introduced to prevent, and with $w_3 \gg w_1$ that minimum is what the optimizer would find. The normalized form is flat in $\lambda$ over three decades (0.11–0.20), so it shapes the velocity *profile* and says nothing about its magnitude — which is the behaviour `velocity_variance_cost`'s docstring describes ("penalizes UNEVEN motion, not slow motion") and which is only literally true of the normalized form. Note the $\lambda = 0$ column is degenerate for both: with $v \equiv \mathrm{const}$ the numerator vanishes, so the normalized form is 0 there too via the $10^{-12}$ guard rather than being large. Its protection is against *near*-parking with any residual jitter, not against the measure-zero exactly-uniform case.
+Raw $C_3$ falls by 4000× for a 100× amplitude reduction and reaches its **global minimum, exactly zero, at $\lambda = 0$** — the drift alone moves the code cardinals at a constant $0.57\ \mathrm{rad}/\mu s$, so the variance vanishes identically. The literal Eq. (C6)–(C7) term is therefore minimized by the parked trajectory, which is the precise failure mode $C_3$ was introduced to prevent; whether the optimizer would actually *find* that minimum depends on the unit convention, and is measured on the total cost below. The normalized form is flat in $\lambda$ over three decades (0.11–0.20), so it shapes the velocity *profile* and says nothing about its magnitude — which is the behaviour `velocity_variance_cost`'s docstring describes ("penalizes UNEVEN motion, not slow motion") and which is only literally true of the normalized form. Note the $\lambda = 0$ column is degenerate for both: with $v \equiv \mathrm{const}$ the numerator vanishes while $\mathrm{mean}(v)$ stays at the drift speed, so the normalized form is genuinely 0 there too (the $10^{-12}$ guard never engages). Nor does it protect against *near*-parking: once the drive-induced speed falls below the drift speed, the drift's constant contribution dilutes the ratio. On the parked seed `u_X_est_seed1` ($C_1 = 2/3$) the normalized form falls $0.146 \to 0.065 \to 7\times10^{-4}$ at $\lambda = 1,\ 0.1,\ 0.01$. What keeps a parked pulse expensive is $C_1$, not $C_3$.
 
-*Summary.* Dividing by $\mathrm{mean}(v)^2$ — the squared coefficient of variation — makes the term dimensionless, unit-independent, scale-invariant, and $O(0.1\text{–}1)$, i.e. commensurate with $C_1$ and $C_2$. This is the only reading under which the paper's stated weights $(1,\ 0.6\text{–}0.75,\ 5\text{–}10)$ form a coherent schedule. The literal form remains available via `normalize=False`, and three tests in `VelocityNormalizationTest` pin the argument in both directions. One caveat on those tests: `test_normalized_form_is_dt_stable` regenerates band-limited white noise at each $N = T/dt$, so the two sides are different *physical* pulses and the test does not isolate discretization; the refinement table above is what actually establishes $dt$-convergence, and it does so for both forms.
+*Total cost, not $C_3$ alone.* Whether parking wins is a property of $C_{\mathrm{tot}}$. At the stage-1 weights $w = (1, 0.7, 7, 1)$, on `u_X_est_stage1` (the pulse trained at those weights) against the parked $\lambda = 0$ trajectory, $n_c = 20$:
+
+| $C_3$ form in $C_{\mathrm{tot}}$ | trained `u_X_est_stage1` | parked ($\lambda = 0$) | parking wins? |
+|---|---|---|---|
+| raw, rad/μs (this repo's unit) | 497.5 | 0.696 | yes |
+| raw, rad/ns (the paper's $\Delta t$) | 0.233 | 0.696 | no |
+| raw, deg/ns | 1.865 | 0.696 | yes |
+| normalized (any unit) | 0.299 | 0.696 | no |
+
+The raw form in rad/ns is parking-safe only because it is negligible ($w_3 C_3 = 5\times10^{-4}$ on this pulse, so $C_3$ does nothing); the two raw readings in which it matters both hand the parked trajectory the lower cost. The current 2000 it/stage `u_X_est` gives raw 1366.5 and normalized 0.1477 rather than the 600 it/stage values above; every conclusion is unchanged.
+
+*Summary.* Dividing by $\mathrm{mean}(v)^2$ — the squared coefficient of variation — makes the term dimensionless, unit-independent, scale-invariant, and $O(0.1\text{–}1)$, i.e. commensurate with $C_1$ and $C_2$. Of the readings measured above it is the only one that is both non-negligible and leaves the trained pulse below the parked trajectory; that — not the rad/μs magnitude, which is a unit artifact — is the justification. The literal form remains available via `normalize=False`, and three tests in `VelocityNormalizationTest` pin the argument in both directions. One caveat on those tests: `test_normalized_form_is_dt_stable` regenerates band-limited white noise at each $N = T/dt$, so the two sides are different *physical* pulses and the test does not isolate discretization; the refinement table above is what actually establishes $dt$-convergence, and it does so for both forms.
 
 ### The constraint chain
 
@@ -259,7 +288,7 @@ Training uses a **single** truncation $n_c = 20$, unlike the root pipeline's mul
 | `AnalyticGradientCrossCheck` | 2 | JAX gradient against the hand-derived adjoint; `expm` trajectory against `eigh` |
 | `FiniteDifferenceTest` | 5 | full $C_{\mathrm{tot}}$, the chain-constrained cost, and $C_2$/$C_3$/$C_4$ individually |
 | `ConstraintSatisfactionTest` | 5 | band-limit exactness, out-of-band leakage, endpoint ramp-down, T-gate masking, envelope shape |
-| `VelocityNormalizationTest` | 3 | that the raw $C_3$ would swamp the fidelity terms, and the normalized form is $O(1)$ and $dt$-stable |
+| `VelocityNormalizationTest` | 3 | that the raw $C_3$ would swamp the fidelity terms in rad/μs, and the normalized form is $O(1)$ and $dt$-stable |
 | `DiagnosticsTest` | 9 | Eqs. 6–8 against two cases with known answers, plus the algebraic identities the transcribed forms must satisfy: the rank-2 error basis, $\eta \in [0,2]$ with $\eta(0) = 0$, $\Delta_{\mathrm{QEC}} = 0$ under Knill–Laflamme, the $\sigma_{E_j}$ convention, and the `c2_integrand` identity |
 | `KittenCodeTest` | 4 | code words, error words as photon-loss images, gate targets |
 | `PreimagePersistenceTest` | 2 | that a saved $(u, x)$ pair still satisfies $u = \mathrm{constrain}(x)$, and that `deramp` inverts the chain only modulo the band-limit projection |
@@ -500,6 +529,13 @@ python EST/train_est.py --gate X --variant est --maxiter 1000 \
 
 # Cold vs. warm-stage-1 vs. warm-stage-2 vs. Ord, scored through both code paths
 python EST/compare_warmstart.py
+
+# T gate, end-of-pulse drive: stage-2-only schedule changes on the eigh pipeline
+# (STAGE2_VARIANTS in EST/train_est_eigh.py; notebook §12). Seed 1, cold starts;
+# the control is §9.2's u_T_est_best2000. *_d2 variants require --w-smooth.
+python EST/stage2_t.py commands     # prints the scan + full-run commands
+python EST/stage2_t.py scan         # picks w6 by the rule in the module docstring
+python EST/stage2_t.py compare      # -> tables/est_stage2_T_seed1{.csv,_traces.npz}
 ```
 
 All commands are run from the repository root. Useful flags: `--maxiter` (default 600 per stage), `--trunc 16 20 24` for multi-truncation training, `--init-x`/`--init`/`--tag`/`--hard-bound` for warm restarts, `--gate`, `--dt`, `--seed`, `--no-save`.

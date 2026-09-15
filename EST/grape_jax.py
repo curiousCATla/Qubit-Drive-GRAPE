@@ -195,7 +195,7 @@ def fidelity_cost(Psi_final, Psi_target):
     return 1.0 - jnp.mean(_abs2(overlaps))
 
 
-def et_cost(Psi_code_traj, Psi_err_traj, A):
+def et_cost(Psi_code_traj, Psi_err_traj, A, norm_power=2, include_endpoint=True):
     """
     C2, Eq. (C2). Running error-transparency fidelity: at every step, compare the
     normalized "just lost a photon" state a|psi_C(t)> against the independently
@@ -211,11 +211,28 @@ def et_cost(Psi_code_traj, Psi_err_traj, A):
     stage-1 value (~0.83) is ever needed, check against their released code
     (Zenodo DOI in the paper); the EsT-vs-Ord comparison this module targets is
     insensitive to the choice, since both variants are scored the same way.
+
+    The printed form is available opt-in, for the paper-literal variant
+    (`PAPER_COST_FORM`, `train_est.py --variant paper`):
+      norm_power=1          divide by N_norm, as printed. F_ET is then bounded
+                            by N_norm = sqrt(<n>), not by 1, so the cost is
+                            unbounded below and rewards photon number -- ~1.5 on
+                            the kitten code, and C2 already reads -0.07 on
+                            u_X_est_stage1.
+      include_endpoint=False  average over i = 0 .. N-1 as Eq. (C2) sums, i.e.
+                            drop t = T. The default includes it.
     """
+    if not include_endpoint:
+        Psi_code_traj, Psi_err_traj = Psi_code_traj[:-1], Psi_err_traj[:-1]
     APsi = jnp.einsum('ij,tjm->tim', A, Psi_code_traj)
     norm_sq = jnp.sum(_abs2(APsi), axis=1)                                # (T,M)
     overlap = jnp.einsum('tim,tim->tm', jnp.conj(Psi_err_traj), APsi)
-    F_et = _abs2(overlap) / (norm_sq + 1e-12)
+    if norm_power == 2:
+        F_et = _abs2(overlap) / (norm_sq + 1e-12)
+    elif norm_power == 1:
+        F_et = _abs2(overlap) / jnp.sqrt(norm_sq + 1e-24)
+    else:
+        raise ValueError(f"norm_power must be 1 or 2, got {norm_power!r}")
     return 1.0 - jnp.mean(F_et)    # mean over (time, cardinal points)
 
 
@@ -224,35 +241,46 @@ def velocity_variance_cost(Psi_code_traj, dt, normalize=True):
     C3, Eqs. (C4)-(C7). Penalizes non-uniform speed through Hilbert space along
     the code trajectory.
 
-    This term exists to stop the optimizer parking the dynamics in order to cheat
-    C2: a state that does not move trivially satisfies error transparency. Note
-    that it penalizes UNEVEN motion, not slow motion -- a trajectory that sprints
-    to the target and then sits still has high velocity variance, while a
+    The paper's stated purpose (App. C): it "ensures there is some dynamics at
+    each step and thereby incentivizes the optimizer to not minimize the
+    effective pulse duration" -- i.e. not to park the dynamics and cheat C2, since
+    a state that does not move is transparent by default. The normalized form
+    penalizes UNEVEN motion, not slow motion -- a trajectory that sprints to the
+    target and then sits still has high velocity variance, while a
     uniformly-paced one does not. It does not itself improve transparency, which
     is why the paper's stage-2 schedule drops it to zero.
 
     NORMALIZATION -- a deviation from the printed equations, on evidence. Eqs.
     (C6)-(C7) average over time steps and cardinals, which removes extensivity
-    but supplies no SCALE: the raw variance of v = d_FS/dt keeps units of
-    (rad/us)^2 and is unbounded above. Measured on the trained u_X_est at
-    dt = 1 ns, n_c = 20, it is 965, so with the paper's w3 = 5-10 the C3
-    contribution would be ~5e3-1e4 against C1, C2 in [0, 1]: the fidelity terms
-    would be numerically invisible and the optimizer would minimize C3 alone.
+    but supplies no SCALE: the raw variance of v = d_FS/dt is dimensionful, so
+    its size -- and the meaning of w3 -- is set by a unit convention the paper
+    only half fixes (Delta t is "1 ns"; the unit of arccos is not stated, and
+    radians is the only reading under which v -> 2*Delta_E). Measured on
+    u_X_est_it600 at dt = 1 ns, n_c = 20, raw C3 is 965 in (rad/us)^2, this
+    repo's unit, but 9.6e-4 in (rad/ns)^2 and 3.17 in (deg/ns)^2. At w3 = 5-10
+    the literal form therefore swamps C1, C2 (rad/us), is negligible (rad/ns),
+    or is O(1) by coincidence (deg/ns). Magnitude alone decides nothing; the
+    normalized form is 0.1126 in every convention.
 
     The 2/dt in Eq. (C5) is NOT the culprit -- d_FS shrinks proportionally, so
     v -> 2*Delta_E(t) (Anandan-Aharonov) and both forms converge as dt -> 0
     (raw variance moves 0.12% over a 16x refinement). v is simply large here:
     mean(v) = 92 rad/us, of which 99.4% is drive-induced.
 
-    The load-bearing property is scale invariance. Under v -> lambda*v the raw
-    variance goes as lambda^2, so it penalizes SLOW motion as well as uneven
-    motion, and is globally minimized (exactly 0) by the zero-drive trajectory
-    -- the parking failure mode C3 exists to prevent. Dividing by mean(v)^2 --
-    the squared coefficient of variation -- is invariant under that rescaling,
-    dimensionless, unit-independent and O(0.1-1), which is the only reading
-    under which the paper's stated weights (w1, w2, w3) = (1, 0.6-0.75, 5-10)
-    form a sensible schedule. See EST/README.md, "Deviations from the published
-    equations", for the measured tables.
+    The load-bearing property is scale invariance. Var(v) = mean(v)^2 * CV^2,
+    i.e. (how fast)^2 * (how uneven), so under v -> lambda*v the raw variance
+    goes as lambda^2: it penalizes FAST motion -- rewards slowing down -- as well
+    as uneven motion, and is exactly 0 on the zero-drive trajectory. Dividing by
+    mean(v)^2 keeps only CV^2, which is invariant under that rescaling,
+    dimensionless and unit-independent. On the full stage-1 cost
+    w = (1, 0.7, 7, 1), u_X_est_stage1 beats the parked lambda = 0 trajectory
+    (C_tot 0.696) under the normalized form (0.299) and raw rad/ns (0.233), and
+    loses under raw rad/us (498) and raw deg/ns (1.87): the normalized form is
+    the only one that is both non-negligible and parking-safe. It does NOT forbid
+    parking by itself -- it is 0 at lambda = 0 too, and collapses toward 0 once
+    drive-induced speed falls below the drift's; C1 is what keeps a parked pulse
+    expensive. See EST/README.md, "Deviations from the published equations",
+    for the measured tables.
 
     Pass normalize=False for the literal Eqs. (C6)-(C7) form.
     """
@@ -292,17 +320,37 @@ def amplitude_cost(u, eps_max=EPS_MAX):
 # Total objective
 # ---------------------------------------------------------------------------
 
+# The cost terms exactly as App. C prints them, for `train_est.py --variant paper`.
+# Every key defaults to the repo's form everywhere else, so passing nothing
+# reproduces every existing pulse and log.
+#   c2_norm_power=1         Eq. (C2) divides by N_norm, not N_norm^2 (see et_cost)
+#   c2_include_endpoint=False  Eq. (C2) sums i = 0 .. N-1
+#   c3_normalize=False      Eqs. (C6)-(C7): raw variance of v
+#   c3_dt=DT*1e3            v = (2/Delta t) arccos|...| at the paper's Delta t = 1 ns,
+#                           i.e. v in rad/ns. Propagation still uses DT in us, since
+#                           the Hamiltonian is in rad/us. Measured, raw C3 in
+#                           (rad/ns)^2 is 7e-5 .. 1.4e-3 on the seed-0 X pulses, so at
+#                           w3 = 6 this term is nearly inert.
+PAPER_COST_FORM = dict(c2_norm_power=1, c2_include_endpoint=False,
+                       c3_normalize=False, c3_dt=DT * 1e3)
+
+
 def make_cost_terms(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
-                    constrain=None, eps_max=EPS_MAX, c3_normalize=True):
+                    constrain=None, eps_max=EPS_MAX, c3_normalize=True,
+                    c2_norm_power=2, c2_include_endpoint=True, c3_dt=None):
     """
     Return an unjitted `terms(u_raw) -> dict` of the four cost components, so
     both the weighted objective and the reporting path compute them once, the
     same way.
 
     Psi0_code, Psi0_err, Psi_target : (n, 6) complex
+    c2_norm_power, c2_include_endpoint : forwarded to `et_cost`.
+    c3_dt : time step used for the C3 velocity only (None -> dt). Propagation
+            always uses `dt`.
     """
     M = Psi0_code.shape[1]
     Psi0 = jnp.concatenate([Psi0_code, Psi0_err], axis=1)   # (n, 2M), one scan
+    v_dt = dt if c3_dt is None else c3_dt
 
     def terms(u_raw):
         u = u_raw if constrain is None else constrain(u_raw)
@@ -310,8 +358,9 @@ def make_cost_terms(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
         code, err = traj[:, :, :M], traj[:, :, M:]
         return {
             "c1": fidelity_cost(code[-1], Psi_target),
-            "c2": et_cost(code, err, A),
-            "c3": velocity_variance_cost(code, dt, normalize=c3_normalize),
+            "c2": et_cost(code, err, A, norm_power=c2_norm_power,
+                          include_endpoint=c2_include_endpoint),
+            "c3": velocity_variance_cost(code, v_dt, normalize=c3_normalize),
             "c4": amplitude_cost(u, eps_max),
         }
 
@@ -319,7 +368,8 @@ def make_cost_terms(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
 
 
 def make_cost_and_grad(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
-                       constrain=None, eps_max=EPS_MAX, c3_normalize=True):
+                       constrain=None, eps_max=EPS_MAX, c3_normalize=True,
+                       **form):
     """
     JIT-compiled `value_and_grad` of C_tot = sum_i w_i C_i (Eq. C8).
 
@@ -327,11 +377,14 @@ def make_cost_and_grad(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
     Setting w2 = w3 = 0 gives the 'Ord' variant from the same code path -- the
     control that the whole EsT-vs-Ord comparison rests on, so it is important
     that it differs from EsT by weights alone and not by a separate implementation.
+
+    **form : c2_norm_power, c2_include_endpoint, c3_dt -- see make_cost_terms
+             and PAPER_COST_FORM. Omitted means the repo's form.
     """
     w = jnp.asarray(weights, dtype=jnp.float64)
     terms = make_cost_terms(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
                             constrain=constrain, eps_max=eps_max,
-                            c3_normalize=c3_normalize)
+                            c3_normalize=c3_normalize, **form)
 
     def total_cost(u):
         t = terms(u)
@@ -341,11 +394,11 @@ def make_cost_and_grad(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
 
 
 def make_report(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
-                constrain=None, eps_max=EPS_MAX, c3_normalize=True):
+                constrain=None, eps_max=EPS_MAX, c3_normalize=True, **form):
     """JIT-compiled per-term report, for logging the schedule's progress."""
     return jax.jit(make_cost_terms(H0, Hc, A, Psi0_code, Psi0_err, Psi_target,
                                    dt, constrain=constrain, eps_max=eps_max,
-                                   c3_normalize=c3_normalize))
+                                   c3_normalize=c3_normalize, **form))
 
 
 # ---------------------------------------------------------------------------
@@ -355,9 +408,12 @@ def make_report(H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt,
 def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
                          weights=(1.0, 0.7, 7.0, 1.0), band=BAND_MHZ,
                          ramp_ns=RAMP_NS, eps_max=EPS_MAX, use_control_mask=True,
-                         c3_normalize=True):
+                         c3_normalize=True, **form):
     """
     Assemble the full scipy-ready objective for a named gate.
+
+    `c3_normalize` and `**form` (c2_norm_power, c2_include_endpoint, c3_dt) select
+    the cost-term form; pass `**PAPER_COST_FORM` for App. C as printed.
 
     The truncation average follows Heeres Eq. 23, mirroring
     core/optimizer.py:175-178, but as a plain Python loop over separately-jitted
@@ -390,9 +446,10 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
                 jnp.asarray(kitten_code.gate_target(gate, n_t, n_c), dtype=jnp.complex128),
                 dt)
         cgs.append(make_cost_and_grad(*args, weights, constrain=constrain,
-                                      eps_max=eps_max, c3_normalize=c3_normalize))
+                                      eps_max=eps_max, c3_normalize=c3_normalize,
+                                      **form))
         reports.append(make_report(*args, constrain=constrain, eps_max=eps_max,
-                                   c3_normalize=c3_normalize))
+                                   c3_normalize=c3_normalize, **form))
 
     K = len(trunc_list)
 

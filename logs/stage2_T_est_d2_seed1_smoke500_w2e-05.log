@@ -1,0 +1,30 @@
+
+=== T / est_d2 / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.36726  c2=0.21419  c3=0.14587  c4=0.00000   [F1=0.63274  F_ET=0.78581]
+    end    c1=0.03245  c2=0.08053  c3=0.01119  c4=0.00000   [F1=0.96755  F_ET=0.91947]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=534 cost=1.671531e-01 (273.2s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_d2_seed1_smoke500_w2e-05_stage1.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_d2_seed1_smoke500_w2e-05_stage1.npy
+
+=== T / est_d2 / stage 2  weights=(1.0, 0.1, 0.0, 1.0, 0.0, 0.0, 2e-05) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.032451  c2=0.08053  c3=0.01119  c4=0  cerr=0.15193  c5=6.0099e-28  c6=315.55   [F1=0.96755  F_ET=0.91947  F_err=0.84807]
+    end    c1=2.7649e-05  c2=0.057947  c3=0.20074  c4=0  cerr=0.08181  c5=2.089e-28  c6=41.225   [F1=0.99997  F_ET=0.94205  F_err=0.91819]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=529 cost=6.646828e-03 (232.2s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_d2_seed1_smoke500_w2e-05_stage2.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_d2_seed1_smoke500_w2e-05_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 0.0
+  max_eps_transmon_rad_per_us: 7.849235725919254
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.0, 'transmon': 0.0006796349025733937}
+  endpoint_rel_to_mid: [0.032761037244427055, 0.03409945109615779]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_d2_seed1_smoke500_w2e-05.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_d2_seed1_smoke500_w2e-05.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_T_est_d2_seed1_smoke500_w2e-05.json

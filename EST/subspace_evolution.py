@@ -69,7 +69,8 @@ from EST.diagnostics import FIG_DIR, PULSE_DIR, TABLE_DIR, propagate_states
 
 # Row colours match EST/diagnostics.py:253 so the two figures read as one set.
 VARIANT_STYLE = {"est": dict(color="#2a6fb5", label="EsT"),
-                 "ord": dict(color="#c4453c", label="Ord")}
+                 "ord": dict(color="#c4453c", label="Ord"),
+                 "paper": dict(color="#2e8b57", label="EsT (paper form)")}
 
 # Within one panel the curves are the two SUBSPACES, not two cardinals: the code
 # space is always black, the error space takes the variant colour above, and the
@@ -231,7 +232,9 @@ def plot_fig1a(results, path, gate="H", cardinals=None):
 
     cardinals = list(cardinals or DEFAULT_CARDINALS)
     cols = [j for j, k in enumerate(kitten_code.CARDINAL_ORDER) if k in cardinals]
-    variants = [v for v in ("est", "ord") if v in results] or list(results)
+    # est, ord first (the delivered pair's order), then any other variant.
+    variants = ([v for v in ("est", "ord") if v in results]
+                + [v for v in results if v not in ("est", "ord")])
 
     hi = max(max(r[k][:, cols].max() for k in ("nbar_code", "nbar_err", "nbar_loss"))
              for r in results.values())
@@ -298,11 +301,16 @@ def plot_fig1a(results, path, gate="H", cardinals=None):
             ax.set_xticklabels([])
 
     handles = [Line2D([], [], color=CODE_COLOR, lw=2.0,
-                      label=r"code  $\langle n\rangle_C$"),
-               Line2D([], [], color=VARIANT_STYLE["est"]["color"], lw=2.0,
-                      label=r"error  $\langle n\rangle_E$  (EsT)"),
-               Line2D([], [], color=VARIANT_STYLE["ord"]["color"], lw=2.0,
-                      label=r"error  $\langle n\rangle_E$  (Ord)"),
+                      label=r"code  $\langle n\rangle_C$")]
+    # For the delivered est/ord figures EsT and Ord are always named, as before, so
+    # those figures are unchanged. When another variant is drawn (e.g. 'paper'),
+    # only the variants actually drawn get an entry.
+    extra = [v for v in variants if v not in ("est", "ord")]
+    for v in (variants if extra else ["est", "ord"]):
+        st = VARIANT_STYLE.get(v, dict(color="#444444", label=v))
+        handles.append(Line2D([], [], color=st["color"], lw=2.0,
+                              label=r"error  $\langle n\rangle_E$  " + f"({st['label']})"))
+    handles += [
                Line2D([], [], color=LOSS_COLOR, lw=2.0, ls="--",
                       label=r"loss image  $a|\psi_C\rangle$  (target for $\langle n\rangle_E$)")]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),

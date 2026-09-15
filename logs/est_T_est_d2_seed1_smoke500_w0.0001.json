@@ -1,0 +1,96 @@
+{
+  "gate": "T",
+  "variant": "est_d2",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 600,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 1,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 500,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": 0.16715312655878334,
+      "nit": 500,
+      "nfev": 534,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 272.6911988258362,
+      "terms": {
+        "20": {
+          "c1": 0.032450895247143285,
+          "c2": 0.08052996898976317,
+          "c3": 0.011190179002686547,
+          "c4": 0.0
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0001
+      ],
+      "cost": 0.009552898247883869,
+      "nit": 419,
+      "nfev": 448,
+      "message": "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL",
+      "seconds": 197.8040988445282,
+      "terms": {
+        "20": {
+          "c1": 6.396132010000333e-05,
+          "c2": 0.06084799283783493,
+          "c3": 0.2139959782499543,
+          "c4": 0.0,
+          "cerr": 0.05011705990349269,
+          "c5": 1.616075824034482e-29,
+          "c6": 34.041376440003724
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 0.0,
+    "max_eps_transmon_rad_per_us": 6.743970369993951,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0,
+      "transmon": 0.00015655656133020193
+    },
+    "endpoint_rel_to_mid": [
+      0.01840608223079026,
+      0.01879108603243158
+    ]
+  },
+  "base_variant": "est",
+  "stage2_override": [
+    "smooth"
+  ],
+  "w_smooth": 0.0001
+}

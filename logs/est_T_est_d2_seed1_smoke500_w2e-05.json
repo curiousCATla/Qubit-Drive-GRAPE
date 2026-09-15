@@ -1,0 +1,96 @@
+{
+  "gate": "T",
+  "variant": "est_d2",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 600,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 1,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 500,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": 0.16715312655878334,
+      "nit": 500,
+      "nfev": 534,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 273.176372051239,
+      "terms": {
+        "20": {
+          "c1": 0.032450895247143285,
+          "c2": 0.08052996898976317,
+          "c3": 0.011190179002686547,
+          "c4": 0.0
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        2e-05
+      ],
+      "cost": 0.006646827658380208,
+      "nit": 500,
+      "nfev": 529,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 232.22516131401062,
+      "terms": {
+        "20": {
+          "c1": 2.7648680953062943e-05,
+          "c2": 0.05794681472433849,
+          "c3": 0.20074101081567683,
+          "c4": 0.0,
+          "cerr": 0.08180998083498903,
+          "c5": 2.0890093602668104e-28,
+          "c6": 41.22487524966479
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 0.0,
+    "max_eps_transmon_rad_per_us": 7.849235725919254,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0,
+      "transmon": 0.0006796349025733937
+    },
+    "endpoint_rel_to_mid": [
+      0.032761037244427055,
+      0.03409945109615779
+    ]
+  },
+  "base_variant": "est",
+  "stage2_override": [
+    "smooth"
+  ],
+  "w_smooth": 2e-05
+}

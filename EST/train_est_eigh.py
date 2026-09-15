@@ -41,10 +41,87 @@ from EST.grape_eigh import build_gate_objective
 from EST.train_est import (LOG_DIR, PULSE_DIR, SCHEDULES, TRAIN_TRUNC,
                            _print_report, check_constraints, deramp)
 
+# Eigh-only variants: the `est` schedule plus extra cost terms from
+# EST/grape_eigh.py, each held at the SAME weight in both stages.
+#   err     w_err  terminal error-space infidelity (C1's form on error cardinals)
+#   dn      w5     Eq. A7 codeword photon-number mismatch, normalized (C5)
+#   smooth  w6     sum ||u_{k+1}-u_k||^2 smoothness penalty (C6)
+# Kept out of train_est.SCHEDULES on purpose: the JAX driver has no such terms.
+EXT_BASE = "est"
+EXT_VARIANTS = {
+    "est_err": ("err",),
+    "est_dn": ("dn",),
+    "est_err_dn": ("err", "dn"),
+    "est_all": ("err", "dn", "smooth"),
+}
+DEFAULT_W_SMOOTH = 5e-6   # half the cat-code production lambda_deriv = 1e-5
+
+# Eigh-only variants that change STAGE 2 ONLY of the `est` schedule. Stage 1 is
+# the plain `est` stage 1, so at the same --seed it is the same run as `est`.
+#   c3     keep w3 at its stage-1 value in stage 2, instead of dropping it to 0
+#   smooth add the C6 smoothness penalty in stage 2, at --w-smooth (required)
+# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py, notebook §12).
+STAGE2_VARIANTS = {
+    "est_c3s2": ("c3",),
+    "est_d2": ("smooth",),
+    "est_c3s2_d2": ("c3", "smooth"),
+}
+
+
+def _print_report_ext(label, rep):
+    """_print_report plus the extra terms."""
+    keys = ["c1", "c2", "c3", "c4", "cerr", "c5", "c6"]
+    means = {k: np.mean([v[k] for v in rep.values()]) for k in keys}
+    print(f"{label}  " + "  ".join(f"{k}={means[k]:.5g}" for k in keys)
+          + f"   [F1={1-means['c1']:.5f}  F_ET={1-means['c2']:.5f}"
+          f"  F_err={1-means['cerr']:.5f}]")
+
+
+def _ext_weights(variant, w_err, w_dn, w_smooth):
+    """(w_err, w5, w6) for an extended variant; validates the required flags."""
+    on = EXT_VARIANTS[variant]
+    if "err" in on and w_err is None:
+        raise ValueError(f"variant {variant!r} needs --w-err")
+    if "dn" in on and w_dn is None:
+        raise ValueError(f"variant {variant!r} needs --w-dn")
+    return (float(w_err) if "err" in on else 0.0,
+            float(w_dn) if "dn" in on else 0.0,
+            float(w_smooth) if "smooth" in on else 0.0)
+
+
+def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None):
+    """
+    Objective weights per stage for `variant`: a list with one 4- or 7-tuple
+    (w1, w2, w3, w4[, w_err, w5, w6]) per stage, as build_gate_objective takes.
+
+    SCHEDULES variants give 4-tuples; EXT_VARIANTS append (w_err, w5, w6) to
+    both stages, with w_smooth=None meaning DEFAULT_W_SMOOTH; STAGE2_VARIANTS
+    touch stage 2 only and need an explicit w_smooth when they add C6, so a
+    silently-defaulted smoothness weight cannot happen there.
+    """
+    if variant in SCHEDULES:
+        return [(w1, w2, w3, w_amp) for w1, w2, w3 in SCHEDULES[variant]]
+    if variant in EXT_VARIANTS:
+        extra = _ext_weights(variant, w_err, w_dn,
+                             DEFAULT_W_SMOOTH if w_smooth is None else w_smooth)
+        return [(w1, w2, w3, w_amp) + extra for w1, w2, w3 in SCHEDULES[EXT_BASE]]
+    if variant in STAGE2_VARIANTS:
+        on = STAGE2_VARIANTS[variant]
+        if "smooth" in on and w_smooth is None:
+            raise ValueError(f"variant {variant!r} needs --w-smooth")
+        (a1, a2, a3), (b1, b2, b3) = SCHEDULES[EXT_BASE]
+        second = (b1, b2, a3 if "c3" in on else b3, w_amp)
+        if "smooth" in on:
+            second += (0.0, 0.0, float(w_smooth))
+        return [(a1, a2, a3, w_amp), second]
+    raise KeyError(f"unknown variant {variant!r}; have "
+                   f"{sorted(SCHEDULES) + sorted(EXT_VARIANTS) + sorted(STAGE2_VARIANTS)}")
+
 
 def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
           w_amp=1.0, maxiter=600, seed=0, amp0=20.0, hard_bound=60.0,
-          verbose=True, init=None, init_x=None, stage_hook=None):
+          verbose=True, init=None, init_x=None, stage_hook=None,
+          w_err=None, w_dn=None, w_smooth=None):
     """
     Run the two-stage schedule and return (u_physical, x_preimage, info).
 
@@ -52,9 +129,12 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     (`np.random.default_rng(seed).standard_normal(N*4)`), so a given --seed
     produces the IDENTICAL initial pulse on both pipelines and the two runs are
     comparable from the same starting point.
+
+    `variant` may also be one of EXT_VARIANTS, which runs the `est` schedule with
+    the extra terms switched on at w_err / w_dn / w_smooth in both stages, or one
+    of STAGE2_VARIANTS, which changes stage 2 only (see stage_weights).
     """
-    if variant not in SCHEDULES:
-        raise KeyError(f"unknown variant {variant!r}; have {sorted(SCHEDULES)}")
+    schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth)
     if init is not None and init_x is not None:
         raise ValueError("pass init or init_x, not both")
 
@@ -103,8 +183,8 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     bounds = [(-hard_bound, hard_bound)] * (N * 4)
 
     stages = []
-    for i, (w1, w2, w3) in enumerate(SCHEDULES[variant], start=1):
-        weights = (w1, w2, w3, w_amp)
+    for i, weights in enumerate(schedule, start=1):
+        report_fn = _print_report_ext if len(weights) == 7 else _print_report
         objective, report, constrain_np = build_gate_objective(
             gate, N, dt=dt, n_t=n_t, trunc_list=trunc_list, weights=weights)
 
@@ -112,7 +192,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
             print(f"\n=== {gate} / {variant} / stage {i}  weights={weights} ===")
             print(f"    N={N} dt={dt*1e3:.1f} ns  trunc_list={trunc_list}  "
                   f"[eigh + analytic adjoint]")
-            _print_report("    start", report(x))
+            report_fn("    start", report(x))
 
         t0 = time.time()
         res = minimize(objective, x, method="L-BFGS-B", jac=True, bounds=bounds,
@@ -122,7 +202,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
 
         rep = report(x)
         if verbose:
-            _print_report("    end  ", rep)
+            report_fn("    end  ", rep)
             print(f"    {res.message}")
             print(f"    nit={res.nit} nfev={res.nfev} cost={res.fun:.6e} "
                   f"({elapsed:.1f}s)")
@@ -153,6 +233,16 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "stages": stages,
         "constraints": check_constraints(u, dt),
     }
+    # Only extended variants carry these, so the est_eigh JSON schema that
+    # EST/compare_propagators.py diffs is unchanged.
+    if variant in EXT_VARIANTS:
+        _, _, _, _, xe, xd, xs = schedule[0]
+        info.update({"base_variant": EXT_BASE, "w_err": xe, "w_dn": xd,
+                     "w_smooth": xs})
+    elif variant in STAGE2_VARIANTS:
+        info.update({"base_variant": EXT_BASE,
+                     "stage2_override": list(STAGE2_VARIANTS[variant]),
+                     "w_smooth": schedule[1][6] if len(schedule[1]) == 7 else 0.0})
     return u, x_out, info
 
 
@@ -174,7 +264,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--gate", default="X", choices=sorted(kitten_code.IDEAL_LOGICAL_U))
-    p.add_argument("--variant", default="est", choices=sorted(SCHEDULES))
+    p.add_argument("--variant", default="est",
+                   choices=sorted(SCHEDULES) + sorted(EXT_VARIANTS)
+                   + sorted(STAGE2_VARIANTS))
+    p.add_argument("--w-err", type=float, default=None,
+                   help="error-space infidelity weight (est_err, est_err_dn, est_all)")
+    p.add_argument("--w-dn", type=float, default=None,
+                   help="C5 photon-number mismatch weight (est_dn, est_err_dn, est_all)")
+    p.add_argument("--w-smooth", type=float, default=None,
+                   help="C6 smoothness weight: est_all, both stages (default "
+                        f"{DEFAULT_W_SMOOTH:g}); est_d2 / est_c3s2_d2, stage 2 "
+                        "only (required)")
     p.add_argument("--dt", type=float, default=DT, help="us (default 1 ns)")
     p.add_argument("--n-t", type=int, default=N_T)
     p.add_argument("--trunc", type=int, nargs="+", default=TRAIN_TRUNC,
@@ -221,7 +321,8 @@ def main():
                        dt=args.dt, trunc_list=args.trunc, w_amp=args.w_amp,
                        maxiter=args.maxiter, seed=args.seed, amp0=args.amp0,
                        hard_bound=args.hard_bound, init=args.init,
-                       init_x=args.init_x, stage_hook=stage_hook)
+                       init_x=args.init_x, stage_hook=stage_hook,
+                       w_err=args.w_err, w_dn=args.w_dn, w_smooth=args.w_smooth)
 
     print("\n--- constraints on the saved pulse ---")
     for k, v in info["constraints"].items():

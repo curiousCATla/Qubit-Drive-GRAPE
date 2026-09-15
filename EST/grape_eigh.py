@@ -56,7 +56,7 @@ term for term; EST/test_grape_eigh.py pins that against the JAX implementation.
 import numpy as np
 
 from core.fourier_cutoff import project_bandlimit
-from core.grape_core import make_ops
+from core.grape_core import derivative_penalty, make_ops
 from EST.device import (BAND_MHZ, DT, EPS_MAX, N_T, RAMP_NS, TRUNC_LIST,
                         make_hamiltonian_est, ramp_envelope)
 from EST import kitten_code
@@ -310,6 +310,60 @@ def velocity_variance_cost(code_traj, dt, normalize=True):
     return c3, inj
 
 
+def photon_number_mismatch_cost(code_words, Nop, eps=1e-12):
+    """
+    C5, running. Eq. (A7)'s codeword photon-number difference,
+
+        Delta_nbar_L(t) = <0_L(t)|a^dag a|0_L(t)> - <1_L(t)|a^dag a|1_L(t)> ,
+
+    normalized per step by n0 + n1 and squared:
+
+        r_t = (n0 - n1) / (n0 + n1 + eps) ,     C5 = mean_{t=0..N} r_t^2 .
+
+    Because a^dag a >= 0, |n0 - n1| <= n0 + n1, so C5 is in [0, 1]. The paper
+    prints no normalization; this one is the repo's choice. Squaring keeps it
+    smooth at r = 0, and r_0 = 0 exactly for the kitten code (both words carry
+    nbar = 2).
+
+    NECESSARY, NOT SUFFICIENT. Delta_nbar_L is twice the Z coefficient of
+    Delta_QEC's (a, a) term (App. A, Eq. A9). It leaves the X/Y coefficients
+    <0_L|n|1_L> and the (I, a) pairs unconstrained, so minimizing C5 lowers only
+    part of Delta_QEC.
+
+    code_words : (T, n, 2) evolved |0_L(t)>, |1_L(t)> -- the +Z, -Z cardinals.
+
+    Injection, with S = n0 + n1 + eps and d<psi|N|psi>/dpsi* = N psi:
+
+        dC5/dpsi0*_t =  (1/T) 2 r_t (2 n1_t + eps)/S_t^2  N psi0_t
+        dC5/dpsi1*_t = -(1/T) 2 r_t (2 n0_t + eps)/S_t^2  N psi1_t
+    """
+    T = code_words.shape[0]
+    Npsi = np.einsum('ij,tjm->tim', Nop, code_words)               # (T,n,2)
+    nbar = np.real(np.einsum('tim,tim->tm', np.conj(code_words), Npsi))
+    n0, n1 = nbar[:, 0], nbar[:, 1]
+    S = n0 + n1 + eps
+    r = (n0 - n1) / S
+    c5 = float(np.mean(r ** 2))
+
+    inj = np.empty_like(code_words)
+    inj[:, :, 0] = ((2.0 * r * (2.0 * n1 + eps) / S ** 2) / T)[:, None] * Npsi[:, :, 0]
+    inj[:, :, 1] = ((-2.0 * r * (2.0 * n0 + eps) / S ** 2) / T)[:, None] * Npsi[:, :, 1]
+    return c5, inj, r
+
+
+def smoothness_cost(u):
+    """
+    C6. The incumbent cat-code smoothness penalty, sum_k ||u_{k+1} - u_k||^2 on
+    the PHYSICAL pulse, reused from core.grape_core.derivative_penalty rather
+    than restated. A pure function of u, so -- like C4 -- no costate.
+
+    It is a SUM, not a mean, exactly as in the incumbent; its weight therefore
+    does not transfer across N or dt without rescaling.
+    """
+    pen, grad = derivative_penalty(np.asarray(u, dtype=np.float64))
+    return float(pen), grad
+
+
 def amplitude_cost(u, eps_max=EPS_MAX):
     """
     C4. Circular cap |eps| <= eps_max on each quadrature pair; a pure function
@@ -336,20 +390,48 @@ def amplitude_cost(u, eps_max=EPS_MAX):
 # Total objective: forward pass, injections, one backward sweep
 # ---------------------------------------------------------------------------
 
+def _unpack_weights(weights):
+    """(w1..w4) or (w1..w4, w_err, w5, w6) -> 7 floats, extras zero-padded."""
+    w = [float(x) for x in weights]
+    if len(w) == 4:
+        w += [0.0, 0.0, 0.0]
+    if len(w) != 7:
+        raise ValueError(f"weights must have 4 or 7 entries, got {len(w)}")
+    return w
+
+
 def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
-                  eps_max=EPS_MAX, c3_normalize=True, want_grad=True):
+                  eps_max=EPS_MAX, c3_normalize=True, want_grad=True,
+                  Psi_target_err=None, Nop=None):
     """
     C_tot = sum_i w_i C_i and its gradient with respect to the PHYSICAL pulse u.
 
-    weights : (w1, w2, w3, w4) for (fidelity, ET, velocity-variance, amplitude).
+    weights : (w1, w2, w3, w4) for (fidelity, ET, velocity-variance, amplitude),
+              or (w1, w2, w3, w4, w_err, w5, w6) adding the error-space
+              infidelity `cerr`, the photon-number mismatch C5 and the
+              smoothness penalty C6. A 4-tuple is exactly the original
+              objective: the extra injections are skipped, not multiplied by 0.
     Setting w2 = w3 = 0 gives the 'Ord' variant from this same code path, exactly
     as in EST/grape_jax.make_cost_and_grad -- the whole EsT-vs-Ord comparison
     rests on the control differing by weights alone.
 
+    Psi_target_err : (n, 6) error-space targets (kitten_code.error_gate_target);
+                     needed for `cerr`, which is C1's form on the error cardinals.
+    Nop            : (n, n) cavity photon number a^dag a; needed for C5.
+    Either may be None when its weight is zero; the term is then omitted from
+    `terms` as well.
+
+    These three terms exist on this pipeline only. Their autodiff reference
+    lives in EST/test_grape_eigh.py, not in EST/grape_jax.py.
+
     Returns (cost, grad, terms) with grad shaped (N,4), or (cost, None, terms)
     when want_grad is False.
     """
-    w1, w2, w3, w4 = (float(x) for x in weights)
+    w1, w2, w3, w4, w_err, w5, w6 = _unpack_weights(weights)
+    if w_err and Psi_target_err is None:
+        raise ValueError("w_err > 0 needs Psi_target_err")
+    if w5 and Nop is None:
+        raise ValueError("w5 > 0 needs Nop")
     M = Psi0_code.shape[1]
     Psi0 = np.concatenate([Psi0_code, Psi0_err], axis=1)          # (n,2M)
 
@@ -369,6 +451,25 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
     terms = {"c1": float(c1), "c2": float(c2), "c3": float(c3), "c4": float(c4)}
     cost = w1 * c1 + w2 * c2 + w3 * c3 + w4 * c4
 
+    # Extra terms: evaluated whenever their inputs exist (so a report can score
+    # any pulse on them), added to the cost only at nonzero weight.
+    if Psi_target_err is not None:
+        c_err, inj_err_T = fidelity_cost(err[-1], Psi_target_err)
+        terms["cerr"] = float(c_err)
+        if w_err:
+            cost += w_err * c_err
+    if Nop is not None:
+        # Columns 0, 1 are +Z, -Z, i.e. exactly |0_L(t)>, |1_L(t)>.
+        c5, inj5_words, _ = photon_number_mismatch_cost(code[:, :, :2], Nop)
+        terms["c5"] = c5
+        if w5:
+            cost += w5 * c5
+    if Psi_target_err is not None or Nop is not None:
+        c6, grad6 = smoothness_cost(u)
+        terms["c6"] = c6
+        if w6:
+            cost += w6 * c6
+
     if not want_grad:
         return float(cost), None, terms
 
@@ -377,6 +478,10 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
     inj[:, :, :M] += w2 * inj2_code + w3 * inj3_code
     inj[:, :, M:] += w2 * inj2_err
     inj[N, :, :M] += w1 * inj1_code                # C1 is terminal-only
+    if w_err:
+        inj[N, :, M:] += w_err * inj_err_T         # cerr is terminal, error columns
+    if w5:
+        inj[:, :, :2] += w5 * inj5_words           # C5 reads the two code words
 
     # Backward sweep. Lambda_k = inj_k + U_k^dag Lambda_{k+1}; the gradient at
     # step k reads Lambda_{k+1} against Psi_k through dU_k/du.
@@ -405,6 +510,8 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
         lam = Vk @ (np.conj(ewk)[:, None] * q) + inj[k]
 
     grad += w4 * grad4
+    if w6:
+        grad += w6 * grad6
     return float(cost), grad, terms
 
 
@@ -415,9 +522,14 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
 def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
                          weights=(1.0, 0.7, 7.0, 1.0), band=BAND_MHZ,
                          ramp_ns=RAMP_NS, eps_max=EPS_MAX, use_control_mask=True,
-                         c3_normalize=True):
+                         c3_normalize=True, extra_terms=False):
     """
     Assemble the scipy-ready objective for a named gate.
+
+    `weights` may be a 4- or 7-tuple (see `cost_and_grad`). The error-space
+    target and a^dag a are built when `extra_terms` is set or the weights are a
+    7-tuple; `report` then also returns `cerr`, `c5`, `c6`. With a 4-tuple and
+    extra_terms=False the objective and report are exactly the original ones.
 
     Same signature, same truncation average (Heeres Eq. 23) and same return
     triple as EST/grape_jax.build_gate_objective, so the two are drop-in
@@ -435,17 +547,28 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
     constrain, constrain_adj = make_constrainer(N, dt, band=band,
                                                 ramp_ns=ramp_ns, cmask=cmask)
 
+    extras = bool(extra_terms) or len(tuple(weights)) == 7
+    _unpack_weights(weights)                      # validate length up front
+
     systems = []
     for n_c in trunc_list:
         H0, Hc_list = make_hamiltonian_est(n_t, n_c)
         A, _ = make_ops(n_t, n_c)
+        A = np.asarray(A, dtype=complex)
+        if extras:
+            kw = {"Psi_target_err": np.asarray(
+                      kitten_code.error_gate_target(gate, n_t, n_c), dtype=complex),
+                  "Nop": A.conj().T @ A}
+        else:
+            kw = {}
         systems.append((
             np.asarray(H0, dtype=complex),
             np.stack([np.asarray(h, dtype=complex) for h in Hc_list]),
-            np.asarray(A, dtype=complex),
+            A,
             np.asarray(kitten_code.cardinals(n_t, n_c), dtype=complex),
             np.asarray(kitten_code.error_cardinals(n_t, n_c), dtype=complex),
             np.asarray(kitten_code.gate_target(gate, n_t, n_c), dtype=complex),
+            kw,
         ))
 
     K = len(trunc_list)
@@ -458,9 +581,10 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
         u = _physical(x)
         cost = 0.0
         grad = np.zeros((N, 4))
-        for (H0, Hc, A, P0c, P0e, Ptg) in systems:
+        for (H0, Hc, A, P0c, P0e, Ptg, kw) in systems:
             c, g, _ = cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt, weights,
-                                    eps_max=eps_max, c3_normalize=c3_normalize)
+                                    eps_max=eps_max, c3_normalize=c3_normalize,
+                                    **kw)
             cost += c
             grad += g
         grad /= K
@@ -471,11 +595,11 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
     def report(x):
         u = _physical(x)
         out = {}
-        for n_c, (H0, Hc, A, P0c, P0e, Ptg) in zip(trunc_list, systems):
+        for n_c, (H0, Hc, A, P0c, P0e, Ptg, kw) in zip(trunc_list, systems):
             _, _, terms = cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt, weights,
                                         eps_max=eps_max,
                                         c3_normalize=c3_normalize,
-                                        want_grad=False)
+                                        want_grad=False, **kw)
             out[n_c] = terms
         return out
 

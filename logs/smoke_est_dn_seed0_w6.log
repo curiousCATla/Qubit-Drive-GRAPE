@@ -1,0 +1,30 @@
+
+=== X / est_dn / stage 1  weights=(1.0, 0.7, 7.0, 1.0, 0.0, 6.0, 0.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.89628  c2=0.59604  c3=0.13522  c4=0.023581  cerr=0.86036  c5=0.0067087  c6=5261.2   [F1=0.10372  F_ET=0.40396  F_err=0.13964]
+    end    c1=0.034753  c2=0.41809  c3=0.011211  c4=0.00015752  cerr=0.56054  c5=0.00020049  c6=10377   [F1=0.96525  F_ET=0.58191  F_err=0.43946]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=531 cost=4.072574e-01 (485.6s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_dn_smoke500_seed0_w6_stage1.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_dn_smoke500_seed0_w6_stage1.npy
+
+=== X / est_dn / stage 2  weights=(1.0, 0.1, 0.0, 1.0, 0.0, 6.0, 0.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.034753  c2=0.41809  c3=0.011211  c4=0.00015752  cerr=0.56054  c5=0.00020049  c6=10377   [F1=0.96525  F_ET=0.58191  F_err=0.43946]
+    end    c1=0.0011107  c2=0.38988  c3=0.082324  c4=9.7416e-06  cerr=0.45557  c5=0.00013919  c6=9547.7   [F1=0.99889  F_ET=0.61012  F_err=0.54443]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=535 cost=4.094386e-02 (490.4s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_dn_smoke500_seed0_w6_stage2.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_dn_smoke500_seed0_w6_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 25.157667427215443
+  max_eps_transmon_rad_per_us: 25.167921473357982
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.007018491322466084, 'transmon': 0.00036291093728645936}
+  endpoint_rel_to_mid: [0.012522459083889504, 0.010307638467793976]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_dn_smoke500_seed0_w6.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_dn_smoke500_seed0_w6.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_X_est_dn_smoke500_seed0_w6.json

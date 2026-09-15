@@ -33,8 +33,9 @@ from core.grape_core import make_hamiltonian, make_ops
 from EST import kitten_code
 from EST.device import (BAND_MHZ, DT, EPS_MAX, RAMP_NS, make_hamiltonian_est,
                         ramp_envelope)
-from EST.grape_jax import (amplitude_cost, make_constrainer, make_cost_and_grad,
-                           make_cost_terms, propagate_trajectory)
+from EST.grape_jax import (PAPER_COST_FORM, amplitude_cost, make_constrainer,
+                           make_cost_and_grad, make_cost_terms,
+                           propagate_trajectory)
 
 
 def _random_states(n, M, seed):
@@ -119,7 +120,7 @@ class FiniteDifferenceTest(unittest.TestCase):
     samples) follows validation/test_grape_core_perf.py:194.
     """
 
-    def _fd_check(self, weights, constrain, seed, dt=0.02, N=8, n_c=8):
+    def _fd_check(self, weights, constrain, seed, dt=0.02, N=8, n_c=8, **form):
         n_t = 3
         rng = np.random.default_rng(seed)
         u = rng.uniform(-4.0, 4.0, size=(N, 4))
@@ -134,8 +135,8 @@ class FiniteDifferenceTest(unittest.TestCase):
                 jnp.asarray(kitten_code.gate_target("X", n_t, n_c), dtype=jnp.complex128),
                 dt)
 
-        cg = make_cost_and_grad(*args, weights, constrain=constrain)
-        terms = make_cost_terms(*args, constrain=constrain)
+        cg = make_cost_and_grad(*args, weights, constrain=constrain, **form)
+        terms = make_cost_terms(*args, constrain=constrain, **form)
         w = np.asarray(weights)
 
         def scalar(uu):
@@ -240,8 +241,10 @@ class ConstraintSatisfactionTest(unittest.TestCase):
 class VelocityNormalizationTest(unittest.TestCase):
     """
     Pins the reason C3 is normalized (see velocity_variance_cost's docstring):
-    the raw form is dimensionful and dt-dependent, and at dt = 1 ns it is large
-    enough to make C1 and C2 numerically irrelevant under the paper's weights.
+    the raw form is dimensionful, so its size depends on the unit convention, and
+    in this repo's rad/us at dt = 1 ns it is large enough to make C1 and C2
+    numerically irrelevant under the paper's weights. (It is unit-dependent, not
+    dt-dependent: both forms converge as dt -> 0.)
     """
 
     def _c3(self, dt, normalize):
@@ -273,6 +276,64 @@ class VelocityNormalizationTest(unittest.TestCase):
         """The dimensionless form must not silently reweight when dt changes."""
         coarse, fine = self._c3(0.004, normalize=True), self._c3(0.001, normalize=True)
         self.assertLess(abs(coarse - fine) / max(coarse, fine), 1.0)
+
+
+class PaperCostFormTest(unittest.TestCase):
+    """
+    The opt-in App. C form (`PAPER_COST_FORM`, `train_est.py --variant paper`):
+    C2 over N_norm excluding t = T, raw C3 with v in rad/ns. Defaults must stay
+    bit-identical, since every existing pulse was trained under them.
+    """
+
+    n_t, n_c, N, dt = 3, 8, 12, 0.001
+
+    def _setup(self):
+        H0_np, Hc_np = make_hamiltonian_est(self.n_t, self.n_c)
+        A_np, _ = make_ops(self.n_t, self.n_c)
+        args = (jnp.asarray(H0_np, dtype=jnp.complex128),
+                jnp.stack([jnp.asarray(h, dtype=jnp.complex128) for h in Hc_np]),
+                jnp.asarray(A_np, dtype=jnp.complex128),
+                jnp.asarray(kitten_code.cardinals(self.n_t, self.n_c), dtype=jnp.complex128),
+                jnp.asarray(kitten_code.error_cardinals(self.n_t, self.n_c), dtype=jnp.complex128),
+                jnp.asarray(kitten_code.gate_target("X", self.n_t, self.n_c), dtype=jnp.complex128),
+                self.dt)
+        u = jnp.asarray(np.random.default_rng(21).uniform(-15.0, 15.0, size=(self.N, 4)))
+        return args, u, A_np
+
+    def test_defaults_are_unchanged(self):
+        args, u, _ = self._setup()
+        base = make_cost_terms(*args)(u)
+        explicit = make_cost_terms(*args, c3_normalize=True, c2_norm_power=2,
+                                   c2_include_endpoint=True, c3_dt=None)(u)
+        for k in ("c1", "c2", "c3", "c4"):
+            self.assertEqual(float(base[k]), float(explicit[k]), k)
+
+    def test_c2_matches_printed_equation(self):
+        """Hand-written Eq. (C2): mean over i < N of |<E|a|C>|^2 / ||a C||."""
+        args, u, A_np = self._setup()
+        Psi0 = jnp.concatenate([args[3], args[4]], axis=1)
+        traj = np.asarray(propagate_trajectory(u, args[0], args[1], Psi0, self.dt))
+        code, err = traj[:-1, :, :6], traj[:-1, :, 6:]
+        F = []
+        for t in range(code.shape[0]):
+            for m in range(6):
+                ac = A_np @ code[t, :, m]
+                F.append(abs(np.vdot(err[t, :, m], ac)) ** 2 / np.linalg.norm(ac))
+        expected = 1.0 - np.mean(F)
+        got = float(make_cost_terms(*args, **PAPER_COST_FORM)(u)["c2"])
+        self.assertAlmostEqual(got, expected, places=10)
+
+    def test_raw_c3_in_ns_is_raw_us_over_1e6(self):
+        args, u, _ = self._setup()
+        us = float(make_cost_terms(*args, c3_normalize=False)(u)["c3"])
+        ns = float(make_cost_terms(*args, c3_normalize=False, c3_dt=self.dt * 1e3)(u)["c3"])
+        self.assertGreater(us, 0.0)
+        self.assertAlmostEqual(ns / us, 1e-6, delta=1e-12)
+
+    def test_paper_form_gradient(self):
+        """FD check through the sqrt in C2 and the raw C3, at the paper's weights."""
+        FiniteDifferenceTest._fd_check(self, (1.0, 0.6, 6.0, 1.0), None, seed=31,
+                                       **PAPER_COST_FORM)
 
 
 class DiagnosticsTest(unittest.TestCase):

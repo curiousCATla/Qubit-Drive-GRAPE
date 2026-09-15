@@ -48,7 +48,7 @@ from core.fourier_cutoff import out_of_band_energy_fraction
 from EST import kitten_code
 from EST.device import (BAND_MHZ, DT, EPS_MAX, N_T, RAMP_NS, n_steps,
                         ramp_envelope)
-from EST.grape_jax import build_gate_objective
+from EST.grape_jax import PAPER_COST_FORM, build_gate_objective
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PULSE_DIR = os.path.join(REPO_ROOT, "pulses", "est")
@@ -71,11 +71,21 @@ TRAIN_TRUNC = [20]
 SCHEDULES = {
     "est": [(1.0, 0.7, 7.0), (1.0, 0.1, 0.0)],
     "ord": [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+    # App. C as printed: stage-1 weights at the low end of the paper's
+    # (0.6-0.75, 5-10) range, run with PAPER_COST_FORM (see COST_FORMS). Its
+    # logged c2 is Eq. (C2) over N_norm and CAN BE NEGATIVE; its c3 is the raw
+    # velocity variance in (rad/ns)^2. Neither is comparable to an 'est' log.
+    "paper": [(1.0, 0.6, 6.0), (1.0, 0.1, 0.0)],
     # 'le' (C1 + error-space fidelity, no C2) is the paper's third variant. It is
     # not implemented here: it needs an error-space terminal-fidelity term, which
     # is a new cost function rather than a reweighting. Out of scope for the
     # X-gate slice; see the plan.
 }
+
+# Cost-term form per variant, forwarded to build_gate_objective. A variant not
+# listed uses the repo's form (C2 over N_norm^2, normalized C3), which is what
+# every existing pulse was trained with.
+COST_FORMS = {"paper": PAPER_COST_FORM}
 
 
 def deramp(u, dt=DT, ramp_ns=RAMP_NS, atol=1e-10):
@@ -207,7 +217,8 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     for i, (w1, w2, w3) in enumerate(SCHEDULES[variant], start=1):
         weights = (w1, w2, w3, w_amp)
         objective, report, constrain_np = build_gate_objective(
-            gate, N, dt=dt, n_t=n_t, trunc_list=trunc_list, weights=weights)
+            gate, N, dt=dt, n_t=n_t, trunc_list=trunc_list, weights=weights,
+            **COST_FORMS.get(variant, {}))
 
         if verbose:
             print(f"\n=== {gate} / {variant} / stage {i}  weights={weights} ===")
@@ -251,6 +262,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "init": warm,
         "band_mhz": list(BAND_MHZ), "ramp_ns": RAMP_NS,
         "eps_max_rad_per_us": float(EPS_MAX),
+        "cost_form": dict(COST_FORMS.get(variant, {})) or "repo",
         "stages": stages,
         "constraints": check_constraints(u, dt),
     }

@@ -410,7 +410,8 @@ def plot_fig1(results, path, scale="log"):
               ("f", r"$\eta_{E_j,\psi}(t)$   (Eq. 8, $\in[0,2]$)",
                [("eta_0L", r"$|0_L\rangle$"), ("eta_avg", "6-cardinal mean")])]
     styles = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
-              "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord")}
+              "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord"),
+              "paper": dict(color="#2e8b57", lw=1.8, ls="-.", label="EsT (paper form)")}
     log = scale == "log"
 
     FLOOR = 1e-12

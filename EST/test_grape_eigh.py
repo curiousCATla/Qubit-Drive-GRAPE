@@ -35,7 +35,8 @@ import jax
 jax.config.update("jax_enable_x64", True)   # must precede jax.numpy
 import jax.numpy as jnp
 
-from core.grape_core import make_hamiltonian, fidelity_multi_state, make_ops, step_data
+from core.grape_core import (basis_state, make_hamiltonian, fidelity_multi_state,
+                             make_ops, step_data)
 from EST import grape_eigh, kitten_code
 from EST.device import (BAND_MHZ, DT, EPS_MAX, RAMP_NS, make_hamiltonian_est)
 from EST.grape_jax import (make_constrainer as jax_constrainer,
@@ -470,6 +471,226 @@ class ObjectiveInterfaceTest(unittest.TestCase):
             singles.append(obj(x)[0])
         obj_both, _, _ = grape_eigh.build_gate_objective("X", N, trunc_list=[6, 8])
         self.assertAlmostEqual(obj_both(x)[0], np.mean(singles), places=12)
+
+
+# ---------------------------------------------------------------------------
+# Extra terms: cerr (error-space infidelity), C5 (Eq. A7 photon mismatch),
+# C6 (smoothness). Hand-derived here; their autodiff reference is the jnp code
+# below, deliberately kept out of EST/grape_jax.py.
+# ---------------------------------------------------------------------------
+
+def _extra_kw(n_t, n_c, gate="X"):
+    A, _ = make_ops(n_t, n_c)
+    A = np.asarray(A, dtype=complex)
+    return {"Psi_target_err": np.asarray(kitten_code.error_gate_target(gate, n_t, n_c),
+                                         dtype=complex),
+            "Nop": A.conj().T @ A}
+
+
+class ErrorGateTargetTest(unittest.TestCase):
+
+    def test_shapes_and_x_mapping(self):
+        n_t, n_c = 3, 8
+        for g in ("X", "H", "T"):
+            tgt = kitten_code.error_gate_target(g, n_t, n_c)
+            self.assertEqual(tgt.shape, (n_t * n_c, 6))
+            np.testing.assert_allclose(np.linalg.norm(tgt, axis=0), 1.0, atol=1e-12)
+        # X on +Z = |0_E> = |3> must give |1_E> = |1>, at transmon |g>.
+        tgt = kitten_code.error_gate_target("X", n_t, n_c)
+        np.testing.assert_allclose(np.abs(tgt[:, 0]), np.abs(basis_state(n_t, n_c, 0, 1)),
+                                   atol=1e-12)
+
+    def test_zero_pulse_sits_at_parked_floor_in_both_spaces(self):
+        """Over a few ns of pure drift (diagonal, near-identity) the error
+        cardinals barely move, so cerr, like c1, sits at 1 - parked_fidelity."""
+        n_t, n_c, N, dt = 3, 8, 5, DT
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(n_t, n_c)
+        _, _, terms = grape_eigh.cost_and_grad(np.zeros((N, 4)), H0, Hc, A, P0c, P0e,
+                                               Ptg, dt, (1, 0, 0, 0), want_grad=False,
+                                               **_extra_kw(n_t, n_c))
+        floor = 1.0 - kitten_code.parked_fidelity("X")
+        self.assertAlmostEqual(terms["c1"], floor, delta=1e-2)
+        self.assertAlmostEqual(terms["cerr"], floor, delta=1e-2)
+
+
+class ExtraTermsFiniteDifferenceTest(unittest.TestCase):
+
+    def _fd_check(self, weights, seed, dt=0.02, N=8, n_c=8, u_scale=4.0, h=1e-6):
+        n_t = 3
+        x = np.random.default_rng(seed).uniform(-u_scale, u_scale, size=(N, 4))
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(n_t, n_c)
+        kw = _extra_kw(n_t, n_c)
+
+        def value(xx):
+            return grape_eigh.cost_and_grad(xx, H0, Hc, A, P0c, P0e, Ptg, dt, weights,
+                                            want_grad=False, **kw)[0]
+
+        _, grad, _ = grape_eigh.cost_and_grad(x, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                              weights, **kw)
+        self.assertGreater(np.abs(grad).max(), 1e-6,
+                           "gradient is ~zero; this FD check would be vacuous")
+        idx = np.random.default_rng(7)
+        for k, j in zip(idx.integers(0, N, size=10), idx.integers(0, 4, size=10)):
+            xp, xm = x.copy(), x.copy()
+            xp[k, j] += h
+            xm[k, j] -= h
+            fd = (value(xp) - value(xm)) / (2 * h)
+            with self.subTest(k=int(k), j=int(j)):
+                self.assertAlmostEqual(fd, grad[k, j], delta=1e-4)
+
+    def test_cerr_alone(self):
+        self._fd_check((0, 0, 0, 0, 1.0, 0, 0), seed=31)
+
+    def test_c5_alone(self):
+        """
+        Needs a strong, long-ish drive, and a large weight. Both code words have
+        <a> = 0, and a linear displacement shifts n0 and n1 by the SAME |alpha|^2,
+        so Delta_nbar_L is generated only through the nonlinear terms (chi, K, K',
+        chi'). At u ~ 4 over 0.16 us, c5 ~ 2e-10 and the gradient ~ 7e-10 --
+        the liveness guard fires. At u ~ 20 over 0.4 us, c5 ~ 2e-2.
+        """
+        self._fd_check((0, 0, 0, 0, 0, 100.0, 0), seed=32, dt=0.05, u_scale=20.0)
+
+    def test_c6_alone(self):
+        self._fd_check((0, 0, 0, 0, 0, 0, 1e-2), seed=33)
+
+    def test_full_cost_all_terms(self):
+        self._fd_check((1.0, 0.7, 7.0, 1.0, 1.0, 100.0, 1e-2), seed=34, dt=0.05,
+                       u_scale=20.0)
+
+    def test_c5_is_bounded_and_zero_at_t0(self):
+        n_t, n_c = 3, 8
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(n_t, n_c)
+        kw = _extra_kw(n_t, n_c)
+        u = np.random.default_rng(35).uniform(-20, 20, size=(40, 4))
+        traj = grape_eigh.propagate_trajectory(u, H0, Hc, P0c, 0.005)
+        c5, _, r = grape_eigh.photon_number_mismatch_cost(traj[:, :, :2], kw["Nop"])
+        self.assertAlmostEqual(r[0], 0.0, places=12)
+        self.assertTrue(np.all(np.abs(r) <= 1.0))
+        self.assertGreater(c5, 1e-6)
+
+    def test_four_tuple_is_the_original_objective(self):
+        """Zero extra weights reproduce the 4-term cost and gradient exactly."""
+        n_t, n_c, N, dt = 3, 8, 8, 0.02
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(n_t, n_c)
+        u = np.random.default_rng(36).uniform(-4, 4, size=(N, 4))
+        c4, g4, t4 = grape_eigh.cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                              (1.0, 0.7, 7.0, 1.0))
+        c7, g7, t7 = grape_eigh.cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                              (1.0, 0.7, 7.0, 1.0, 0, 0, 0),
+                                              **_extra_kw(n_t, n_c))
+        self.assertEqual(c4, c7)
+        np.testing.assert_array_equal(g4, g7)
+        self.assertEqual(sorted(t4), ["c1", "c2", "c3", "c4"])
+        self.assertEqual(sorted(t7), ["c1", "c2", "c3", "c4", "c5", "c6", "cerr"])
+
+
+class ExtraTermsCrossBackendTest(unittest.TestCase):
+    """Hand adjoint of all seven terms against JAX autodiff, production chain."""
+    n_t, n_c, N, dt = 3, 10, 200, DT
+
+    def test_seven_term_gradient_matches_autodiff(self):
+        from EST.grape_jax import make_cost_terms
+        # w5 = 30: at production-scale pulses c5 ~ 1e-2, so a unit weight would
+        # leave its injection invisible under the others.
+        weights = (1.0, 0.7, 7.0, 1.0, 1.0, 30.0, 5e-6)
+        sysargs = _est_system(self.n_t, self.n_c)
+        H0, Hc, A, P0c, P0e, Ptg = sysargs
+        kw = _extra_kw(self.n_t, self.n_c)
+        x = np.random.default_rng(3).uniform(-20.0, 20.0, size=(self.N, 4))
+
+        jc = jax_constrainer(self.N, self.dt, band=BAND_MHZ, ramp_ns=RAMP_NS,
+                             cmask=kitten_code.control_mask("X"))
+        jargs = _jax_system(sysargs, self.dt)
+        base_terms = make_cost_terms(*jargs, constrain=jc)
+        H0j, Hcj = jargs[0], jargs[1]
+        Psi0 = jnp.concatenate([jargs[3], jargs[4]], axis=1)
+        Tgt_e = jnp.asarray(kw["Psi_target_err"])
+        Nop = jnp.asarray(kw["Nop"])
+        M = P0c.shape[1]
+
+        def total(xx):
+            t = base_terms(xx)
+            u = jc(xx)
+            traj = jax_propagate(u, H0j, Hcj, Psi0, self.dt)
+            code, err = traj[:, :, :M], traj[:, :, M:]
+            ov = jnp.sum(jnp.conj(Tgt_e) * err[-1], axis=0)
+            cerr = 1.0 - jnp.mean(ov.real ** 2 + ov.imag ** 2)
+            words = code[:, :, :2]
+            nbar = jnp.real(jnp.einsum('tim,ij,tjm->tm', jnp.conj(words), Nop, words))
+            r = (nbar[:, 0] - nbar[:, 1]) / (nbar[:, 0] + nbar[:, 1] + 1e-12)
+            c5 = jnp.mean(r ** 2)
+            c6 = jnp.sum((u[1:] - u[:-1]) ** 2)
+            w = weights
+            return (w[0] * t["c1"] + w[1] * t["c2"] + w[2] * t["c3"] + w[3] * t["c4"]
+                    + w[4] * cerr + w[5] * c5 + w[6] * c6)
+
+        cj, gj = jax.value_and_grad(total)(jnp.asarray(x))
+        cj, gj = float(cj), np.asarray(gj)
+
+        objective, report, _ = grape_eigh.build_gate_objective(
+            "X", self.N, dt=self.dt, n_t=self.n_t, trunc_list=[self.n_c],
+            weights=weights)
+        cn, gn = objective(x.ravel())
+        gn = gn.reshape(self.N, 4)
+        self.assertAlmostEqual(cn, cj, delta=1e-9 * max(abs(cj), 1.0))
+        rel = np.max(np.abs(gn - gj)) / np.max(np.abs(gj))
+        self.assertLess(rel, 1e-8, f"gradient disagrees with autodiff at rel={rel:.3e}")
+        self.assertEqual(sorted(report(x.ravel())[self.n_c]),
+                         ["c1", "c2", "c3", "c4", "c5", "c6", "cerr"])
+
+
+class StageWeightScheduleTest(unittest.TestCase):
+    """
+    train_est_eigh.stage_weights, the per-stage weight tuples the driver trains
+    with. The pre-existing variants are pinned to the tuples train() built
+    before stage_weights existed, so a refactor cannot silently retrain them.
+    """
+
+    def setUp(self):
+        from EST import train_est_eigh
+        self.sw = train_est_eigh.stage_weights
+        self.d = train_est_eigh.DEFAULT_W_SMOOTH
+
+    def test_schedule_variants_are_unchanged(self):
+        self.assertEqual(self.sw("est"), [(1.0, 0.7, 7.0, 1.0), (1.0, 0.1, 0.0, 1.0)])
+        self.assertEqual(self.sw("ord"), [(1.0, 0.0, 0.0, 1.0), (1.0, 0.0, 0.0, 1.0)])
+        self.assertEqual(self.sw("paper"), [(1.0, 0.6, 6.0, 1.0), (1.0, 0.1, 0.0, 1.0)])
+        self.assertEqual(self.sw("est", w_amp=2.0)[1], (1.0, 0.1, 0.0, 2.0))
+
+    def test_ext_variants_are_unchanged(self):
+        s1, s2 = (1.0, 0.7, 7.0, 1.0), (1.0, 0.1, 0.0, 1.0)
+        self.assertEqual(self.sw("est_err", w_err=0.3),
+                         [s1 + (0.3, 0.0, 0.0), s2 + (0.3, 0.0, 0.0)])
+        self.assertEqual(self.sw("est_dn", w_dn=30.0),
+                         [s1 + (0.0, 30.0, 0.0), s2 + (0.0, 30.0, 0.0)])
+        self.assertEqual(self.sw("est_all", w_err=0.3, w_dn=30.0),
+                         [s1 + (0.3, 30.0, self.d), s2 + (0.3, 30.0, self.d)])
+        self.assertEqual(self.sw("est_all", w_err=0.3, w_dn=30.0, w_smooth=1e-4)[1],
+                         s2 + (0.3, 30.0, 1e-4))
+        # w_smooth is ignored by variants without "smooth", as before.
+        self.assertEqual(self.sw("est_err", w_err=0.3, w_smooth=1e-4)[1],
+                         s2 + (0.3, 0.0, 0.0))
+
+    def test_stage2_variants_touch_stage2_only(self):
+        s1 = (1.0, 0.7, 7.0, 1.0)
+        self.assertEqual(self.sw("est_c3s2"), [s1, (1.0, 0.1, 7.0, 1.0)])
+        self.assertEqual(self.sw("est_d2", w_smooth=2e-5),
+                         [s1, (1.0, 0.1, 0.0, 1.0, 0.0, 0.0, 2e-5)])
+        self.assertEqual(self.sw("est_c3s2_d2", w_smooth=2e-5),
+                         [s1, (1.0, 0.1, 7.0, 1.0, 0.0, 0.0, 2e-5)])
+        # Stage 1 is exactly est's stage 1, so the same seed gives the same stage 1.
+        for v in ("est_c3s2", "est_d2", "est_c3s2_d2"):
+            self.assertEqual(self.sw(v, w_smooth=1e-5)[0], self.sw("est")[0])
+
+    def test_smoothing_stage2_variants_need_an_explicit_weight(self):
+        for v in ("est_d2", "est_c3s2_d2"):
+            with self.assertRaises(ValueError):
+                self.sw(v)
+
+    def test_unknown_variant_raises(self):
+        with self.assertRaises(KeyError):
+            self.sw("est_nope")
 
 
 if __name__ == "__main__":

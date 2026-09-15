@@ -152,6 +152,35 @@ def gate_target(gate, n_t, n_c):
     return logical_basis(n_t, n_c) @ (IDEAL_LOGICAL_U[gate] @ _coeff_matrix())
 
 
+def error_gate_target(gate, n_t, n_c):
+    """
+    (n, 6) error-space target states: the ideal logical unitary applied in the
+    ERROR basis {|0_E>, |1_E>} to each cardinal coefficient vector. Columns in
+    CARDINAL_ORDER, matched column for column to `error_cardinals`.
+
+    This is the terminal target of the error-space fidelity term (`cerr` in
+    EST/grape_eigh.py) and the "ideal gate applied in the error basis" that
+    the endpoint-leak limitation is measured against.
+
+    Same coincidence as `error_cardinals`: because `a` on the code space is
+    sqrt(2) times an isometry, this equals a|target_C> renormalized. The
+    assertion pins that, so a code change cannot silently make the two
+    readings of "the error-space target" disagree.
+    """
+    if gate not in IDEAL_LOGICAL_U:
+        raise KeyError(f"unknown gate {gate!r}; have {sorted(IDEAL_LOGICAL_U)}")
+    out = error_basis(n_t, n_c) @ (IDEAL_LOGICAL_U[gate] @ _coeff_matrix())
+
+    A, _ = make_ops(n_t, n_c)
+    raw = A @ gate_target(gate, n_t, n_c)
+    img = raw / np.linalg.norm(raw, axis=0, keepdims=True)
+    assert np.allclose(out, img, atol=1e-12), (
+        "the error-basis gate target does not equal a|target_C> renormalized; "
+        "the kitten-code equal-weight coincidence no longer holds."
+    )
+    return out
+
+
 def control_mask(gate):
     """(4,) float mask over [C_I, C_Q, T_I, T_Q] for a named gate."""
     if gate not in CONTROL_MASK:

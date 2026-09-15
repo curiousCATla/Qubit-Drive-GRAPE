@@ -1,0 +1,30 @@
+
+=== T / est_c3s2_d2 / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.36726  c2=0.21419  c3=0.14587  c4=0.00000   [F1=0.63274  F_ET=0.78581]
+    end    c1=0.03409  c2=0.07865  c3=0.01066  c4=0.00000   [F1=0.96591  F_ET=0.92135]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2132 cost=1.637533e-01 (879.0s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_c3s2_d2_best2000_stage1.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_c3s2_d2_best2000_stage1.npy
+
+=== T / est_c3s2_d2 / stage 2  weights=(1.0, 0.1, 7.0, 1.0, 0.0, 0.0, 0.0001) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.034093  c2=0.078655  c3=0.010657  c4=0  cerr=0.17612  c5=2.4651e-28  c6=488.65   [F1=0.96591  F_ET=0.92135  F_err=0.82388]
+    end    c1=0.022044  c2=0.14219  c3=0.0087902  c4=0  cerr=0.046884  c5=1.5161e-27  c6=126.96   [F1=0.97796  F_ET=0.85781  F_err=0.95312]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2139 cost=1.104911e-01 (896.6s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_c3s2_d2_best2000_stage2.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_c3s2_d2_best2000_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 0.0
+  max_eps_transmon_rad_per_us: 17.438946189274763
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.0, 'transmon': 0.011764573992904249}
+  endpoint_rel_to_mid: [0.05169216863313996, 0.05075569292457384]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_T_est_c3s2_d2_best2000.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_T_est_c3s2_d2_best2000.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_T_est_c3s2_d2_best2000.json
