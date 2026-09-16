@@ -97,6 +97,10 @@ def score(u, x, gate=GATE):
         "dnbar_abs_mean": float(np.abs(rn).mean()),
         "dnbar_abs_tail": float(np.abs(rn[tail]).mean()),
         "eta0_mean": float(r["eta_0L"].mean()), "eta0_tail": float(r["eta_0L"][tail].mean()),
+        # Six-cardinal mean of Eq. 8, the quantity est_optimization.ipynb section 1
+        # reports; eta_0L is the single-state reading the paper's Fig. 1f plots.
+        "eta_avg_mean": float(r["eta_avg"].mean()),
+        "eta_avg_tail": float(r["eta_avg"][tail].mean()),
         "max_active_fock": int(r["max_active_fock"]),
         "max_abs_preimage": float(np.abs(x).max()),
     }

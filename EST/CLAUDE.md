@@ -81,16 +81,32 @@ different device and code. Full details in `EST/README.md`.
   (1-cerr on `u_X_est` = 0.589, limitation 3's number); `c5` = mean_t (Δn̄_L/(n̄0+n̄1))², Eq.
   A7 with a repo-chosen normalization — **necessary, not sufficient** for Δ_QEC (it is only
   the Z part of the (a,a) term), and ~1e-2 on real pulses because a linear displacement shifts
-  both words' n̄ equally, so w5 needs O(10-100); `c6` = `grape_core.derivative_penalty`, a
+  both words' n̄ equally, so w5 needs O(1-100) — w5=3 already drives c5 to 2e-4 and Δ_QEC to
+  0.166 on X, so the earlier "O(10-100)" floor was too high; `c6` = `grape_core.derivative_penalty`, a
   SUM (~1e4 on X pulses, so 5e-6 contributes ~0.06). The JAX reference for these lives in
   the test file only; `grape_jax.py` has none. Driver variants `est_err`, `est_dn`,
   `est_err_dn`, `est_all` (`--w-err`, `--w-dn`, `--w-smooth`, same weight both stages).
   `EST/smoke_new_terms.py` / `EST/compare_new_terms.py` are the scan and the ablation. The scan
   runs X at 500 it/stage over the six §9 seeds that reach a gate (0, 2, 4, 5, 6, 8), w_err
-  {0.3, 1, 3} and w5 {1, 3, 6, 10, 15, 30}, into `tables/est_newterms_smoke_X_6seeds.csv`;
+  {0.01, 0.1, 0.3, 0.5, 1, 3} (extended below 0.3 after the first six-seed scan) and w5 {1, 3, 6, 10, 15, 30}, into `tables/est_newterms_smoke_X_6seeds.csv`;
   its selection rule (`apply_rule`) needs the gate on every seed and compares seed means.
+  Each cell scores BOTH readings of Eq. 8: `eta_avg_mean`/`eta_avg_tail` (mean over the six
+  cardinals -- what `est_optimization.ipynb` §1 plots throughout) and `eta0_mean`/`eta0_tail`
+  (|0_L> alone, the paper's Fig. 1f state). `apply_rule`'s conditions read F_err_T / c5 /
+  delta_qec_mean / F_ET only, so adding the columns left the picks unchanged (w_err 0.1
+  pre-registered, 0.01 revised; w5 10). The two readings are NOT interchangeable: on the
+  C_err grid the six-cardinal mean improves only at w_err=0.01 and is flat at 0.3, where
+  eta0 reports 0.3 as the one improvement.
   Seed 6 reuses the original single-seed scan's untagged `*_smoke500_w<w>` files, whose table
   `est_newterms_smoke_X_seed6.csv` is frozen — new cells are tagged `smoke500_seed<s>_w<w>`.
+  Measured (six seeds, 500 it/stage, `est_optimization.ipynb` Figure 1a): 6/72 runs **park** at
+  F1=1/3 although all six controls reach the gate, so exclude parked seeds before averaging (a
+  parked pulse reads F_ET ~0.997, L(T) ~0). On gate-reaching seeds C_err needs w_err >= 0.1:
+  L(T) 0.65 -> 0.55 at 0.01, 0.061 at 0.1, 0.013-0.022 at 0.3-3. Its F_ET cost is **not
+  monotone** (-0.004, -0.057, -0.030, -0.11, -0.14, -0.18 over the grid), so 0.3 beats 0.1.
+  C5 lowers Δ_QEC by 0.05-0.14 without fixing L(T). Rule picks over six seeds: w_err 0.1
+  (original) / 0.01 (revised; 0.1 drops F_ET 0.057 > 0.05, and 0.01 leaves L(T) at 0.55), since
+  0.3 and 0.5 park seed 5; w5=10 (15 and 30 park seed 2).
   `STAGE2_VARIANTS` change **stage 2 only** (stage 1 = `est` stage 1, so same seed = same
   stage 1): `est_c3s2` keeps w3=7, `est_d2` adds C6, `est_c3s2_d2` both; `*_d2` **require**
   an explicit `--w-smooth` (no silent default). Weights per stage come from
@@ -105,8 +121,24 @@ different device and code. Full details in `EST/README.md`.
   Measured (X, seed 6, 2000 it/stage, `est_optimization.ipynb` §1, single seed): `est_err` at w_err=0.3
   takes L(T) 0.398 -> 0.0049 and F_err(T) 0.538 -> 0.996 at F1 0.9995, F_ET 0.750 (vs 0.744).
   That makes limitation 3's endpoint leak a property of the objective, not the device.
-  `est_dn` (w5=30) halves Δ_QEC but makes L(T) worse (0.589). Combining the two is not
-  additive (F_ET 0.602). C6 is nearly free. The scan's pre-registered rule picked w_err=3 /
+  `est_dn` (w5=3) more than halves Δ_QEC (0.356 -> 0.166) but still makes L(T) worse (0.483) and
+  wrecks η: mean 0.183 -> 0.343, tail 0.480 -> 1.226 on a [0,2] scale (six-cardinal mean, the
+  metric `est_optimization.ipynb` §1 reports throughout; the same runs read 0.138 -> 0.412 and
+  0.449 -> 1.680 on η(|0_L>) alone, so the two are not interchangeable). **Combining the two
+  inverts the Δ_QEC result**: each term alone improves it (0.217 `est_err`, 0.166 `est_dn`) but
+  together they are worse than the baseline (0.520 `est_err_dn`, 0.479 `est_all` vs 0.356), so C5's
+  gain does not survive C_err. At w5=3 the combination is far less damaging to transparency than at
+  w5=30 (`est_err_dn` F_ET 0.693 vs 0.602, `est_all` 0.671 vs 0.614) and keeps the endpoint
+  (L(T) 0.011 / 0.009). C6 is nearly free (`est_all` c6 1116, 8.8x below `est_err_dn`, oob 2.7e-4)
+  and at w5=3 it leaves the six-cardinal η essentially unchanged (0.360 -> 0.356).
+  **On η the w5 change was a loss, not a win.** Against the w5=30 pulses (recomputed from git
+  e3749b1; the archived traces predate the eta_avg columns) the six-cardinal mean moves
+  est_dn 0.226 -> 0.343 (tail 0.682 -> 1.226, the worst of the five), est_err_dn 0.322 -> 0.360,
+  est_all 0.544 -> 0.356 -- only C6's run improved, so w5=3 bought Δ_QEC and F_ET at η's
+  expense. est_err_dn is a worked example of the two readings disagreeing in SIGN on the same
+  comparison: +0.038 on the six-cardinal mean against -0.007 on η(|0_L>) (whose w5=30 pair was
+  0.534 -> 0.317). **These §1.2 numbers are the w5=3 retrain**; the
+  w5=30 originals are in git at e3749b1. The scan's pre-registered rule picked w_err=3 /
   w5=100, which damage F_ET; the rule was revised after the results (F_ET drop <= 0.05).
 - **`EST/test_grape_jax.py`** — the anchor is the C1 gradient checked against
   `grape_core.fidelity_multi_state`'s analytic adjoint at rtol 1e-6 (sign-flipped: JAX

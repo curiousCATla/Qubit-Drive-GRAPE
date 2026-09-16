@@ -20,7 +20,10 @@ the weight is still on the grid; every other cell is tagged
 `smoke500_seed<s>_w<w>`, so the two can never overwrite each other.
 
 Grids. `cerr` is O(0.5) on the delivered X pulses, the same order as w2*c2 ~ 0.15,
-so w_err spans {0.3, 1, 3}. C5 is only ~1e-2 (7.0e-3 on u_X_est_best2000,
+so w_err first spanned {0.3, 1, 3}. EXTENDED DOWNWARD AFTER THE SIX-SEED SCAN,
+to {0.01, 0.1, 0.3, 0.5, 1, 3}: every weight there already removed the endpoint
+leak, but 0.3 -- the smallest -- parked seed 5, so the rule picked no w_err and
+nothing below 0.3 had been tried. C5 is only ~1e-2 (7.0e-3 on u_X_est_best2000,
 9.6e-3 on its stage-1 pulse): both code words have <a> = 0, so a linear
 displacement shifts n0 and n1 equally and Delta_nbar_L comes from the nonlinear
 terms alone. The seed-6 scan showed w_dn = 100 raising L(T) and w_dn = 30 already
@@ -69,7 +72,7 @@ GATE, MAXITER, N_C = "X", 500, 20
 # The section 9 X seeds with progress > 0.5 (tables/est_multiseed_X.csv).
 SEEDS = (0, 2, 4, 5, 6, 8)
 LEGACY_SEED = 6        # the original single-seed scan; its files carry no seed tag
-GRIDS = {"err": ("est_err", "--w-err", (0.3, 1.0, 3.0)),
+GRIDS = {"err": ("est_err", "--w-err", (0.01, 0.1, 0.3, 0.5, 1.0, 3.0)),
          "dn": ("est_dn", "--w-dn", (1.0, 3.0, 6.0, 10.0, 15.0, 30.0))}
 C1_TOL_FACTOR = 3.0
 ET_DROP_TOL = 0.05     # revised rule (3); see module docstring
@@ -77,7 +80,7 @@ STAGE1_WEIGHTS = (1.0, 0.7, 7.0, 1.0)
 BATCH = 6              # concurrent training jobs per `wait` in `commands`
 CSV_PATH = os.path.join(TABLE_DIR, "est_newterms_smoke_X_6seeds.csv")
 MEAN_COLS = ["F1", "F_ET", "F_err_T", "c5", "delta_qec_mean", "L_mean", "L_T",
-             "eta0_mean"]
+             "eta0_mean", "eta_avg_mean"]
 
 
 def _tag(w, seed):
@@ -124,6 +127,10 @@ def score_x(x, gate=GATE):
         "L_tail": float(r["leakage"][tail].mean()),
         "eta0_mean": float(r["eta_0L"].mean()),
         "eta0_tail": float(r["eta_0L"][tail].mean()),
+        # Eq. 8 is state-dependent; eta_0L is one cardinal, eta_avg the mean over
+        # all six. est_optimization.ipynb section 1 reports the six-cardinal mean.
+        "eta_avg_mean": float(r["eta_avg"].mean()),
+        "eta_avg_tail": float(r["eta_avg"][tail].mean()),
         "max_active_fock": int(r["max_active_fock"]),
         "max_abs_preimage": float(np.abs(x).max()),
     }
