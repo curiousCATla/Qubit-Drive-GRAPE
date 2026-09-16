@@ -411,7 +411,12 @@ def plot_fig1(results, path, scale="log"):
                [("eta_0L", r"$|0_L\rangle$"), ("eta_avg", "6-cardinal mean")])]
     styles = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
               "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord"),
-              "paper": dict(color="#2e8b57", lw=1.8, ls="-.", label="EsT (paper form)")}
+              "paper": dict(color="#2e8b57", lw=1.8, ls="-.", label="EsT (paper form)"),
+              # The best2000 / seed-0 pair of the notebook's section 9.2. Both are
+              # EsT, so "b2" keeps the EsT blue and only the reference moves colour.
+              "b2": dict(color="#2a6fb5", lw=1.8, label="EsT, best2000 (eigh)"),
+              "prod": dict(color="#d08b2c", lw=1.6, ls="--",
+                           label="EsT, seed 0 (production)")}
     log = scale == "log"
 
     FLOOR = 1e-12

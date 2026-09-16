@@ -7,6 +7,7 @@ from core.grape_core import (
     smooth_initial_controls,
     derivative_penalty,
     amplitude_penalty,
+    amplitude_penalty_modulus,
     fidelity_multi_state,
     coherent_fidelity_multi_state,
     assert_coherent_inputs,
@@ -25,6 +26,15 @@ from core.ramp import (
 # rather than being silently dropped, so stale recipes surface immediately
 # instead of training under a weight nobody applied.
 _VALID_PENALTY_KEYS = frozenset({'deriv', 'amp', 'amp_max', 'disc'})
+
+# How penalties['amp_max'] is measured. 'quadrature' (the legacy default, and
+# what analysis/penalty_sweep.py's cached amp_max ladder was trained under)
+# charges each of the 4 columns separately; 'modulus' charges |I + iQ| per
+# drive, as Heeres et al. 2017 Supp. Eq. 19 does.
+_AMP_PENALTIES = {
+    'quadrature': amplitude_penalty,
+    'modulus': amplitude_penalty_modulus,
+}
 
 
 def _check_penalties(penalties):
@@ -79,6 +89,7 @@ def optimize_multi_state_pulse(
     tra_band=None,
     ramp_ns=DEFAULT_RAMP_NS,
     hard_amp_limit=50.0,
+    amp_norm='quadrature',
     parallel_backend='loky',
     fidelity_fn=fidelity_multi_state,
     snapshot_iters=None,
@@ -147,6 +158,14 @@ def optimize_multi_state_pulse(
         pre-image x, not the projected physical pulse u -- band-edge
         ringing from project_bandlimit can push u's peak slightly outside
         [-hard_amp_limit, hard_amp_limit] even though x stays within bounds.
+        It is a per-element box, so it can never bound the drive modulus
+        |I + iQ|; only the soft penalty (amp_norm='modulus') does that.
+    amp_norm : {'quadrature', 'modulus'}
+        What penalties['amp_max'] is compared against. 'quadrature' (default,
+        legacy) uses grape_core.amplitude_penalty on each column; 'modulus'
+        uses grape_core.amplitude_penalty_modulus on |eps_C| and |eps_T|,
+        Heeres et al. 2017 Supp. Eq. 19. The production recipe uses 'modulus'.
+        info['max_drive_modulus'] reports what the returned pulse reached.
     parallel_backend : str
         joblib backend for the per-truncation Parallel evaluation ('loky'
         = separate processes, 'threading' = shared-memory threads). One
@@ -179,6 +198,11 @@ def optimize_multi_state_pulse(
         penalties = penalties.copy()
     _check_penalties(penalties)
     penalties.setdefault('disc', 0.0)
+    if amp_norm not in _AMP_PENALTIES:
+        raise ValueError(
+            f"amp_norm={amp_norm!r}; expected one of {sorted(_AMP_PENALTIES)}"
+        )
+    amp_penalty_fn = _AMP_PENALTIES[amp_norm]
 
     if (cav_band is None) != (tra_band is None):
         raise ValueError("cav_band and tra_band must both be given or both be None")
@@ -345,7 +369,7 @@ def optimize_multi_state_pulse(
                 cost += penalties['deriv'] * g_d
                 g += penalties['deriv'] * gr_d
             if penalties['amp'] > 0:
-                g_a, gr_a = amplitude_penalty(u, amp_max=penalties['amp_max'])
+                g_a, gr_a = amp_penalty_fn(u, amp_max=penalties['amp_max'])
                 cost += penalties['amp'] * g_a
                 g += penalties['amp'] * gr_a
 
@@ -473,6 +497,11 @@ def optimize_multi_state_pulse(
         'warm_start_kind': warm_kind,
         'roundtrip_err': roundtrip_err,
         'max_abs_preimage': float(np.abs(x_opt).max()),
+        'amp_norm': amp_norm,
+        'max_drive_modulus': {
+            'cav': float(np.hypot(u_opt[:, 0], u_opt[:, 1]).max()),
+            'tra': float(np.hypot(u_opt[:, 2], u_opt[:, 3]).max()),
+        },
         # What the chain actually delivered on THIS pulse: endpoint amplitude
         # and residual out-of-band energy. Reported per gate rather than
         # assumed once in a test -- ramping after projecting is a real
@@ -484,6 +513,9 @@ def optimize_multi_state_pulse(
         c = info['constraints']
         print(f"Constraint check: endpoints {c['endpoint_rel_to_mid']:.3%} of mid-pulse RMS, "
               f"peak |u| = {c['peak_amp']:.2f} rad/us, max|x| = {info['max_abs_preimage']:.2f}")
+        m = info['max_drive_modulus']
+        print(f"  peak drive modulus |I+iQ|: cavity {m['cav']:.2f}, transmon {m['tra']:.2f} rad/us "
+              f"(amp_max = {penalties['amp_max']}, amp_norm = {amp_norm})")
         if 'out_of_band_cavity' in c:
             print(f"  residual out-of-band: cavity {c['out_of_band_cavity']:.2e}, "
                   f"transmon {c['out_of_band_transmon']:.2e}")

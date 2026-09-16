@@ -124,10 +124,15 @@ def build_arg_parser():
                       help="Weight of the soft amplitude penalty.")
     opt.add_argument("--lambda-disc", type=float, default=0.5,
                       help="Weight of the cross-truncation discrepancy penalty.")
-    opt.add_argument("--amp-max", type=float, default=40.0,
+    opt.add_argument("--amp-max", type=float, default=25.0,
                       help="Soft amplitude threshold (rad/us) used inside the amplitude penalty.")
-    opt.add_argument("--hard-amp-limit", type=float, default=40.0,
-                      help="Hard L-BFGS-B box constraint on pulse amplitude (rad/us).")
+    opt.add_argument("--amp-norm", choices=["modulus", "quadrature"], default="modulus",
+                      help="What --amp-max caps: 'modulus' = |I+iQ| per drive "
+                           "(Heeres Supp. Eq. 19, production); 'quadrature' = "
+                           "each column separately (legacy, pre-u_max=25 pulses).")
+    opt.add_argument("--hard-amp-limit", type=float, default=25.0,
+                      help="Hard L-BFGS-B box constraint on the raw pre-image x "
+                           "(rad/us). Per element, so it does not bound |I+iQ|.")
     opt.add_argument("--cav-band", type=str, nargs="+", default=["-27.0", "27.0"],
                       help="Cavity drive band limit in MHz: 'F_LO F_HI' or 'none'.")
     opt.add_argument("--tra-band", type=str, nargs="+", default=["-33.0", "33.0"],
@@ -402,6 +407,7 @@ def main():
         tra_band=tra_band,
         ramp_ns=args.ramp_ns or None,
         hard_amp_limit=args.hard_amp_limit,
+        amp_norm=args.amp_norm,
         fidelity_fn=fidelity_fn,
         verbose=True,
     )

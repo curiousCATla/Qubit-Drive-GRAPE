@@ -9,9 +9,10 @@
     "penalties": {
       "deriv": 1e-05,
       "amp": 8e-05,
-      "amp_max": 40.0,
+      "amp_max": 25.0,
       "disc": 0.5
     },
+    "amp_norm": "modulus",
     "warm_start": null,
     "cav_band": [
       -27.0,
@@ -22,7 +23,7 @@
       33.0
     ],
     "ramp_ns": 48.0,
-    "hard_amp_limit": 40.0,
+    "hard_amp_limit": 25.0,
     "n_jobs": 3
   },
   "maxiter": 1500,
@@ -31,45 +32,45 @@
       "Gate": "enc",
       "Pulse_file": "u_enc_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9988545968881142,
+      "Final_bare_F": 0.9992388640334346,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 3.7629946206818587e-06,
+      "Max_pairwise_disc": 2.3731420728534403e-07,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "dec",
       "Pulse_file": "u_dec_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9963826099042855,
+      "Final_bare_F": 0.9978645780939855,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 2.909301110909368e-06,
+      "Max_pairwise_disc": 1.5707519174235074e-08,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "X",
       "Pulse_file": "u_X_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9982131414754459,
+      "Final_bare_F": 0.9985397283753179,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 8.139658951300532e-06,
+      "Max_pairwise_disc": 6.191639869590482e-06,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "Y",
       "Pulse_file": "u_Y_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9986110735005395,
+      "Final_bare_F": 0.9991295015332239,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 0.0004088061928492204,
+      "Max_pairwise_disc": 1.3925130072367509e-06,
       "Wall_clock_s": NaN
     },
     {
       "Gate": "Z",
       "Pulse_file": "u_Z_main.npy",
       "Iterations": NaN,
-      "Final_bare_F": 0.9994211008091702,
+      "Final_bare_F": 0.9994864435719587,
       "Best_seen_F_during_opt": NaN,
-      "Max_pairwise_disc": 7.517320099736935e-12,
+      "Max_pairwise_disc": 9.622302954426232e-13,
       "Wall_clock_s": NaN
     },
     {

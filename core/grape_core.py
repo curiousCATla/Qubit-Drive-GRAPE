@@ -419,6 +419,33 @@ def amplitude_penalty(u, amp_max=40.0):
     return g_amp, grad
 
 
+def amplitude_penalty_modulus(u, amp_max=40.0):
+    """
+    Heeres et al. 2017 Supp. Eq. 19, on the COMPLEX drive modulus:
+
+        g = sum_n sum_{d in {C,T}} (|eps_d(n dt)| - amp_max)^2 Theta(|eps_d| - amp_max),
+        |eps_C| = sqrt(u0^2 + u1^2),  |eps_T| = sqrt(u2^2 + u3^2).
+
+    `amplitude_penalty` above charges each quadrature separately, so it admits
+    |eps| up to sqrt(2)*amp_max. Summed over steps (as Eq. 19 and
+    `amplitude_penalty` both are), so lambda_amp keeps the same scale. Numpy
+    copy of EST/grape_eigh.py:amplitude_cost without its /N mean -- core never
+    imports from EST.
+    """
+    u = np.asarray(u, dtype=np.float64)
+    g_amp = 0.0
+    grad = np.zeros_like(u)
+    for i, q in ((0, 1), (2, 3)):
+        mag = np.sqrt(u[:, i]**2 + u[:, q]**2 + 1e-30)
+        over = np.maximum(mag - amp_max, 0.0)
+        g_amp += float(np.sum(over**2))
+        scale = 2.0 * over / mag
+        grad[:, i] = scale * u[:, i]
+        grad[:, q] = scale * u[:, q]
+
+    return g_amp, grad
+
+
 def make_objective_with_pen(H0, Hc, psi_i, psi_f, dt, N, lambda_deriv=0.0, lambda_amp=0.0, amp_max=40.0, cav_band=None, tra_band=None, ramp_ns=None):
     """
     Objective that includes fidelity + derivative + amplitude penalties.

@@ -50,14 +50,17 @@ There is no build step and no pytest config — tests are plain `unittest` files
 ```bash
 # Train one gate at the production recipe. All of these are already the defaults:
 #   --trunc-list 22 24 26  --max-iter 1500  --n-jobs 3  --seed 42
-#   --ramp-ns 48.0  --hard-amp-limit 40.0  --amp-max 40.0
+#   --ramp-ns 48.0  --hard-amp-limit 25.0  --amp-max 25.0  --amp-norm modulus
+#   (amp_max caps |I+iQ| per drive, Heeres Supp. Eq. 19; the box is per element on x)
 #   --lambda-deriv 1e-5  --lambda-amp 8e-5  --lambda-disc 0.5
 #   --cav-band -27 27  --tra-band -33 33  --fidelity-fn auto (=> coherent, every gate)
 python main.py --gate X
 
-# U_Y is the exception: seed 42 drives max|x| into the hard_amp_limit box and
-# converges into a 44%-leakage basin. pulses/u_Y_main.npy is a seed-44 pulse.
-python main.py --gate Y --seed 44
+# Seeds are per gate under u_max=25 (the box binds): enc 47, dec 43, X 43,
+# Y 46, Z/H/T/I 42. Y at seed 42 pins 4.86% of the pre-image and collapses to
+# F_ped = 0.8986; enc is clipped at every seed and 47 is kept deliberately.
+python main.py --gate Y --seed 46
+python main.py --gate enc --seed 47
 
 # Disable the ramp (0 means off, not "zero-width"); needed for pulses too short
 # to hold a flat top. 'none' likewise disables a band.
@@ -120,30 +123,31 @@ All scripts assume they are run from the repository root (several insert `REPO_R
   would change historical results — but it means calling the legacy makers produces *unramped*
   pulses with no warning. `ramp_ns=0` (or `0.0`) also disables, which is what `main.py
   --ramp-ns 0` relies on.
-- **`hard_amp_limit`, not the envelope, is what bounds the endpoint amplitude — and it can
-  bind.** The ramp cuts `max|u[0]|/peak|u|` on every operation (typically ~3x, up to 11x: Z
-  3.64%->0.32%, T 4.98%->0.47%, I 3.87%->0.34%, opt 6.06%->1.13%), but it does not reach zero,
-  and how close it gets tracks how amplitude-hungry the gate is (X only 4.75%->2.39%). The
+- **`hard_amp_limit`, not the envelope, is what bounds the endpoint amplitude — and at the
+  production `u_max = 25` it DOES bind.** The ramp cuts `max|u[0]|/peak|u|` on every operation
+  (typically ~3x, up to 23x: Z 3.64%->0.16%, T 4.98%->0.47%, I 3.87%->0.34%, opt 6.06%->1.13%),
+  but it does not reach zero,
+  and how close it gets tracks how amplitude-hungry the gate is (X only 4.75%->1.29%). The
   reason: the envelope removes control authority over the first/last 24 steps and L-BFGS-B buys
-  it back by inflating the *pre-image* there — on `u_X_main`, `|P(x)[0]| = 30.6` against a
-  mid-pulse RMS of 5.03 (6x), so `u[0] = 0.0135 * 30.6 = 0.42` survives. What stops that
+  it back by inflating the *pre-image* there — on `u_X_main`, `|P(x)[0]| = 20.2` against a
+  mid-pulse RMS of 6.22 (3x), so `u[0] = 0.0135 * 20.2 = 0.27` survives. What stops that
   inflation is the box on the raw variable, so raising `hard_amp_limit` would quietly undo part
   of the ramp. **Mind which default you are getting**: `optimize_multi_state_pulse` defaults to
-  `hard_amp_limit=50.0`, `refine_pulse`/`refine_pulse_dt`/`refine_pulse_dt_light` to 40.0, and
-  every production path (`main.py`, `analysis/penalty_sweep.py` `FIXED`, the notebook recipe)
-  pins **40.0**. All the numbers below are against 40, so comparing them to a bare
-  `optimize_multi_state_pulse` call's box is comparing to the wrong number.
-  **Y is the cautionary case**: under a cold start at seed 42 it drove
-  `max|x|` to exactly 40.0 (0.46% of entries pinned at the bound) and converged into a
-  44%-leakage basin, `F_ped` held-out 0.9973 -> 0.7491. Seeds 43 and 45 also bound the box
-  (`F_coh` 0.9976 / 0.8908); seed 44 stayed clear at `max|x| = 26.59` and reached
-  `F_coh = 0.9988`. **`pulses/u_Y_main.npy` is therefore a seed-44 pulse** — every other
-  operation is a seed-42 cold start — and is reproduced with `python main.py --gate Y
-  --seed 44`, not by the bare recipe. Note that `experiments.ipynb`'s `OPTIMIZATION_RECIPE`
-  carries no seed key, so re-running its Section 5 loop with `RUN_OPTIMIZATION=True` would
-  silently regenerate the broken seed-42 Y. Always check `info['max_abs_preimage']` against
-  `hard_amp_limit` before trusting a retrained pulse: a pulse at the bound has been clipped,
-  not converged (for reference, X sits at 32.3 and enc at 32.7).
+  `hard_amp_limit=50.0`, `refine_pulse`/`refine_pulse_dt`/`refine_pulse_dt_light` to 40.0,
+  `analysis/penalty_sweep.py` `FIXED` stays at 40.0 (cache), and the production paths
+  (`main.py`, the notebook recipe) pin **25.0**. All the numbers below are against 25.
+  **The box binds at 25, and seeds are therefore per gate** (`GATE_SEEDS` in the notebook;
+  `--seed` on `main.py`): enc 47, dec 43, X 43, Y 46, and Z/H/T/I 42.
+  `u_enc_main` sits at exactly `max|x| = 25.00` with 0.41% of entries pinned at *every* seed
+  42-50 — accepted deliberately, since seed 47 is the best encode pulse to date (held-out
+  0.999202 vs 0.998810) — and `u_Y_main` at 25.00 with 0.045% pinned.
+  **Y remains the cautionary case**: at seed 42 it pinned 4.86% of entries and collapsed to
+  `F_ped = 0.8986` (n_c=24); seed 45 likewise (0.8355, and `|eps| = 25.98` broke the amplitude
+  limit too). Seed 46 is what is on disk. Check **both** numbers before trusting a retrained
+  pulse: `info['max_drive_modulus']` against `amp_max` (the physical Eq. 19 constraint, which
+  the penalty enforces) and `info['max_abs_preimage']` against `hard_amp_limit` (the numerical
+  box; at the bound a pulse has been clipped, not converged — read its held-out fidelity).
+  For reference X sits at 23.58 and Z at 22.71, both clear.
   Midpoint sampling (EST's convention, `env[0]=0.0135` not 0) is the other half of the gap.
 - **`QuTip/`** — fully independent re-implementation of the physics (operators, Hamiltonians,
   propagation via `qutip.sesolve`) used to cross-check `core/grape_core.py`'s hand-rolled

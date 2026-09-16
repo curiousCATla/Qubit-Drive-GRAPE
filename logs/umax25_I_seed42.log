@@ -1,0 +1,40 @@
+Using training objective: F_coh (process) [coherent_fidelity_multi_state]
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+
+============================================================
+Optimizing pulse | Truncations: [22, 24, 26]
+Training objective: F_coh (process) [coherent_fidelity_multi_state]
+============================================================
+assert_coherent_inputs passed for trunc_list=[22, 24, 26]
+Starting from smooth random controls (peak |u| = 4.0000 <= 4.0)
+Using best-seen pulse (F_coh (process) = 0.999507) instead of final L-BFGS point (F_coh (process) = 0.999504)
+Saved optimized pulse to pulses/staging_umax25/u_I_main.npy
+Saved raw pre-image to pulses/staging_umax25/x_I_main.npy (resume with init_x)
+
+============================================================
+Post-optimization bare F_coh (process) per training truncation
+============================================================
+  n_c=22: F_coh (process) = 0.999507
+  n_c=24: F_coh (process) = 0.999507
+  n_c=26: F_coh (process) = 0.999507
+  max pairwise |F_i - F_j| across training truncations: 2.123e-12
+============================================================
+
+Finished: STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+Final optimizer objective F_coh (process) (at max trunc): 0.999507
+Best bare multi-trunc F_coh (process) seen during optimization: 0.999507
+Note: F_coh is the process objective; report Pedersen gate fidelity separately.
+Constraint check: endpoints 1.262% of mid-pulse RMS, peak |u| = 5.42 rad/us, max|x| = 5.42
+  peak drive modulus |I+iQ|: cavity 0.31, transmon 5.68 rad/us (amp_max = 25.0, amp_norm = modulus)
+  residual out-of-band: cavity 3.18e-02, transmon 1.59e-04
+
+Gate: U_I
+Optimization info: {'message': 'STOP: TOTAL NO. of ITERATIONS REACHED LIMIT', 'success': False, 'iterations': 1500, 'final_fidelity': np.float64(0.9995067048624466), 'objective_label': 'F_coh (process)', 'best_bare_F_during_opt': np.float64(0.9995067048631601), 'trunc_list': [22, 24, 26], 'disc_penalty_weight': 0.5, 'snapshots': {}, 'x_preimage': array([[-0.93609538,  1.36334524, -0.44475354, -0.58534673],
+       [-0.92981273,  1.32884664, -0.87690559, -0.78579232],
+       [-0.90725317,  1.27195355, -1.35853031, -0.87082982],
+       ...,
+       [-0.86029024,  1.3242799 ,  0.34355362,  0.48672244],
+       [-0.90030177,  1.36076951,  0.17942179,  0.07909648],
+       [-0.92603162,  1.37407536, -0.08665706, -0.28842574]]), 'ramp_ns': 48.0, 'warm_start_kind': 'cold', 'roundtrip_err': None, 'max_abs_preimage': 5.418978613745006, 'amp_norm': 'modulus', 'max_drive_modulus': {'cav': 0.3121845870471476, 'tra': 5.677800896527184}, 'constraints': {'peak_amp': 5.418978613745758, 'peak_modulus_cav': 0.3121845870471476, 'peak_modulus_tra': 5.677800896527184, 'mid_rms': 1.4650932701731614, 'endpoint_start': 0.01834300279423934, 'endpoint_end': 0.01848737009289254, 'endpoint_rel_to_mid': 0.01261856188221211, 'endpoint_rel_to_peak': 0.0034115967990716103, 'out_of_band_cavity': 0.03182979773333888, 'out_of_band_transmon': 0.00015902005659585965}}
+  optimizer objective F_coh (process) = 0.999507
+  reported gate fidelity (Pedersen, n_c=24) = 0.999507

@@ -98,6 +98,13 @@ from main import GATE_FACTORIES, report_pedersen_gate_fidelity
 # Fixed experimental conditions -- everything that is NOT swept
 # ============================================================
 #
+# NO LONGER a mirror of main.py for the amplitude knobs. The production recipe
+# moved to amp_max = hard_amp_limit = 25 with the per-drive MODULUS penalty
+# (optimizer amp_norm='modulus', Heeres Supp. Eq. 19). This sweep deliberately
+# stays at 40 / per-quadrature (optimize_multi_state_pulse's default
+# amp_norm): changing FIXED invalidates every cached pulse. Treat its tables
+# as a record of the pre-change u_max=40 regime.
+#
 # These mirror main.py's production defaults. They are pinned here rather than
 # exposed as sweep axes so that every row in the output CSV differs ONLY in the
 # penalty weights. Changing anything here invalidates the cache (it is part of

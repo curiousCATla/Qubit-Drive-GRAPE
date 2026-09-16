@@ -8,8 +8,13 @@ and `hard_amp_limit` warnings stay there because they govern `main.py` runs from
   `fidelity_multi_state` (propagates all target states jointly per time step, amortizing one
   eigendecomposition per step across the batch — this is the main performance-sensitive path).
   Propagators use eigendecomposition (`U_k = V diag(e^{-i dt ω}) V†`), not matrix exponentiation.
-  Penalty terms (`derivative_penalty`, `amplitude_penalty`) and the
-  lower-level `optimize_controls` also live here.
+  Penalty terms (`derivative_penalty`, `amplitude_penalty`, `amplitude_penalty_modulus`) and the
+  lower-level `optimize_controls` also live here. The two amplitude penalties differ in what
+  `amp_max` caps: `amplitude_penalty` charges each of the 4 columns separately (legacy, still the
+  `optimize_multi_state_pulse(amp_norm='quadrature')` default so the penalty-sweep cache keeps its
+  meaning); `amplitude_penalty_modulus` charges `|I + iQ|` per drive, Heeres Supp. Eq. 19, and is
+  what production (`main.py --amp-norm modulus`, u_max = 25) trains with. The L-BFGS-B box
+  `hard_amp_limit` is per element on the pre-image `x` and never bounds the modulus.
 - **`core/fourier_cutoff.py`** — `project_bandlimit` implements the hard frequency-band
   constraint as an orthogonal projection (`IFFT ∘ mask ∘ FFT`), applied identically to pulses
   and gradients since the projection is idempotent/self-adjoint. Enabled via `cav_band`/
