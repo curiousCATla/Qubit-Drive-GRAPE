@@ -3,6 +3,12 @@ Two-stage GRAPE driver for the EsT replication, on the pure-numpy
 eigh + analytic-adjoint pipeline (EST/grape_eigh.py).
 
     python EST/train_est_eigh.py --gate X --variant est --maxiter 2000
+    python EST/train_est_eigh.py --gate X --variant est --stages 1   # single phase
+
+`--stages 1` drops stage 2 and holds stage 1's weights (w2=0.7, w3=7) for the
+whole run, so the reported objective is the one that was optimized. That is the
+protocol of est_optimization.ipynb section 1. It is opt-in: everything else,
+including section 2's STAGE2_VARIANTS study, still runs two stages.
 
 This is EST/train_est.py's twin. It runs the SAME weight schedule, the same
 L-BFGS-B settings, the same box bounds, and writes the same JSON schema -- the
@@ -89,7 +95,8 @@ def _ext_weights(variant, w_err, w_dn, w_smooth):
             float(w_smooth) if "smooth" in on else 0.0)
 
 
-def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None):
+def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
+                  n_stages=2):
     """
     Objective weights per stage for `variant`: a list with one 4- or 7-tuple
     (w1, w2, w3, w4[, w_err, w5, w6]) per stage, as build_gate_objective takes.
@@ -98,13 +105,29 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None):
     both stages, with w_smooth=None meaning DEFAULT_W_SMOOTH; STAGE2_VARIANTS
     touch stage 2 only and need an explicit w_smooth when they add C6, so a
     silently-defaulted smoothness weight cannot happen there.
+
+    `n_stages=1` truncates to the SINGLE PHASE used by est_optimization.ipynb
+    section 1: stage 1's tuple held for the whole run, so the objective that is
+    reported is the objective that was optimized. Stage 2 (w2 -> 0.1, w3 -> 0)
+    is what CLOSES the gate, so a single phase may leave F1 short -- that is a
+    property of the protocol, not a bug. STAGE2_VARIANTS are refused here: they
+    are defined by what they change in stage 2, so under one stage they would
+    silently degenerate into plain `est`.
     """
+    if n_stages not in (1, 2):
+        raise ValueError(f"n_stages must be 1 or 2, got {n_stages!r}")
+    if n_stages == 1 and variant in STAGE2_VARIANTS:
+        raise ValueError(
+            f"variant {variant!r} only modifies stage 2, so it is meaningless "
+            "under n_stages=1 (it would run as plain 'est'). Use --stages 2.")
     if variant in SCHEDULES:
-        return [(w1, w2, w3, w_amp) for w1, w2, w3 in SCHEDULES[variant]]
+        return [(w1, w2, w3, w_amp)
+                for w1, w2, w3 in SCHEDULES[variant]][:n_stages]
     if variant in EXT_VARIANTS:
         extra = _ext_weights(variant, w_err, w_dn,
                              DEFAULT_W_SMOOTH if w_smooth is None else w_smooth)
-        return [(w1, w2, w3, w_amp) + extra for w1, w2, w3 in SCHEDULES[EXT_BASE]]
+        return [(w1, w2, w3, w_amp) + extra
+                for w1, w2, w3 in SCHEDULES[EXT_BASE]][:n_stages]
     if variant in STAGE2_VARIANTS:
         on = STAGE2_VARIANTS[variant]
         if "smooth" in on and w_smooth is None:
@@ -121,9 +144,9 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None):
 def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
           w_amp=1.0, maxiter=600, seed=0, amp0=20.0, hard_bound=60.0,
           verbose=True, init=None, init_x=None, stage_hook=None,
-          w_err=None, w_dn=None, w_smooth=None):
+          w_err=None, w_dn=None, w_smooth=None, n_stages=2):
     """
-    Run the two-stage schedule and return (u_physical, x_preimage, info).
+    Run the schedule and return (u_physical, x_preimage, info).
 
     Mirrors EST.train_est.train exactly, including the cold-start RNG
     (`np.random.default_rng(seed).standard_normal(N*4)`), so a given --seed
@@ -133,8 +156,12 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     `variant` may also be one of EXT_VARIANTS, which runs the `est` schedule with
     the extra terms switched on at w_err / w_dn / w_smooth in both stages, or one
     of STAGE2_VARIANTS, which changes stage 2 only (see stage_weights).
+
+    `n_stages=1` runs the SINGLE PHASE (stage 1's weights only); see
+    stage_weights. The default 2 is the historical two-stage schedule and is
+    bit-identical to before.
     """
-    schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth)
+    schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth, n_stages)
     if init is not None and init_x is not None:
         raise ValueError("pass init or init_x, not both")
 
@@ -224,6 +251,10 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "gate": gate, "variant": variant, "n_t": n_t, "dt": dt, "N": N,
         "trunc_list": list(trunc_list), "w_amp": w_amp, "seed": seed,
         "amp0": amp0, "hard_bound": hard_bound, "maxiter": maxiter,
+        # 2 = the historical two-stage schedule; 1 = single phase at stage 1's
+        # weights (est_optimization.ipynb section 1). Read this before comparing
+        # two logs: their objectives differ.
+        "n_stages": len(schedule),
         "init": warm,
         "band_mhz": list(BAND_MHZ), "ramp_ns": RAMP_NS,
         "eps_max_rad_per_us": float(EPS_MAX),
@@ -302,6 +333,12 @@ def main():
                         "u_X_est_eigh.npy). Defaults to a non-empty value on "
                         "purpose so this driver cannot clobber the JAX "
                         "pipeline's u_<gate>_<variant>.npy artifacts.")
+    p.add_argument("--stages", type=int, default=2, choices=(1, 2),
+                   help="1 runs a SINGLE phase at stage 1's weights "
+                        "(w2=0.7, w3=7 held throughout), which is what "
+                        "est_optimization.ipynb section 1 uses; 2 (default) is "
+                        "the historical two-stage schedule. Stage 2 is what "
+                        "closes the gate, so check F1 on a --stages 1 run.")
     p.add_argument("--no-save", action="store_true")
     args = p.parse_args()
 
@@ -322,7 +359,8 @@ def main():
                        maxiter=args.maxiter, seed=args.seed, amp0=args.amp0,
                        hard_bound=args.hard_bound, init=args.init,
                        init_x=args.init_x, stage_hook=stage_hook,
-                       w_err=args.w_err, w_dn=args.w_dn, w_smooth=args.w_smooth)
+                       w_err=args.w_err, w_dn=args.w_dn, w_smooth=args.w_smooth,
+                       n_stages=args.stages)
 
     print("\n--- constraints on the saved pulse ---")
     for k, v in info["constraints"].items():

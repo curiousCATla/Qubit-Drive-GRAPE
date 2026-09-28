@@ -225,6 +225,11 @@ def constraint_report(u, dt, cav_band=None, tra_band=None):
 
     report = {
         'peak_amp': float(np.abs(u).max()),
+        # Per-drive complex modulus |I + iQ| -- the quantity Heeres Supp. Eq. 19
+        # caps. peak_amp above is the per-quadrature max and can sit up to
+        # sqrt(2) below it.
+        'peak_modulus_cav': float(np.hypot(u[:, 0], u[:, 1]).max()),
+        'peak_modulus_tra': float(np.hypot(u[:, 2], u[:, 3]).max()),
         'mid_rms': mid_rms,
         'endpoint_start': float(np.abs(u[0]).max()),
         'endpoint_end': float(np.abs(u[-1]).max()),

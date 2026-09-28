@@ -497,6 +497,84 @@ class RampedObjectiveGradientTest(unittest.TestCase):
                 self.assertAlmostEqual(fd, grad[idx], delta=1e-6)
 
 
+class AmplitudePenaltyModulusTest(unittest.TestCase):
+    """
+    grape_core.amplitude_penalty_modulus is Heeres Supp. Eq. 19 on |I + iQ| per
+    drive. Checked by value (including the case the per-quadrature penalty
+    misses), by finite differences, through the constraint chain, and for the
+    optimizer's amp_norm switch.
+    """
+
+    def test_value_matches_eq19(self):
+        amp_max = 25.0
+        u = np.zeros((3, 4))
+        u[0, 0:2] = (20.0, 20.0)   # each quadrature < 25, modulus 28.28 > 25
+        u[1, 2:4] = (30.0, 0.0)    # transmon over by exactly 5
+        u[2] = (10.0, -10.0, 5.0, 5.0)   # both drives under
+        g, _ = grape_core.amplitude_penalty_modulus(u, amp_max=amp_max)
+        expected = (np.sqrt(800.0) - amp_max) ** 2 + 5.0 ** 2
+        self.assertAlmostEqual(g, expected, places=10)
+        # Negative control: the per-quadrature penalty does not see row 0.
+        g_quad, _ = grape_core.amplitude_penalty(u, amp_max=amp_max)
+        self.assertAlmostEqual(g_quad, 5.0 ** 2, places=10)
+
+    def test_finite_difference(self):
+        amp_max = 25.0
+        rng = np.random.default_rng(31)
+        u = rng.uniform(-30.0, 30.0, size=(60, 4))
+        for i, q in ((0, 1), (2, 3)):
+            mag = np.hypot(u[:, i], u[:, q])
+            self.assertGreater(np.abs(mag - amp_max).min(), 1e-3)  # clear of the kink
+        self.assertGreater(np.sum(np.hypot(u[:, 0], u[:, 1]) > amp_max), 0)
+        _, grad = grape_core.amplitude_penalty_modulus(u, amp_max=amp_max)
+        h = 1e-6
+        for idx in np.ndindex(u.shape):
+            up = u.copy(); up[idx] += h
+            um = u.copy(); um[idx] -= h
+            fd = (grape_core.amplitude_penalty_modulus(up, amp_max)[0]
+                  - grape_core.amplitude_penalty_modulus(um, amp_max)[0]) / (2 * h)
+            with self.subTest(idx=idx):
+                self.assertAlmostEqual(fd, grad[idx], delta=1e-5 * max(1.0, abs(fd)))
+
+    def test_finite_difference_through_chain(self):
+        N, dt = 550, 0.002
+        to_physical, to_preimage_grad = ramp.make_constraint_chain(
+            N, dt, (-27.0, 27.0), (-33.0, 33.0), 48.0)
+        amp_max = 1.0   # low enough that the penalty is active on this x
+
+        def cost_and_grad(x):
+            u = to_physical(x)
+            g, gu = grape_core.amplitude_penalty_modulus(u, amp_max=amp_max)
+            return g, to_preimage_grad(gu).ravel()
+
+        rng = np.random.default_rng(23)
+        x = rng.uniform(-5.0, 5.0, size=N * 4)
+        g0, grad = cost_and_grad(x)
+        self.assertGreater(g0, 0.0)
+        h = 1e-6
+        for idx in np.random.default_rng(24).integers(0, N * 4, size=10):
+            xp = x.copy(); xp[idx] += h
+            xm = x.copy(); xm[idx] -= h
+            fd = (cost_and_grad(xp)[0] - cost_and_grad(xm)[0]) / (2 * h)
+            with self.subTest(idx=int(idx)):
+                self.assertAlmostEqual(fd, grad[idx], delta=1e-5 * max(1.0, abs(fd)))
+
+    def test_constraint_report_modulus_keys(self):
+        u = np.zeros((10, 4))
+        u[3, 0:2] = (3.0, 4.0)
+        u[7, 2:4] = (-6.0, 8.0)
+        rep = ramp.constraint_report(u, 0.002)
+        self.assertAlmostEqual(rep['peak_modulus_cav'], 5.0)
+        self.assertAlmostEqual(rep['peak_modulus_tra'], 10.0)
+        self.assertAlmostEqual(rep['peak_amp'], 8.0)
+
+    def test_bad_amp_norm_raises(self):
+        with self.assertRaises(ValueError):
+            optimizer.optimize_multi_state_pulse(
+                get_state_pairs=_toy_state_pairs_m1, trunc_list=[4], n_t=2,
+                N=10, penalties=_TOY_PENALTIES, amp_norm='bogus', verbose=False)
+
+
 class PreimageResumeTest(unittest.TestCase):
     """info['x_preimage'] must reproduce the returned pulse, and resuming from
     it must be exact -- that is the whole reason x_*.npy is written."""

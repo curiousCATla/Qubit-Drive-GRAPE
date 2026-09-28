@@ -1,0 +1,101 @@
+{
+  "gate": "X",
+  "variant": "est_err",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 2,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 500,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0,
+        0.5,
+        0.0,
+        0.0
+      ],
+      "cost": 0.514608630083119,
+      "nit": 500,
+      "nfev": 521,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 470.26740193367004,
+      "terms": {
+        "20": {
+          "c1": 0.03855359164465366,
+          "c2": 0.5110728060866409,
+          "c3": 0.009293062825821782,
+          "c4": 4.1564751816462855e-05,
+          "cerr": 0.10642213929049571,
+          "c5": 0.004615470364606563,
+          "c6": 7724.071274072922
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0,
+        0.5,
+        0.0,
+        0.0
+      ],
+      "cost": 0.06708938295973328,
+      "nit": 500,
+      "nfev": 537,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 485.64732336997986,
+      "terms": {
+        "20": {
+          "c1": 0.003160225277732742,
+          "c2": 0.5958119559673138,
+          "c3": 0.06878539445190128,
+          "c4": 5.131405660429321e-06,
+          "cerr": 0.008685661359217445,
+          "c5": 0.002433782260585347,
+          "c6": 12414.723046880474
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.154814369873336,
+    "max_eps_transmon_rad_per_us": 25.15922714444992,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0011371206256473216,
+      "transmon": 0.0021501753346331964
+    },
+    "endpoint_rel_to_mid": [
+      0.01372682858813301,
+      0.014001686522614963
+    ]
+  },
+  "base_variant": "est",
+  "w_err": 0.5,
+  "w_dn": 0.0,
+  "w_smooth": 0.0
+}
