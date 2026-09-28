@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Two related tracks sharing one repository.
+Three related tracks sharing one repository.
 
 **1. Cat-code GRAPE (the main pipeline, `core/` + everything downstream).** Gradient Ascent
 Pulse Engineering optimal control for a dispersively coupled transmon–cavity circuit-QED
@@ -18,6 +18,12 @@ error-transparent mid-gate. Different chip, different code, JAX autodiff instead
 hand-derived adjoint gradients. It reuses only `core.grape_core.make_ops`/`basis_state` and
 `core.fourier_cutoff.make_band_mask`; it does **not** modify anything under `core/`,
 `validation/`, or `analysis/`. See `EST/CLAUDE.md` and `EST/README.md`.
+
+**3. Passive AQEC (`AQEC/`, `aqec_experiments.ipynb`).** Write-up of the PReSPA tone combs of
+Shirol et al., PRX 16, 021042 (2026) on the odd-parity n̄=3 code `(|1>+|5>)/√2, |3>`. It uses a
+**third chip**, Shirol's Table I (storage/transmon/readout, `AQEC/device.py`), not the EsT or Heeres
+device; the EsT Table I lacks χ_ef, κ_r and T1_ef. Sign convention differs from `EST/device.py`:
+Shirol's χ and α are stored **positive** with explicit minus signs in H0. No dynamics yet.
 
 Full physics/math background for track 1 (Hamiltonian, cat-code definition, adjoint gradients,
 frequency-band-limited controls, penalty terms, truncation-convergence protocol, decoherence
