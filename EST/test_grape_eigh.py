@@ -692,6 +692,41 @@ class StageWeightScheduleTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.sw("est_nope")
 
+    def test_n_stages_2_is_the_default_and_bit_identical(self):
+        """The two-stage schedule must not move when n_stages is passed."""
+        cases = [("est", {}), ("ord", {}), ("paper", {}),
+                 ("est_err", {"w_err": 0.3}), ("est_dn", {"w_dn": 3.0}),
+                 ("est_err_dn", {"w_err": 0.3, "w_dn": 3.0}),
+                 ("est_all", {"w_err": 0.3, "w_dn": 3.0}),
+                 ("est_c3s2", {}), ("est_d2", {"w_smooth": 2e-5}),
+                 ("est_c3s2_d2", {"w_smooth": 2e-5})]
+        for v, kw in cases:
+            self.assertEqual(self.sw(v, **kw), self.sw(v, n_stages=2, **kw), v)
+
+    def test_single_phase_is_stage_1_alone(self):
+        """n_stages=1 holds stage 1's weights for the whole run (notebook s1)."""
+        s1 = (1.0, 0.7, 7.0, 1.0)
+        self.assertEqual(self.sw("est", n_stages=1), [s1])
+        self.assertEqual(self.sw("est_err", w_err=0.3, n_stages=1),
+                         [s1 + (0.3, 0.0, 0.0)])
+        self.assertEqual(self.sw("est_all", w_err=0.3, w_dn=3.0, n_stages=1),
+                         [s1 + (0.3, 3.0, self.d)])
+        # It is a truncation, not a different tuple.
+        for v, kw in (("est", {}), ("est_dn", {"w_dn": 3.0})):
+            self.assertEqual(self.sw(v, n_stages=1, **kw), self.sw(v, **kw)[:1])
+
+    def test_stage2_variants_are_refused_under_one_stage(self):
+        """They are defined by stage 2, so one stage would silently be `est`."""
+        for v, kw in (("est_c3s2", {}), ("est_d2", {"w_smooth": 2e-5}),
+                      ("est_c3s2_d2", {"w_smooth": 2e-5})):
+            with self.assertRaises(ValueError):
+                self.sw(v, n_stages=1, **kw)
+
+    def test_bad_n_stages_raises(self):
+        for n in (0, 3, -1):
+            with self.assertRaises(ValueError):
+                self.sw("est", n_stages=n)
+
 
 if __name__ == "__main__":
     unittest.main()

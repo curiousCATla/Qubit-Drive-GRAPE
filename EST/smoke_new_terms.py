@@ -1,56 +1,57 @@
 """
-Smoke scan for the extra EsT cost terms on the eigh pipeline (EST/grape_eigh.py):
+Weight scan for the extra EsT cost terms on the eigh pipeline (EST/grape_eigh.py):
 ballpark the weights of the error-space infidelity `cerr` (w_err) and of the
-Eq. A7 photon-number mismatch C5 (w_dn) before committing to 2000-it runs.
+Eq. A7 photon-number mismatch C5 (w_dn) before committing to the full runs.
 
     python EST/smoke_new_terms.py calibrate      # score existing pulses, no training
     python EST/smoke_new_terms.py commands       # print the training commands
-    python EST/smoke_new_terms.py summarize      # score the smoke runs, apply the rule
+    python EST/smoke_new_terms.py summarize      # score the scan runs, apply the rule
 
-Budget: X gate, 500 it/stage, both stages, over the SIX seeds of the section 9
-screen that reach a gate (0, 2, 4, 5, 6, 8; seeds 1, 3, 7, 9 park at F1 = 1/3,
-tables/est_multiseed_X.csv). That is the section 9 screen budget, so each seed's
-screen pulse `x_X_est_seed<s>.npy` (tables/est_multiseed_cache/X_seed<s>.json)
-is that seed's no-new-terms CONTROL at no cost.
+SINGLE PHASE. Every run here is `train_est_eigh.py --stages 1`: stage 1's
+weights (w1,w2,w3,w4) = (1, 0.7, 7, 1) held for the whole run, no stage 2. The
+objective that is reported is therefore the objective that was optimized. Stage
+2 is what CLOSES the gate, so expect more parked cells than the two-stage scan
+this replaced -- that is a property of the protocol and is reported, not fixed.
 
-The scan was first run at seed 6 alone, with w_dn in {3, 10, 30, 100}; those
-files carry no seed in their tag (`*_smoke500_w<w>`) and their table
-tables/est_newterms_smoke_X_seed6.csv is kept frozen. Seed 6 reuses them where
-the weight is still on the grid; every other cell is tagged
-`smoke500_seed<s>_w<w>`, so the two can never overwrite each other.
+Budget: X gate, MAXITER = 1000 iterations in the one phase, which is
+compute-matched to the two-stage scan's 500 it/stage x 2. Six seeds (0, 2, 4, 5,
+6, 8), the ones the section 9 two-stage screen reached a gate on
+(tables/est_multiseed_X.csv); whether they still do under one phase is exactly
+what this scan measures.
+
+CONTROLS ARE TRAINED HERE. The old scan reused each seed's section 9 screen
+pulse `x_X_est_seed<s>.npy` as its no-new-terms control at no cost. Those are
+TWO-STAGE pulses and are not comparable to anything below, so `commands` now
+emits six fresh single-phase control runs (`--variant est`, same seed, same
+budget) and `summarize` reads those. 72 weight cells + 6 controls = 78 runs.
+
+The two-stage tables this replaces stay frozen on disk:
+tables/est_newterms_smoke_X_6seeds.csv (six seeds) and
+tables/est_newterms_smoke_X_seed6.csv (the original seed-6-only scan). Nothing
+here writes to either, and the seed-6 untagged-file fallback they relied on is
+gone -- under one phase it would have mixed two-stage pulses into the scan.
 
 Grids. `cerr` is O(0.5) on the delivered X pulses, the same order as w2*c2 ~ 0.15,
-so w_err first spanned {0.3, 1, 3}. EXTENDED DOWNWARD AFTER THE SIX-SEED SCAN,
-to {0.01, 0.1, 0.3, 0.5, 1, 3}: every weight there already removed the endpoint
-leak, but 0.3 -- the smallest -- parked seed 5, so the rule picked no w_err and
-nothing below 0.3 had been tried. C5 is only ~1e-2 (7.0e-3 on u_X_est_best2000,
-9.6e-3 on its stage-1 pulse): both code words have <a> = 0, so a linear
-displacement shifts n0 and n1 equally and Delta_nbar_L comes from the nonlinear
-terms alone. The seed-6 scan showed w_dn = 100 raising L(T) and w_dn = 30 already
-halving Delta_QEC, so w_dn now spans {1, 3, 6, 10, 15, 30}, i.e. w5*c5 ~ 0.01-0.3.
+so w_err spans {0.01, 0.1, 0.3, 0.5, 1, 3}. C5 is only ~1e-2 (7.0e-3 on
+u_X_est_best2000, 9.6e-3 on its stage-1 pulse): both code words have <a> = 0, so
+a linear displacement shifts n0 and n1 equally and Delta_nbar_L comes from the
+nonlinear terms alone. w_dn spans {1, 3, 6, 10, 15, 30}, i.e. w5*c5 ~ 0.01-0.3.
+Both grids are carried over unchanged from the two-stage scan so the two are
+comparable cell for cell.
 
-Selection rule, fixed before looking at the seed-6 results. Per term, the
+Selection rule (unchanged in logic; only the control source moved). Per term, the
 LARGEST weight that
   (1) reaches a gate -- progress = (F1 - F1_parked)/(1 - F1_parked) > 0.5 -- and
       keeps final c1 <= C1_TOL_FACTOR x the control's c1, and
   (2) improves its own target over the control:
         err : F_err(T) = 1 - cerr higher
-        dn  : mean c5 lower AND mean Delta_QEC lower.
-If no weight qualifies for a term, the summary says so and that term is not
-promoted to a full run. Single budget: a ballpark, not an optimum.
-
-REVISED AFTER SEEING THE SEED-6 RESULTS -- recorded, not hidden. The rule above
-selected w_err = 3 and w_dn = 100, and both damage the overall goal: rule
-(2) scores each term only on its own target. w_err = 3 reached the same
-L(T) as 0.3 (0.013 vs 0.011) at F_ET 0.445 vs 0.687; w_dn = 100 raised L(T) to
-0.845 against the control's 0.549. The full runs use the REVISED rule, which
-adds
-  (3) F_ET drops by at most ET_DROP_TOL = 0.05 below the control,
-and selects w_err = 0.3, w_dn = 30. `summarize` prints both selections.
-
-Over six seeds (`apply_rule`): (1) must hold on EVERY seed, each against its own
-control; (2) and (3) compare the seed MEAN of the run against the seed mean of
-the controls. `summarize` also prints how many seeds pass each condition.
+        dn  : mean c5 lower AND mean Delta_QEC lower, and
+  (3) costs at most ET_DROP_TOL in F_ET against the control.
+Condition (3) is the REVISED rule: on the two-stage scan the first two alone
+picked w_err = 3 and w_dn = 100, both of which damage transparency. `summarize`
+prints the pick with and without it. (1) must hold on EVERY seed, each against
+its own control; (2) and (3) compare the seed MEAN against the controls' mean.
+Single budget: a ballpark, not an optimum.
 """
 
 import argparse
@@ -68,23 +69,34 @@ from EST.train_est_eigh import LOG_DIR, PULSE_DIR
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE_DIR = os.path.join(REPO_ROOT, "tables")
 
-GATE, MAXITER, N_C = "X", 500, 20
-# The section 9 X seeds with progress > 0.5 (tables/est_multiseed_X.csv).
+GATE, MAXITER, N_C = "X", 1000, 20
+N_STAGES = 1           # single phase at stage 1's weights; see the docstring
+# The section 9 X seeds with progress > 0.5 (tables/est_multiseed_X.csv) under
+# the TWO-stage screen. Whether one phase still reaches a gate on them is what
+# this scan measures, so a parked cell here is data, not a bad seed.
 SEEDS = (0, 2, 4, 5, 6, 8)
-LEGACY_SEED = 6        # the original single-seed scan; its files carry no seed tag
 GRIDS = {"err": ("est_err", "--w-err", (0.01, 0.1, 0.3, 0.5, 1.0, 3.0)),
          "dn": ("est_dn", "--w-dn", (1.0, 3.0, 6.0, 10.0, 15.0, 30.0))}
 C1_TOL_FACTOR = 3.0
 ET_DROP_TOL = 0.05     # revised rule (3); see module docstring
+# Three tiers, not two. `progress > 0.5` only says a pulse escaped the parked
+# trap at F1 = 1/3; F1_MIN says it is a gate. Single-phase runs are expected to
+# land BETWEEN them. Reporting only -- the SELECTION rule stays control-relative
+# (c1 <= C1_TOL_FACTOR * the control's), so a uniform stall leaves it well-posed.
+F1_MIN = 0.999
 STAGE1_WEIGHTS = (1.0, 0.7, 7.0, 1.0)
 BATCH = 6              # concurrent training jobs per `wait` in `commands`
-CSV_PATH = os.path.join(TABLE_DIR, "est_newterms_smoke_X_6seeds.csv")
+CSV_PATH = os.path.join(TABLE_DIR, "est_newterms_smoke_X_6seeds_sp.csv")
 MEAN_COLS = ["F1", "F_ET", "F_err_T", "c5", "delta_qec_mean", "L_mean", "L_T",
              "eta0_mean", "eta_avg_mean"]
 
 
 def _tag(w, seed):
-    return f"smoke500_seed{seed}_w{w:g}"
+    return f"sp{MAXITER}_seed{seed}_w{w:g}"
+
+
+def _ctrl_tag(seed):
+    return f"sp{MAXITER}_ctrl_seed{seed}"
 
 
 def _paths(variant, tag):
@@ -94,13 +106,37 @@ def _paths(variant, tag):
 
 
 def _names(term, w, seed):
-    """(x path, json path) for one scan cell; seed 6 falls back to the legacy files."""
-    variant = GRIDS[term][0]
-    if seed == LEGACY_SEED:
-        legacy = _paths(variant, f"smoke500_w{w:g}")
-        if os.path.exists(legacy[0]):
-            return legacy
-    return _paths(variant, _tag(w, seed))
+    """(x path, json path) for one scan cell.
+
+    No legacy fallback. The old scan let seed 6 reuse the original untagged
+    `*_smoke500_w<w>` files; those are TWO-stage runs, so reusing them here
+    would silently mix protocols.
+    """
+    return _paths(GRIDS[term][0], _tag(w, seed))
+
+
+def _ctrl_names(seed):
+    """(x path, json path) for a seed's freshly trained single-phase control."""
+    return _paths("est", _ctrl_tag(seed))
+
+
+def _require_phases(jpath):
+    """Refuse to score a pulse trained with a different number of phases.
+
+    pulses/est/ holds 600+ files and the two-stage `*_seed<s>` / `*_smoke500_*`
+    artifacts all look plausible next to these. `n_stages` is absent from JSONs
+    written before the flag existed, so fall back to counting stages.
+    """
+    if not os.path.exists(jpath):
+        return {}
+    with open(jpath) as fh:
+        info = json.load(fh)
+    n = info.get("n_stages", len(info.get("stages", [])))
+    if n != N_STAGES:
+        raise SystemExit(
+            f"{jpath} was trained with {n} stage(s); this scan is the "
+            f"{N_STAGES}-phase campaign. Retrain it with --stages {N_STAGES}.")
+    return info
 
 
 def score_x(x, gate=GATE):
@@ -137,10 +173,12 @@ def score_x(x, gate=GATE):
 
 
 def calibrate():
+    # Reference pulses only, for ballparking term sizes. All TWO-stage; they are
+    # not controls for this scan (see the docstring) and nothing below uses them.
     pulses = [("best2000 stage 1", "x_X_est_best2000_stage1.npy"),
               ("best2000 final", "x_X_est_best2000.npy"),
               ("seed-0 JAX est", "x_X_est.npy"),
-              ("screen seed 6 (control)", "x_X_est_seed6.npy")]
+              ("screen seed 6 (2-stage)", "x_X_est_seed6.npy")]
     print(f"{'pulse':<26s} {'w2*c2':>8s} {'cerr':>8s} {'c5':>9s} {'c6':>9s} "
           f"{'5e-6*c6':>8s} {'F_err(T)':>9s}")
     for label, fn in pulses:
@@ -155,16 +193,25 @@ def calibrate():
 
 
 def commands():
+    """Every run still missing, controls first. All single phase (--stages 1)."""
+    base = (f"OMP_NUM_THREADS=1 python3 EST/train_est_eigh.py --gate {GATE} "
+            f"--stages {N_STAGES} --maxiter {MAXITER}")
     todo = []
+    # Controls first: summarize() needs a seed's control to score its cells.
+    for seed in SEEDS:
+        if os.path.exists(_ctrl_names(seed)[0]):
+            continue
+        todo.append(f"{base} --variant est --seed {seed} "
+                    f"--tag {_ctrl_tag(seed)} "
+                    f"> logs/sp_ctrl_seed{seed}.log 2>&1 &")
     for seed in SEEDS:
         for term, (variant, flag, grid) in GRIDS.items():
             for w in grid:
                 if os.path.exists(_names(term, w, seed)[0]):
                     continue
-                todo.append(f"OMP_NUM_THREADS=1 python3 EST/train_est_eigh.py --gate {GATE} "
-                            f"--variant {variant} {flag} {w:g} --seed {seed} "
-                            f"--maxiter {MAXITER} --tag {_tag(w, seed)} "
-                            f"> logs/smoke_{variant}_seed{seed}_w{w:g}.log 2>&1 &")
+                todo.append(f"{base} --variant {variant} {flag} {w:g} "
+                            f"--seed {seed} --tag {_tag(w, seed)} "
+                            f"> logs/sp_{variant}_seed{seed}_w{w:g}.log 2>&1 &")
     for i, cmd in enumerate(todo, start=1):
         print(cmd)
         if i % BATCH == 0 or i == len(todo):
@@ -185,6 +232,7 @@ def apply_rule(df):
     ctrl = df[df.term == "control"]
     ctrl_mean = ctrl[MEAN_COLS].mean()
     rows = [{"term": "control", "weight": 0.0, "n_seeds": len(ctrl),
+             "closed_seeds": int(ctrl.gate_closed.astype(bool).sum()),
              **ctrl_mean.to_dict()}]
     chosen, chosen_rev = {}, {}
     for term, (_, _, grid) in GRIDS.items():
@@ -203,6 +251,7 @@ def apply_rule(df):
             et_ok = m.F_ET >= ctrl_mean.F_ET - ET_DROP_TOL
             rows.append({"term": term, "weight": w, "n_seeds": len(d), **m.to_dict(),
                          "gate_ok_seeds": int(d.gate_ok.astype(bool).sum()),
+                         "closed_seeds": int(d.gate_closed.astype(bool).sum()),
                          "improves_seeds": int(d.improves.astype(bool).sum()),
                          "et_ok_seeds": int(d.et_ok.astype(bool).sum()),
                          "gate_ok": gate_ok, "improves": bool(improves),
@@ -221,18 +270,26 @@ def summarize():
 
     rows, missing = [], []
     for seed in SEEDS:
-        ctrl = score_x(np.load(os.path.join(PULSE_DIR, f"x_{GATE}_est_seed{seed}.npy")))
+        ctrl_x, _ = _ctrl_names(seed)
+        if not os.path.exists(ctrl_x):
+            missing.append(ctrl_x)
+            print(f"missing control {ctrl_x}; seed {seed} skipped entirely "
+                  "(its cells have nothing to be scored against)")
+            continue
+        _require_phases(_ctrl_names(seed)[1])
+        ctrl = score_x(np.load(ctrl_x))
         rows.append({"term": "control", "weight": 0.0, "seed": seed, **ctrl,
-                     "gate_ok": ctrl["progress"] > 0.5})
+                     "gate_ok": ctrl["progress"] > 0.5,
+                     "gate_closed": ctrl["F1"] >= F1_MIN})
         for term, (_, _, grid) in GRIDS.items():
             for w in grid:
                 xpath, jpath = _names(term, w, seed)
                 if not os.path.exists(xpath):
                     missing.append(xpath)
                     continue
+                info = _require_phases(jpath)
                 s = score_x(np.load(xpath))
-                with open(jpath) as fh:
-                    info = json.load(fh)
+                s["gate_closed"] = s["F1"] >= F1_MIN
                 s["nit"] = "+".join(str(st["nit"]) for st in info["stages"])
                 # Condition (1) is per seed, against that seed's own control.
                 s["gate_ok"] = (s["progress"] > 0.5
@@ -253,7 +310,17 @@ def summarize():
 
     parked = df[(df.term == "control") & ~df.gate_ok.astype(bool)]
     if len(parked):
-        print("WARNING: control seeds that do not reach a gate:", parked.seed.tolist())
+        print("WARNING: control seeds PARKED at F1 = 1/3:", parked.seed.tolist())
+    open_gate = df[(df.term == "control") & df.gate_ok.astype(bool)
+                   & ~df.gate_closed.astype(bool)]
+    if len(open_gate):
+        print(f"WARNING: control seeds that drove but did NOT close the gate "
+              f"(F1 < {F1_MIN}): "
+              + ", ".join(f"{int(r.seed)}:{r.F1:.4f}" for r in open_gate.itertuples()))
+        print("  Single-phase holds w2=0.7 and w3=7 to the end; stage 2 is what "
+              "finishes the gate. EST/CLAUDE.md records the same effect on T "
+              "(est_c3s2, F1 ~ 0.98). Selection below is control-relative and "
+              "stays well-posed; the absolute claim 'these are gates' does not.")
 
     agg, chosen, chosen_rev = apply_rule(df)
     with pd.option_context("display.width", 250, "display.max_columns", 30):

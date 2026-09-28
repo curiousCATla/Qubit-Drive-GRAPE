@@ -104,6 +104,18 @@ frozen pre-ramp `tables/penalty_sweep_X_ofat.csv`, and **never change `FIXED`, `
 else `_config_hash` covers, and never delete `results/penalty_sweep_cache/`** — either invalidates the
 cached pulses and forces a multi-hour retrain.
 
+The sweep's live tag is now **`amp25`** (`tables/penalty_sweep_X_ofat_amp25.csv`): `FIXED` was moved
+onto the production amplitude recipe (`amp_max` = `hard_amp_limit` = 25, `amp_norm="modulus"`) and the
+`amp_max` ladder densified to 9 rungs, so all 20 configs × 10 seeds were retrained from scratch. The
+u_max=40 tables (`tables/penalty_sweep_X_ofat_ramp*.csv`) are now a **second frozen regime** alongside
+the pre-ramp ones — same three axes, different amplitude settings, different pulses. Never concatenate
+across regimes. `penalty_optimization.ipynb` §1–§10 has been rewritten against the new campaign;
+§11–§15 remain the frozen pre-ramp record. Two artifacts are **overwritten in place** and now hold
+u_max=25 data despite their names: `tables/penalty_sweep_summary_ramp.csv` and
+`figures/penalty_pareto.*` (the latter is still `\includegraphics`'d by
+`penalty_optimization_report.tex`, whose prose remains u_max=40 at a 70% budget — a known, unfixed
+inconsistency).
+
 EsT module (`EST/`): commands, per-module notes and conventions live in `EST/CLAUDE.md`, which loads
 when working with files under `EST/`. Read it explicitly before EsT work that starts elsewhere
 (`est_experiments.ipynb`, `est_optimization.ipynb`, `pulses/est/`, `logs/est_*`).
@@ -134,8 +146,9 @@ All scripts assume they are run from the repository root (several insert `REPO_R
   inflation is the box on the raw variable, so raising `hard_amp_limit` would quietly undo part
   of the ramp. **Mind which default you are getting**: `optimize_multi_state_pulse` defaults to
   `hard_amp_limit=50.0`, `refine_pulse`/`refine_pulse_dt`/`refine_pulse_dt_light` to 40.0,
-  `analysis/penalty_sweep.py` `FIXED` stays at 40.0 (cache), and the production paths
-  (`main.py`, the notebook recipe) pin **25.0**. All the numbers below are against 25.
+  and `analysis/penalty_sweep.py` `FIXED` and the production paths (`main.py`, the notebook
+  recipe) all pin **25.0** — the sweep used to sit at 40.0 to protect its cache and no longer
+  does. All the numbers below are against 25.
   **The box binds at 25, and seeds are therefore per gate** (`GATE_SEEDS` in the notebook;
   `--seed` on `main.py`): enc 47, dec 43, X 43, Y 46, and Z/H/T/I 42.
   `u_enc_main` sits at exactly `max|x| = 25.00` with 0.41% of entries pinned at *every* seed

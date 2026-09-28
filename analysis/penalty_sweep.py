@@ -98,17 +98,36 @@ from main import GATE_FACTORIES, report_pedersen_gate_fidelity
 # Fixed experimental conditions -- everything that is NOT swept
 # ============================================================
 #
-# NO LONGER a mirror of main.py for the amplitude knobs. The production recipe
-# moved to amp_max = hard_amp_limit = 25 with the per-drive MODULUS penalty
-# (optimizer amp_norm='modulus', Heeres Supp. Eq. 19). This sweep deliberately
-# stays at 40 / per-quadrature (optimize_multi_state_pulse's default
-# amp_norm): changing FIXED invalidates every cached pulse. Treat its tables
-# as a record of the pre-change u_max=40 regime.
+# A MIRROR of main.py / experiments.ipynb's OPTIMIZATION_RECIPE again, including
+# the amplitude knobs. The sweep used to sit deliberately at
+# amp_max = hard_amp_limit = 40 with the optimizer's default per-QUADRATURE
+# amplitude penalty, one regime behind production, because changing FIXED
+# invalidates every cached pulse. That debt is now paid: this is
+# amp_max = hard_amp_limit = 25 with the per-drive MODULUS penalty
+# (amp_norm='modulus', Heeres Supp. Eq. 19), so the weights are tuned in the
+# regime the shipped pulses under pulses/u_*_main.npy actually live in.
 #
-# These mirror main.py's production defaults. They are pinned here rather than
-# exposed as sweep axes so that every row in the output CSV differs ONLY in the
-# penalty weights. Changing anything here invalidates the cache (it is part of
-# the config hash), which is the intended behavior.
+# The move cost a full retrain of all 20 configs x 10 seeds. The ~230 pulses
+# already under results/penalty_sweep_cache/ are NOT deleted: they back the
+# frozen pre-ramp tables, the u_max=40 post-ramp tables
+# (tables/penalty_sweep_X_ofat_ramp*.csv), and validation/test_pulse_metrics.py's
+# INCUMBENT_HASH / CONTROL_HASH fixtures. Never concatenate a u_max=40 table
+# with a u_max=25 one -- different FIXED, different hash space, different
+# experiment.
+#
+# Two consequences of u_max=25 that the rest of this module's prose assumes:
+#   * The BOX BINDS. At hard_amp_limit=40 it essentially never did; at 25 it
+#     does on amplitude-hungry runs (see the root CLAUDE.md, and GATE_SEEDS in
+#     experiments.ipynb, which exists for exactly this reason). Expect
+#     `max_abs_preimage` / `preimage_at_bound_frac` to be far more populated
+#     than in the u_max=40 tables. That is the regime, not a regression.
+#   * The CAP and the `peak_amp` COLUMN finally measure the same quantity --
+#     see the AMP_MAX_VALUES note below.
+#
+# These are pinned here rather than exposed as sweep axes so that every row in
+# the output CSV differs ONLY in the penalty weights. Changing anything here
+# invalidates the cache (it is part of the config hash), which is the intended
+# behavior.
 
 FIXED = {
     "trunc_list": [22, 24, 26],
@@ -117,8 +136,14 @@ FIXED = {
     "dt": 0.002,
     "cav_band": (-27.0, 27.0),
     "tra_band": (-33.0, 33.0),
-    "hard_amp_limit": 40.0,
-    "amp_max": 40.0,
+    "hard_amp_limit": 25.0,      # production box on the pre-image x (was 40.0)
+    "amp_max": 25.0,             # production soft cap on |I+iQ| (was 40.0)
+    # Which norm `amp_max` charges against. Production is 'modulus' (Heeres
+    # Supp. Eq. 19, per-drive |I+iQ|); optimize_multi_state_pulse still DEFAULTS
+    # to 'quadrature', so this must be threaded explicitly to every call site or
+    # the setting silently does nothing. It enters `_config_hash` for free, via
+    # the `fixed` payload.
+    "amp_norm": "modulus",
     "ramp_ns": 48.0,             # Gaussian rise/fall; replaced the `boundary` penalty
     "warm_start": None,          # smooth random warm start, seeded per-run
 }
@@ -231,53 +256,72 @@ OFAT_MULTIPLIERS = (0.0, 0.1, 0.3, 1.0, 3.0, 10.0)
 # --- The amp_max axis --------------------------------------------------
 #
 # Sweeping `lambda_amp` is a NO-OP under these fixed conditions, and measurably
-# so: `amplitude_penalty(u, amp_max=40)` returns exactly 0.0 with an exactly
-# zero gradient, because converged pulses here peak near 17 rad/us -- well under
-# the 40 rad/us soft threshold. Multiplying an identically-zero term by any
-# weight changes nothing (verified: F_coh range 0.0e+00 across lambda_amp
-# 0 -> 8e-4).
+# so: at the u_max=40 threshold the penalty returned exactly 0.0 with an exactly
+# zero gradient, because converged pulses peaked well below it. Multiplying an
+# identically-zero term by any weight changes nothing (verified: F_coh range
+# 0.0e+00 across lambda_amp 0 -> 8e-4). That argument is weaker now that
+# FIXED["amp_max"] = 25 sits just above the converged peak rather than far above
+# it, but the conclusion is unchanged: the live knob is the THRESHOLD, not the
+# weight. This ladder brackets the observed peak amplitude, so the low end binds
+# hard and the high end never binds -- which is what makes it a real peak-power
+# constraint.
 #
-# The live knob is the THRESHOLD, not the weight. This ladder brackets the
-# observed peak amplitude, so the low end binds hard and the high end never
-# binds -- which is what makes it a real peak-power constraint.
+# THE CAP AND THE `peak_amp` COLUMN NOW MEASURE THE SAME THING. Under
+# FIXED["amp_norm"] = 'modulus' the penalty charges the per-drive complex
+# modulus max(|eps_C|, |eps_T|) (core.grape_core.amplitude_penalty_modulus,
+# Heeres Supp. Eq. 19) -- which is EXACTLY this module's `peak_amp` column (see
+# `pulse_metrics`). Under the old 'quadrature' norm it charged max|u| element-wise
+# over the (N,4) quadratures instead, a quantity up to sqrt(2) SMALLER than
+# `peak_amp` and absent from the table, and reading one against the other is why
+# the pre-2026 ladder's amp_max=20 rung looked like it should bind and mostly did
+# not. That trap is gone: a row's `peak_amp` can now be read directly against its
+# `amp_max`. Do not reintroduce element-wise reasoning here.
 #
 # The upper rungs are DELIBERATELY inert, and they are the most useful part of
-# the ladder. Note the threshold acts ELEMENT-WISE on the (N,4) quadratures, so
-# the quantity it charges against is max|u| element-wise -- NOT this module's
-# `peak_amp` column, which is the complex-envelope max. That distinction is why
-# the previous ladder's amp_max=20 rung looked like it should bind and mostly
-# did not.
+# the ladder -- see the regime split below.
 #
-# Measured element-wise peak of an UNCONSTRAINED converged pulse: 17.73 on
-# pulses/u_X_main.npy, and 18.0 / 18.4 / 20.2 on the pre-ramp cached sweep
-# pulses at seeds 42/43/44. So the binding threshold sits at ~18-20 and is
-# seed-dependent. Against u_X_main at lambda_amp = 8e-5:
+# MEASURED against pulses/u_X_main.npy (peak per-drive modulus 22.10 rad/us; the
+# element-wise max|u| is 20.96 and is now charged by nothing) at
+# lambda_amp = 8e-5, counting violations over the 2*N = 1100 per-drive samples:
 #
-#     amp_max      10      14      18   22   26   30   40
-#     lam*g_amp   0.171   0.019     0    0    0    0    0
-#     violations   162      51      0    0    0    0    0   (of 2200 entries)
+#     amp_max        8       10      12      14     16     18    22   26  30  |25
+#     lam*g_amp   1.2099   0.6549  0.3314  0.1505 0.0553 0.0160  0.0   0   0  | 0
+#     violations   490      371     217     127     88     38     4    0   0  | 0
 #
-# So the ladder splits into three regimes, and each is an instrument:
+# So the ladder splits into three regimes, and each one is an instrument:
 #
-#   10, 14  genuinely bind -- the only rungs that constrain every seed.
-#   18      straddles the threshold: binds for the higher-peak seeds, not the
-#           lower ones. A dynamically marginal yet finite perturbation, i.e. the
-#           direct analogue of the retired `disc` ladder, and what re-measures
-#           `floor_basin` (the 1.03e-3 basin-noise floor) post-ramp.
-#   22, 26, 30  exactly zero at every iterate, so they optimize the SAME
-#           objective as the baseline and can differ only by reduction-order
-#           nondeterminism. Nine independent replicates of the incumbent recipe
-#           -- what re-measures `floor_bitwise`, which used to come from a
-#           single accidental OFAT/grid float-rounding collision on `boundary`
-#           and cannot be reproduced now that that axis is gone.
+#   8, 10, 12, 14, 16, 18   genuinely bind, over a 76x range in the penalty they
+#           charge. The low three (8, 12, 16) are NEW. At u_max=40 the binding
+#           region was sampled by exactly two rungs (10 and 14) and everything
+#           above was null; the point of the densification is that with the cap
+#           at 25 the interesting region is wide, and is now sampled by six.
+#   22      straddles: 4 violations of 1100 and lam*g_amp rounding to zero. A
+#           dynamically marginal yet finite perturbation -- the direct analogue
+#           of the retired `disc` ladder, and the rung to watch for a
+#           "provably-tiny objective change moves the held-out fidelity anyway"
+#           result.
+#   26, 30  exactly zero at every iterate, so they optimize the SAME objective as
+#           the baseline (which is itself null at amp_max=25: last column above)
+#           and can differ from it only by reduction-order nondeterminism. Two
+#           independent replicates of the incumbent recipe per seed, 20 null cells
+#           at n=10. This is the sole instrument behind the noise floor in
+#           penalty_optimization.ipynb section 6.2.
 #
-# These are PREDICTIONS, and the notebook reports them as such. If the nominally
-# null rungs come back non-identical, that is real nondeterminism in the
-# pipeline and a more important finding than the ladder itself.
+# Note the last column: `lambda_amp` remains a NO-OP at the incumbent recipe, so
+# retiring it as an axis in favour of the threshold still holds at u_max=25.
 #
-# Do not "trim the inert rungs": trimming them deletes both noise floors, and
-# the pre-ramp tables that used to carry them are not comparable to new rows.
-AMP_MAX_VALUES = (10.0, 14.0, 18.0, 22.0, 26.0, 30.0)
+# That is TWO null rungs where the u_max=40 ladder had three (22/26/30, of which
+# 30 was null at every seed and 26 at 9 of 10). Two is still enough, but it is
+# the whole margin -- do NOT "trim the inert rungs": trimming them deletes the
+# noise floor, and the u_max=40 tables that used to carry it are a different
+# regime and not comparable.
+#
+# The table above is measured at ONE seed's converged pulse, so the 22 rung in
+# particular is a PREDICTION about the campaign, and the notebook reports it as
+# such. If 26 or 30 come back binding, or non-identical to the incumbent, that is
+# real nondeterminism -- or the box rather than the cap choosing the pulse -- and
+# a more important finding than the ladder itself.
+AMP_MAX_VALUES = (8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 22.0, 26.0, 30.0)
 
 # --- The ramp_ns axis --------------------------------------------------
 #
@@ -292,26 +336,30 @@ AMP_MAX_VALUES = (10.0, 14.0, 18.0, 22.0, 26.0, 30.0)
 # (5.5% .. 12.7% of the 550), which L-BFGS-B buys back by inflating the
 # PRE-IMAGE, bounded only by `hard_amp_limit`.
 #
-# MEASURED (seeds 42/43/44, gate X): the first half holds and the second does
-# NOT. endpoint_rel_to_peak falls 2.81% -> 0.83% across the ladder, Spearman
-# rho = -0.94 against ramp duration: the ramp does exactly its job. But
-# max_abs_preimage has **rho = +0.03** against ramp duration -- no relationship
-# at all -- and the 70 ns rung has the LOWEST mean max|x| of the ladder (23.5,
-# against the incumbent's 25.0).
+# MEASURED AT u_max = 40, seeds 42-51, gate X -- read as history, not as a
+# prediction for this campaign. endpoint_rel_to_peak fell 2.81% -> 0.83% across
+# the ladder (Spearman rho = -0.94 against ramp duration): the ramp does exactly
+# its job, and that half is a statement about the envelope alone, so it carries
+# over. The pre-image half does NOT carry over. Against ramp duration
+# max_abs_preimage went rho = +0.03 (n=3) -> +0.54 (n=6) -> +0.83 (n=10),
+# monotone in sample size -- which is what an under-sampled real effect looks
+# like -- reaching 79% of the box; against `lambda_deriv` it is rho = -0.83, the
+# same magnitude. The discriminator is per-seed SIGN CONSISTENCY, not magnitude:
+# `lambda_deriv` holds its sign at all ten seeds, `ramp_ns` ranges -0.37..+0.77
+# and changes sign. So `lambda_deriv` remains the better-supported driver of
+# pre-image inflation, and core/ramp.py's docstring should be read as a statement
+# about ramp-vs-no-ramp at the fixed 48 ns default; on DURATION the evidence is
+# unresolved, not settled either way.
 #
-# What actually governs pre-image inflation here is `lambda_deriv`
-# (rho = -0.94: 32.1 at lambda_deriv = 0 down to 20.7 at 1e-4). That makes sense
-# in hindsight -- the derivative penalty is what charges for the large
-# step-to-step excursions an inflated pre-image produces -- but it was not the
-# expectation, and core/ramp.py's docstring should be read as a statement about
-# ramp-vs-no-ramp at the fixed 48 ns default, NOT about ramp duration.
-#
-# So the one clipped run in the sweep (ramp=60, seed 42, max|x| = 40.0 exactly,
-# 0.046% of entries pinned) is a basin accident at one seed, not the top of a
-# trend. `max_abs_preimage` and `preimage_at_bound_frac` are still scored per
-# row, and still earn their place: that run reported the BEST robustness spread
-# in the entire sweep (5.99e-04) and is invisible as a failure by every metric
-# that existed before them.
+# WHAT CHANGES AT u_max = 25: the box those correlations are measured against has
+# HALVED, and at 25 it genuinely binds (root CLAUDE.md; it is why experiments.ipynb
+# carries a per-gate GATE_SEEDS). Seven rows of 170 pinned the 40 box; expect
+# materially more here, and expect `preimage_at_bound_frac` to be the column that
+# says so. A pinned row is a row where the BOX chose the pulse, so its fidelity is
+# not comparable to the rest of its ladder -- that is what these two columns exist
+# to expose, and it is also why the right instrument for the ramp-duration question
+# is a `hard_amp_limit` ladder (the obvious third FIXED_AXES knob) rather than more
+# seeds. `ramp_ns x hard_amp_limit` is no longer safely dismissible as a grid.
 #
 # `ramp_envelope` raises once 2*ramp_ns >= N*dt, i.e. above 550 ns at this
 # geometry (N=550, dt=0.002 us => T = 1100 ns). Keep the ladder well clear.
@@ -886,6 +934,16 @@ def _preimage_stats(info, hard_amp_limit):
     longer ramp makes it likelier, so a ramp ladder without these two columns
     cannot tell a converged rung from a clipped one.
 
+    AT FIXED["hard_amp_limit"] = 25 THESE COLUMNS ARE NO LONGER RARE. The 40 box
+    this detector was built against was pinned by 7 rows of 170; the production
+    box is 25 and it genuinely binds (root CLAUDE.md), which is why
+    experiments.ipynb pins a seed per gate. Expect a substantial fraction of rows
+    to report a non-zero `preimage_at_bound_frac`. Read it the same way regardless
+    of how common it is: a pinned row is one the box chose, so its fidelity is not
+    comparable to the rest of its ladder. Clipped-but-healthy (held-out fidelity
+    still ~0.997) is a warning; clipped WITH a large `overfit_gap` is a different
+    basin and must leave the ranking.
+
     NOT recomputable from a cached pulse: the sweep trains with save_path=None,
     so no pre-image is written to disk. A reused row therefore reports NaN here
     rather than a wrong number, and `_METRIC_KEYS`' backfill leaves it alone.
@@ -988,6 +1046,7 @@ def _get_or_train_phase1(gate, cfg, seed, h, n_t, N, dt, verbose, force):
         save_path=None, n_jobs=len(TWO_PHASE["phase1_trunc_list"]),
         cav_band=FIXED["cav_band"], tra_band=FIXED["tra_band"],
         ramp_ns=kn["ramp_ns"], hard_amp_limit=FIXED["hard_amp_limit"],
+        amp_norm=FIXED["amp_norm"],
         fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
     )
     train_time = time.time() - t0
@@ -1154,6 +1213,9 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
             save_path=None, n_jobs=n_jobs, cav_band=FIXED["cav_band"],
             tra_band=FIXED["tra_band"], ramp_ns=kn["ramp_ns"],
             hard_amp_limit=FIXED["hard_amp_limit"],
+            # optimize_multi_state_pulse still DEFAULTS to 'quadrature'; without
+            # this the FIXED["amp_norm"] setting would silently do nothing.
+            amp_norm=FIXED["amp_norm"],
             fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
         )
         if protocol == "two_phase":
@@ -1185,6 +1247,7 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
                 save_path=None, n_jobs=len(TWO_PHASE["phase2_trunc_list"]),
                 cav_band=FIXED["cav_band"], tra_band=FIXED["tra_band"],
                 ramp_ns=kn["ramp_ns"], hard_amp_limit=FIXED["hard_amp_limit"],
+                amp_norm=FIXED["amp_norm"],
                 fidelity_fn=coherent_fidelity_multi_state, verbose=verbose,
             )
             phase2_time = time.time() - t0
@@ -1238,6 +1301,12 @@ def run_one(gate, cfg, seed, maxiter, eval_truncs, n_jobs=3, verbose=False,
         # THIS, not by the envelope -- so a row reporting max_abs_preimage
         # without reporting what bounded it is not self-describing.
         "hard_amp_limit": float(FIXED["hard_amp_limit"]),
+        # Which norm `amp_max` was charged against ('modulus' = per-drive
+        # |I+iQ|, Heeres Supp. Eq. 19, and the quantity `peak_amp` reports;
+        # 'quadrature' = element-wise max|u|, which no column reports). A row
+        # comparing peak_amp to amp_max is only meaningful under 'modulus', so
+        # the table has to say which it is.
+        "amp_norm": FIXED["amp_norm"],
         "F_coh_train": float(info.get("final_fidelity", np.nan)),
         "iterations": info.get("iterations", np.nan),
         "converged": info.get("success", None),
