@@ -1,5 +1,5 @@
 """
-Ablation of the extra EsT cost terms on X, seed 0, eigh pipeline, SINGLE PHASE
+Ablation of the extra EsT cost terms on X, seed 4, eigh pipeline, SINGLE PHASE
 at 2000 iterations.
 
     python EST/compare_new_terms.py
@@ -11,13 +11,29 @@ that was optimized, and each run contributes ONE row rather than a
 stage-1/final pair. Stage 2 is what closes the gate in the two-stage schedule,
 so read F1 and `progress` on every row before reading anything else.
 
-Runs compared (all cold starts from the same seed-0 pre-image):
+Runs compared (all cold starts from the same seed-4 pre-image, all trained on
+the Windows PC, hence the `_win` suffix):
 
-    baseline     u_X_est_sp2000_seed0          C1..C4 only
-    est_err      u_X_est_err_sp2000_seed0      + terminal error-space infidelity
-    est_dn       u_X_est_dn_sp2000_seed0       + Eq. A7 photon-number mismatch C5
-    est_err_dn   u_X_est_err_dn_sp2000_seed0   + both
-    est_all      u_X_est_all_sp2000_seed0      + both + smoothness C6
+    baseline     u_X_est_sp2000_seed4_win          C1..C4 only
+    est_err      u_X_est_err_sp2000_seed4_win      + terminal error-space infidelity
+    est_dn       u_X_est_dn_sp2000_seed4_win       + Eq. A7 photon-number mismatch C5
+    est_err_dn   u_X_est_err_dn_sp2000_seed4_win   + both
+    est_all      u_X_est_all_sp2000_seed4_win      + both + smoothness C6
+    est_lk       u_X_est_lk_sp2000_seed4_win       + leakage out of E(t), C_L
+                                                     (alone; weight from the
+                                                     C_L ladder of
+                                                     EST/smoke_new_terms.py)
+
+The first seed-4 campaign (tag sp2000_seed4, no suffix) was trained on the Mac.
+Training does not repeat bit for bit across machines, so those pulses and
+their tables (tables/est_newterms_X_seed4_sp{.csv,_traces.npz}) stay on disk as
+a frozen record; set MACHINE_SUFFIX = "" to rebuild them.
+
+Why seed 4: the first campaign ran seed 0, where est_dn PARKED (F1 = 1/3, no
+drive), so it gave no C5-alone measurement. Seeds 4, 6 and 8 are the scan seeds
+that drove in all 12 scan cells (EST/smoke_new_terms.py). The seed-0 tables
+(tables/est_newterms_X_seed0_sp*) were deleted on 2026-10-19 (never committed);
+the seed-0 pulses are still in pulses/est/, so set SEED = 0 to rebuild them.
 
 The baseline is TRAINED here. The two-stage version of this table reused
 `u_X_est_best2000` (est_experiments section 9.2), which is seed 6 and two-stage,
@@ -31,14 +47,14 @@ leak of limitation 3 lives.
 Train with:
 
     for v in est est_err est_dn est_err_dn est_all; do
-      OMP_NUM_THREADS=2 python3 EST/train_est_eigh.py --gate X --variant $v \
-          --stages 1 --seed 0 --maxiter 2000 --w-err 0.3 --w-dn 3 \
-          --tag sp2000_seed0 &
+      OMP_NUM_THREADS=2 python EST/train_est_eigh.py --gate X --variant $v \
+          --stages 1 --seed 4 --maxiter 2000 --w-err 0.3 --w-dn 3 \
+          --tag sp2000_seed4_win &
     done; wait
 
-Outputs (the figures are drawn in est_optimization.ipynb section 1)
-    tables/est_newterms_X_seed0_sp.csv         one row per run
-    tables/est_newterms_X_seed0_sp_traces.npz  per-time traces, keys "<run>/<name>"
+Outputs (the figures are drawn in est_optimization.ipynb section 2)
+    tables/est_newterms_X_seed4_sp_win.csv         one row per run
+    tables/est_newterms_X_seed4_sp_win_traces.npz  per-time traces, keys "<run>/<name>"
 
 The two-stage seed-6 tables this replaces stay frozen on disk as
 tables/est_newterms_X_seed6.csv and tables/est_newterms_X_seed6_traces.npz.
@@ -63,12 +79,18 @@ from EST.train_est_eigh import LOG_DIR, PULSE_DIR
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE_DIR = os.path.join(REPO_ROOT, "tables")
-CSV_PATH = os.path.join(TABLE_DIR, "est_newterms_X_seed0_sp.csv")
-TRACES_PATH = os.path.join(TABLE_DIR, "est_newterms_X_seed0_sp_traces.npz")
 
 GATE, N_C = "X", 20
-SEED, N_STAGES, MAXITER = 0, 1, 2000
-TAG = f"sp{MAXITER}_seed{SEED}"
+SEED, N_STAGES, MAXITER = 4, 1, 2000
+# Which machine trained the five runs. EsT training is deterministic on one
+# machine but not across them (Mac Accelerate vs this PC's OpenBLAS), so the
+# suffix goes into both the training tag and the table names. "" rebuilds the
+# frozen Mac record (tag sp2000_seed4, tables est_newterms_X_seed4_sp*).
+MACHINE_SUFFIX = "_win"
+CSV_PATH = os.path.join(TABLE_DIR, f"est_newterms_X_seed{SEED}_sp{MACHINE_SUFFIX}.csv")
+TRACES_PATH = os.path.join(TABLE_DIR,
+                           f"est_newterms_X_seed{SEED}_sp{MACHINE_SUFFIX}_traces.npz")
+TAG = f"sp{MAXITER}_seed{SEED}{MACHINE_SUFFIX}"
 # Three tiers, not two. `progress > 0.5` only says a pulse escaped the parked
 # trap at F1 = 1/3; F1_MIN says it is a gate. Single-phase training is expected
 # to land BETWEEN them -- the two-stage X finals read 0.9991-0.9995, while the
@@ -84,6 +106,7 @@ RUNS = [  # (label, name stem); the baseline is a trained run, not a reused puls
     ("est_dn", f"est_dn_{TAG}"),
     ("est_err_dn", f"est_err_dn_{TAG}"),
     ("est_all", f"est_all_{TAG}"),
+    ("est_lk", f"est_lk_{TAG}"),
 ]
 
 
@@ -142,7 +165,7 @@ def score(u, x, gate=GATE):
         "progress": (r["F1"] - parked) / (1 - parked),
         "heldout_spread": max(held) - min(held),
         "F_ET": 1 - t["c2"], "c3": t["c3"],
-        "F_err_T": 1 - t["cerr"], "c5": t["c5"], "c6": t["c6"],
+        "F_err_T": 1 - t["cerr"], "c5": t["c5"], "c6": t["c6"], "cleak": t["cleak"],
         "L_mean": float(r["leakage"].mean()), "L_tail": float(r["leakage"][tail].mean()),
         "L_T": float(r["leakage"][-1]),
         "dqec_mean": float(r["delta_qec"].mean()),
@@ -150,7 +173,7 @@ def score(u, x, gate=GATE):
         "dnbar_abs_mean": float(np.abs(rn).mean()),
         "dnbar_abs_tail": float(np.abs(rn[tail]).mean()),
         "eta0_mean": float(r["eta_0L"].mean()), "eta0_tail": float(r["eta_0L"][tail].mean()),
-        # Six-cardinal mean of Eq. 8, the quantity est_optimization.ipynb section 1
+        # Six-cardinal mean of Eq. 8, the quantity est_optimization.ipynb section 2
         # reports; eta_0L is the single-state reading the paper's Fig. 1f plots.
         "eta_avg_mean": float(r["eta_avg"].mean()),
         "eta_avg_tail": float(r["eta_avg"][tail].mean()),
@@ -180,7 +203,8 @@ def main():
                    nit=info["stages"][0]["nit"] if info.get("stages") else np.nan,
                    gate_closed=bool(row["F1"] >= F1_MIN),
                    w_err=info.get("w_err", 0.0), w_dn=info.get("w_dn", 0.0),
-                   w_smooth=info.get("w_smooth", 0.0))
+                   w_smooth=info.get("w_smooth", 0.0),
+                   w_leak=info.get("w_leak", 0.0))
         rows.append(row)
         for k, v in tr.items():
             traces[f"{label}/{k}"] = np.asarray(v)
@@ -209,7 +233,8 @@ def main():
               "  The comparison below is still internally valid -- all runs pay "
               "the same price from the same pre-image -- but these pulses must "
               "be reported as an ablation, not as delivered gates.")
-    front = ["run", "w_err", "w_dn", "w_smooth", "n_stages", "nit", "gate_closed"]
+    front = ["run", "w_err", "w_dn", "w_smooth", "w_leak", "n_stages", "nit",
+             "gate_closed"]
     df = df[front + [c for c in df.columns if c not in front]]
     os.makedirs(TABLE_DIR, exist_ok=True)
     df.to_csv(CSV_PATH, index=False)

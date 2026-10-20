@@ -122,6 +122,8 @@ def rates():
     #   storage:       |1> leaves at kappa_a  -> Gamma_phi_a  = 1/T2a    - kappa_a/2
     phi_ge = 1.0 / dev.T2_RAMSEY - 0.5 * g_ge
     phi_gf = 1.0 / dev.T2_GF_RAMSEY - 0.5 * g_ef
+    # With heating also on this double counts: thermal g->e jumps already dephase the storage
+    # through chi (~0.36 of the 0.58 ms^-1); AQEC.master_equation.jump_rates subtracts that part.
     phi_a = 1.0 / dev.T2_CAVITY - 0.5 * k_a
     # Heating: detailed balance at the measured equilibrium population, up = down * P/(1-P).
     up_q = g_ge * dev.P_E_THERMAL / (1.0 - dev.P_E_THERMAL)
@@ -137,7 +139,8 @@ def collapse_ops(n_c, n_r=2, decay=True, dephasing=False, heating=False, scale=1
     """List of (name, L_k) jump operators, rates included.
 
     decay      -- sqrt(kappa_a) a, sqrt(kappa_r) r, sqrt(gamma_ge)|g><e|, sqrt(gamma_ef)|e><f|
-                  (identical to AQEC.master_equation.collapse_operators(n_c, 'split') at n_r=2)
+                  (identical to AQEC.master_equation.collapse_operators(n_c, 'split',
+                  heating='none', dephasing=False) at n_r=2, its decay-only set)
     dephasing  -- sqrt(2 phi_ge)|e><e|, sqrt(2 phi_gf)|f><f|, sqrt(2 phi_a) n_a.
                   D[sqrt(G)|j><j|] damps the (g, j) coherence at G/2, so G = 2 phi gives
                   phi exactly; the e-f coherence then dephases at phi_ge + phi_gf.

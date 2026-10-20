@@ -69,6 +69,10 @@ P_CAVITY_THERMAL = 0.006     # storage |1> equilibrium population
 
 kappa_a = 1.0 / T1_CAVITY    # 1/us, single-photon loss rate
 
+# App. D: under the AQEC pumps the steady-state transmon P_e rises from 1.7% to 3.8%, which the
+# paper converts to an extra g->e heating rate of 0.42 ms^-1 (same cooldown as the main data).
+DELTA_GAMMA_UP_DRIVE = 0.42e-3   # 1/us
+
 # ---------------------------------------------------------------------------
 # Table II / Sec. III -- the two FWM combs as operated (rad/us)
 # ---------------------------------------------------------------------------

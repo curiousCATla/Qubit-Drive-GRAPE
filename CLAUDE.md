@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Four related tracks sharing one repository.
+Six related tracks sharing one repository.
 
 **1. Cat-code GRAPE (the main pipeline, `core/` + everything downstream).** Gradient Ascent
 Pulse Engineering optimal control for a dispersively coupled transmon–cavity circuit-QED
@@ -26,9 +26,15 @@ device; the EsT Table I lacks χ_ef, κ_r and T1_ef. Sign convention differs fro
 Shirol's χ and α are stored **positive** with explicit minus signs in H0. `AQEC/master_equation.py` holds both
 frames of notebook §8.2 (pure numpy/scipy): frame (i) = Eq. (3) as a static Liouvillian (populations), frame (ii) =
 dispersive terms explicit, time-dependent drive, `solve_ivp` (anything with phases between photon numbers; also the
-`six_tones` drive), plus the Eq. (B2) rate. `AQEC/wigner.py` is a closed-form Wigner function. Notebook §10 reproduces
-all of PRX Fig. 2; populations sit an n-dependent +0.04 to +0.09 above the paper's fit at 15 μs and the (2,4) coherence
-factor 0.16 above (documented in §10.6, not tuned away). Tests: `python3 validation/test_aqec_master_equation.py -v`
+`six_tones` drive), plus the Eq. (B2) rate. `AQEC/wigner.py` is a closed-form Wigner function. **`collapse_operators`
+defaults to every channel** (decision D3): decay, thermal + drive-induced heating (one up/down ratio r on g→e and e→f,
+0.77 ms⁻¹ on g→e from Table I + App. D's Δγ↑ = 0.42), storage heating, and pure dephasing. Storage φ_a is the
+**residual** 1/T2a − κ_a/2 − γ↑_th = 0.23 ms⁻¹, because frame (ii)'s thermal jumps already dephase the storage through χ
+(DGRAPE's opt-in φ_a is the full 0.58, so it double counts with heating on). `heating="none", dephasing=False` gives
+the old decay-only set, which DGRAPE's decay set matches (tested). Rates: `me.jump_rates()`. Notebook §10 reproduces
+all of PRX Fig. 2; populations sit an n-dependent +0.02 to +0.07 above the paper's fit at 15 μs (decay only: +0.04 to
++0.09) and the (2,4) coherence factor 0.13 above, with (0,2), (0,4) within 0.02 (documented in §10.6, not tuned away).
+Tests: `python3 validation/test_aqec_master_equation.py -v`
 (~1 min; the qutip frame-(ii) check is limited to 2 μs because qutip's python coefficients are slow) and
 `python3 validation/test_aqec_wigner.py -v`.
 
@@ -56,18 +62,74 @@ process input (E_00/E_11/E_01 add up; `_split_plan`). Per evaluation at N=200 on
 5 jobs 9.1 s, 7 jobs 7.7 s, 9 jobs 6.9 s (pass `--n-jobs 9`; 4 P-cores + 6 E-cores here). A DGRAPE-only **forbidden-state penalty** (Heeres Supp.), `lambda_forbid` 1e-3 ×
 mean_i Σ_{k=1..N} Σ_{b=0_L,1_L} Tr[P_F ρ_b(k)], P_F = storage Fock >= `forbid_fock_min` = 10, is a RAW sum over steps
 (rescale λ if N changes a lot); its exact gradient shares the fidelity's backward pass (extra costate entries with a
-P_F source per step, ~30% extra), and train.py refuses any training n_c <= forbid_fock_min. **First X run,
+P_F source per step, ~30% extra), and train.py refuses any training n_c <= forbid_fock_min. A **transmon-excitation
+penalty** (`--lambda-transmon`, recipe key `transmon`, **default 0 = off**) is the same time sum with
+P_T = |e><e| + |f><f|. The fidelity already pays the exact T1 price, about dt/(2·T1_ge) = 2e-5, so a positive weight
+charges extra, standing in for the untrained dephasing and heating. Both occupation costs ride ONE extra costate
+with the source diag(λ_F P_F + λ_T P_T) (`fidelity_and_grad(..., forbid_mask=(K,d) stack, occ_weights=...)`),
+so the transmon term costs nothing extra per evaluation; terms and reports carry `C_forbid` and `C_transmon`
+separately. **First X run,
 not usable**: X at 1.1 us on the old [10, 12] with `--higher-order` (`pulses/dgrape/*X_open_d1*`, notebook §10) reports
 F_pro 0.951/0.937 but converges to 0.9154 at n_c >= 16, because the pulse reaches Fock 10+ (C_forbid ≈ 36, i.e. a
 0.036 cost the new term would have charged). **[10, 12] is falsified**, and lambda_disc 0.5 is far too weak to catch
-it; the readout is inert, so n_r=1 is the next speed-up (open decisions in notebook §12). **Second X run**
+it; the readout is inert, so n_r=1 is the next speed-up (open decisions in notebook §13). **Second X run**
 (`pulses/dgrape/*X_open_d2*`, notebook §11): same command at the new defaults ([12, 14, 16], lambda_forbid 1e-3,
 `--n-jobs 9`, 10.3 h). Converged in truncation (n_c 16/18/20 agree to 1e-6) at **F_pro 0.9556**, C_forbid 10; the
 n_c=12 entry reads 1.7e-3 high. Coherent error 0.9%, dissipation 3.6%. Still clipped (1.6% of x pinned at 25), and it
 plateaued after ~500 iterations. The higher-order terms (Kerr, chi'_q) cost ~0.7% over a 1.1 us idle: train with them on. Duration
 and dt are required arguments of `DGRAPE/train.py`, which saves to `pulses/dgrape/`, never `pulses/`. L-BFGS-B needs
 tight `gtol` (default 1e-12): from a random start every gradient entry is ~1e-6 and scipy's default stops at
-iteration 0. Tests: `python3 validation/test_dgrape.py -v` (29 tests, ~3 min).
+iteration 0. **Third runs (notebook §12)**: the d2 command at a single `--n-c 16` (3 jobs, 6.8 h each, run side by side), without
+(`X_open_d3a`) and with `--lambda-transmon 1e-4` (`X_open_d3b`, 5x the T1 price). **One truncation is enough**: A
+scores 0.9550 against d2's 0.9556, n_c 16/18/20 agree to 3e-6, and it retraces d2's pulse (same seed); not yet
+the default (one seed). **The penalty buys T1, not dephasing**: B cuts mean P_e+P_f 0.58 -> 0.42 and excess decay
+by 32%, giving **F_pro 0.9589** (all channels 0.9479), the best X gate so far, with 0.45% pinned. Dephasing stays
+~1.05% for every pulse (storage 0.65%, transmon 0.40%); heating is 0.03%. B had not plateaued (cost -10.5% over
+its last 250 iterations): resume with `--init-x`. Next: train with `--dephasing`.
+Tests: `python3 validation/test_dgrape.py -v` (34 tests, ~4 min).
+
+**5. FWM GRAPE (`DGRAPE/fwm.py`, `fwm_grape.ipynb`).** Adds PReSPA pump tones (by default the six of Shirol, two combs, n = 1, 3, 5) as
+GRAPE controls β_k(t) next to DGRAPE's linear drives, on the same Lindblad model. The tones run on a CF4 sub-stepped
+propagator (`S` sub-steps per 2 ns step); `fwm.fidelity_and_grad` is the W-form exact gradient in β (and u, ready
+for Stage 3), checked against an augmented-generator derivative and finite differences. Recipe constants live in
+the module: per-tone cap `BETA_CAP` 0.1 and envelope band ±2 MHz, both set by the Stark limit (the comb-1 line moves by
+2π·538 MHz·|ξ|², so a fixed carrier stays resonant only up to |ξ| ≈ 0.06√n). An opt-in pump-mixing a†r† term
+(`mixing=1|2`, a convention factor) is used only in held-out scoring. Scripts: `DGRAPE/fwm_stage2_scan.py`
+(forward-only start scan + time-resolved loss cost), `DGRAPE/train_fwm.py` (tones-only training, d2 frozen; writes
+to `~/fwm_runs`, copy results to `pulses/dgrape/`), and `DGRAPE/fwm_score.py` (16 held-out conditions →
+`tables/fwm_stage2_heldout.csv`). **Stage 2 result (2026-10-12): null, as predicted beforehand.** Four starts
+(`pulses/dgrape/*X_fwm_s2_{a,b,c,d}*`, 300 iterations, ~6.5 h each at n_c 16, S 2, 3 jobs) all collapse to nearly
+zero tones (max|β| 0.003, comb 1 off) at F_pro 0.955561 vs 0.955554 tones off. The +6e-6 is a Stark retuning, not
+a repair (0 with `stark_off`; loss cost unchanged). **The tone set is a parameter**: `paths` (teeth n per comb) on
+`fwm.fwm_terms`, `Stage2Objective`, `score`, and `--paths` on the three scripts; the default `dev.CORRECTED_FOCK` =
+(1, 3, 5) is the six tones above and reproduces every Stage 2 number bit for bit. "Six PReSPA tones" in this paragraph
+and in notebook §2–§6 means that default. `fwm.FULL_PATHS` = 1..9 is the **full comb** (18 tones, 9 -> 10 left out because
+Fock 10 is `forbid_fock_min`), with band ±1 MHz (`BETA_BAND_FULL`; `default_band(paths)` picks ±2 only for (1, 3, 5)),
+because the teeth are χ_gf = 2.07 MHz apart; `fwm.beta_table2(paths)` extends Table II. Cost at the cap: 138 s per
+evaluation with 18 tones vs 62 s with six (Taylor m 46 vs 21; tones off 48 s for both). **Full-comb Stage 2 (notebook §7,
+2026-10-12): also null.** Runs `pulses/dgrape/*X_fwm_s2full_{a,b,c,d}*` (`--paths 1 2 3 4 5 6 7 8 9 --band -1 1`, 300
+iterations, ~7.3 h each) reach at best F_pro 0.955576, +2.2e-5 over tones off; tones stay ≤ 0.006, comb 1 on. The gain is
+coherent (+3.7e-5 closed system, survives `stark_off`, halves at g/√2), not a repair (photon-loss cost unchanged).
+Tables `fwm_stage2_full_scan.csv`, `fwm_stage2_full_heldout.csv`. Stage 3 (joint u + β) is not run; notebook §8 says
+to run an idle-memory positive control first, with the six tones. Tests: `python validation/test_fwm_grape.py -v`
+(15 tests, ~1.5 min).
+
+**6. FWM tails (`DGRAPE/fwm_tail.py`, `FWM_tails.ipynb`).** The d2 X gate runs unchanged, then a **tail** of the two
+FWM combs only (linear drives off) acts on its mixed output (`fwm_tail.d2_output`: d2 at n_r = 1, embedded), scored
+against the ideal X at the end of the tail. Each comb is ONE complex waveform η_c(t) (control (N, 4) = η_1 I/Q, η_2
+I/Q, η = I − iQ), in a frame that rotates **only |f⟩** at Δ_ref = the comb-1 tooth 2 → 3 (n_ref = 3, 2π·140.485 MHz):
+ξ_1 = η_1 e^{+iΔ_ref t}, ξ_2 = η_2 e^{−iΔ_ref t}. With the transmon drive off this frame is exact (jump ops commute
+with P_f or gain a global phase; targets have the transmon in g), so `fwm.propagate` with `scheme="midpoint", S=1`
+and the carriers zeroed is exact: one exponential per step, no CF4. `fwm_tail` reuses `fwm.py` unchanged (W-form
+gradient, `BetaChain` with 2 tones = one (N, 4) block, penalties). Decisions (2026-10-19): baseline **d2 alone**
+(0.955554); combs only (the cavity drive would keep the frame exact; the transmon drive would not); |η_c| ≤ 0.1 per
+comb; readout traced (`readout="empty"` available); tail **3 μs default, a parameter**; **no free rotation** (the
+storage Kerr phase, 5.1 % over 3 μs closed, must be cancelled by the tail). Upper limits recorded before training:
+ideal instant FWM repair at T_g 0.9652, any recovery 0.9897, kitten limit 0.935 per repaired loss, d2 + idle
+3 μs 0.8488; the optimistic estimate is ≈ −0.1 % vs d2 alone at 3 μs and +0.2–0.3 % at 0.5–1 μs. **Nothing is
+trained.** Training: `DGRAPE/train_fwm_tail.py --start tableII --tag X_tail_a` (`--dry-run`: one timed evaluation,
+~12 s at n_c 16, 3 μs, 3 jobs); outputs to `~/fwm_runs`, then `pulses/dgrape/` (never `pulses/`). Tests:
+`python3 validation/test_fwm_tail.py -v` (10 tests, ~10 s).
 
 Full physics/math background for track 1 (Hamiltonian, cat-code definition, adjoint gradients,
 frequency-band-limited controls, penalty terms, truncation-convergence protocol, decoherence
@@ -88,6 +150,29 @@ pip install qutip                 # QuTip/qutip_validate.py cross-check only
 Runs on Python 3.9. Note: on Apple's Accelerate BLAS backend, `core/grape_core.py` deliberately
 sets `np.seterr(divide='ignore', over='ignore', invalid='ignore')` to silence spurious
 RuntimeWarnings from ordinary complex matmuls (verified benign — no actual NaN/Inf).
+
+### iCloud sync
+
+The repo lives in `~/Documents`, which iCloud ("Desktop & Documents") syncs between the user's
+devices, on purpose. iCloud does not understand git. When two writes to one file collide, it keeps
+both and renames one to `<name> 2.<ext>` (or `<name> 2`). **Found 2026-10-19:** `.git/index` was
+gone, replaced by `.git/index 2` and `.git/index 3`. With no index, git reported all 1230 tracked
+files as staged-deleted and the same files as untracked, which looks like data loss but is not. There
+were also 445 byte-identical `" 2"` copies in `logs/`, `pulses/est/`, `pulses/staging_umax25/`
+(since renamed `pulses/archive_umax25_seeds/`), `pulses/archive_umax40/` and `tables/`.
+
+- **Check:** a `git status` full of `D` plus `??` for the same paths, `ls .git/index*`, and
+  `find . -path ./.git/objects -prune -o \( -name '* [0-9]' -o -name '* [0-9].*' \) -print`.
+  Use exactly that pattern. A looser `'* [0-9]*'` also matches real names such as
+  `sources/Gertler et al. - 2021 - ….pdf`, and since that name has no original to compare with,
+  a `cmp` check passes against itself.
+- **Fix the index:** `git reset` (mixed; it rebuilds the index from HEAD and leaves every working
+  file alone), then confirm `git status` shows only real edits, then remove the `index N` copies.
+- **Fix `" 2"` copies:** `cmp` each against its original first. Delete only identical ones. A copy
+  that differs may be another device's newer version, so read both before choosing.
+- **Avoid it:** let iCloud finish syncing before working on another device, never run git or a
+  training job on two devices at once, and do not commit `" 2"` files (`.gitignore` ignores them).
+  Training runs that write many files (`pulses/est/`, `logs/`) are the usual trigger.
 
 ## Commands
 
@@ -171,7 +256,7 @@ when working with files under `EST/`. Read it explicitly before EsT work that st
 (`est_experiments.ipynb`, `est_optimization.ipynb`, `pulses/est/`, `logs/est_*`).
 
 All scripts assume they are run from the repository root (several insert `REPO_ROOT` onto
-`sys.path` explicitly, e.g. `analysis/logical_gate_analysis1.py`).
+`sys.path` explicitly, e.g. `analysis/pulse_analysis.py`).
 
 ## Architecture
 
@@ -238,6 +323,9 @@ All scripts assume they are run from the repository root (several insert `REPO_R
 
 ## Working conventions
 
+- **Write in plain language** in notebooks, READMEs, docstrings and explanations: short sentences, everyday words,
+  and define any jargon on first use.
+
 - Physical parameters (`chi`, `Kerr`, `chip`, `alpha`, `dt`) are defined in lab units (MHz, μs)
   at the top of `core/grape_core.py` and converted to rad/μs via `two_pi = 2*np.pi`. Follow this
   convention rather than hand-converting elsewhere.
@@ -246,8 +334,9 @@ All scripts assume they are run from the repository root (several insert `REPO_R
   change `_fidelity_core`, `test_grape_core_perf.py` must still pass its pre-refactor
   equivalence and finite-difference checks.
 - When adding a new logical gate, follow the pattern in `core/cat_code.py`
-  (`get_logical_*_state_pairs`) and register it the way `analysis/logical_gate_analysis1.py`
-  does, rather than special-casing it inside `optimizer.py`.
+  (`get_logical_*_state_pairs`) and register it in `main.py`'s `GATE_FACTORIES` and
+  `validation/validate_logical_gates.py`'s `GATE_PULSE_MAP`, rather than special-casing it inside
+  `optimizer.py`.
 
 ### EsT-specific conventions
 

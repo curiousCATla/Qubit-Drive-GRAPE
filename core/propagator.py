@@ -64,9 +64,9 @@ def full_propagator(u, H0, Hc, dt):
         order of `Hc` from `core.grape_core.make_hamiltonian`.
     H0, Hc : drift Hamiltonian and list of 4 control Hamiltonians.
     dt : float
-        Timestep. REQUIRED, no default: the dt-refined `pulses/*10x_light.npy`
-        waveforms are 5500×4 at dt=2e-4, and silently reusing the 2e-3 of the
-        550-step pulses would produce a plausible-looking wrong answer.
+        Timestep. REQUIRED, no default: a dt-refined waveform (e.g. a 10x
+        `refine_pulse_dt` output, 5500×4 at dt=2e-4) scored with the 2e-3 of
+        the 550-step pulses would produce a plausible-looking wrong answer.
 
     Returns
     -------

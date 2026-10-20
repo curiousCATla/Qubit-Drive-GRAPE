@@ -90,24 +90,27 @@ def fidelity(arrs, u, E, T, w, dt, s, m):
 
 
 def fidelity_and_forbidden(arrs, u, E, T, w, dt, s, m, mask, idx):
-    """(F, C) with C = sum_{k=1}^{N} sum_{b in idx} Tr[P_F rho_b(k)], P_F = diag(mask)."""
+    """(F, C) with C_k = sum_{k=1}^{N} sum_{b in idx} Tr[P_k rho_b(k)], P_k = diag(mask[k]);
+    mask is a (K, d) stack of diagonal projectors, so C is (K,)."""
     idx = jnp.asarray(idx)
 
     def body(R, u_k):
         R = _step(arrs, u_k, R, dt, s, m)
         diag = jnp.real(jnp.diagonal(R[idx], axis1=-2, axis2=-1))
-        return R, jnp.sum(diag * mask)
+        return R, jnp.sum(diag, axis=0) @ mask.T
 
     R, pops = jax.lax.scan(jax.checkpoint(body), E, u)
     t = jnp.einsum("bij,bij->b", T.conj(), R)
-    return jnp.sum(w * t.real) / 4.0, jnp.sum(pops)
+    return jnp.sum(w * t.real) / 4.0, jnp.sum(pops, axis=0)
 
 
-def make_fidelity_fns(model, E, T, w, dt, forbid_mask=None, forbid_idx=(0, 1)):
+def make_fidelity_fns(model, E, T, w, dt, forbid_mask=None, forbid_idx=(0, 1), occ_weights=None):
     """(fid(u, s, m), fid_and_grad(u, s, m)), jitted, (s, m) static.
 
     With `forbid_mask`, fid_and_grad instead returns (F, dF/du, C, dC/du), the forbidden-state
-    cost of lindblad_np.fidelity_and_grad, from one forward scan and one vjp per output."""
+    cost of lindblad_np.fidelity_and_grad, from one forward scan and one vjp per output. As
+    there, a (K, d) stack of masks gives the (K,) vector C and the gradient of
+    sum_k occ_weights[k] C_k."""
     arrs = model_arrays(model)
     E, T, w = jnp.asarray(E), jnp.asarray(T), jnp.asarray(w)
 
@@ -120,7 +123,11 @@ def make_fidelity_fns(model, E, T, w, dt, forbid_mask=None, forbid_idx=(0, 1)):
         def fid_and_grad(u, s, m):
             return jax.value_and_grad(lambda v: fidelity(arrs, v, E, T, w, dt, s, m))(u)
     else:
-        mask = jnp.asarray(np.asarray(forbid_mask, dtype=float))
+        single = np.ndim(forbid_mask) == 1
+        masks = np.atleast_2d(np.asarray(forbid_mask, dtype=float))
+        mask = jnp.asarray(masks)
+        wts = jnp.asarray(np.ones(len(masks)) if occ_weights is None
+                          else np.asarray(occ_weights, dtype=float))
         idx = tuple(forbid_idx)
 
         @partial(jax.jit, static_argnums=(1, 2))
@@ -128,8 +135,8 @@ def make_fidelity_fns(model, E, T, w, dt, forbid_mask=None, forbid_idx=(0, 1)):
             (F, C), vjp = jax.vjp(
                 lambda v: fidelity_and_forbidden(arrs, v, E, T, w, dt, s, m, mask, idx), u)
             gF, = vjp((jnp.ones_like(F), jnp.zeros_like(C)))
-            gC, = vjp((jnp.zeros_like(F), jnp.ones_like(C)))
-            return F, gF, C, gC
+            gC, = vjp((jnp.zeros_like(F), wts.astype(C.dtype)))
+            return F, gF, (C[0] if single else C), gC
 
     return fid, fid_and_grad
 

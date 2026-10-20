@@ -168,7 +168,7 @@ def qutip_phase_cross_check(gate, u, n_c=PHASE_CHECK_N_C, n_t=N_T, dt=DT):
 
 
 def main():
-    print("QuTiP cross-check of every saved *_mt.npy pulse against grape_core's own propagator.")
+    print("QuTiP cross-check of every saved *_main.npy pulse against grape_core's own propagator.")
     summary = []
     rows = []
     phase_rows = []

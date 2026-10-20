@@ -72,6 +72,17 @@ DEGEN_TOL = 1e-10
 # nearly parallel. Same constant and same reasoning as EST/grape_jax.py:77.
 _FS_CLIP = 1.0 - 1e-9
 
+# The cost terms exactly as App. C prints them. A copy of
+# EST.grape_jax.PAPER_COST_FORM (this module must not import jax);
+# EST/test_grape_eigh.py pins the two as equal. Pass as **PAPER_COST_FORM to
+# cost_and_grad / build_gate_objective; omitting it gives the repo's form.
+#   c2_norm_power=1            Eq. (C2) divides by N_norm, not N_norm^2
+#   c2_include_endpoint=False  Eq. (C2) sums i = 0 .. N-1
+#   c3_normalize=False         Eqs. (C6)-(C7): raw variance of v
+#   c3_dt=DT*1e3               v in rad/ns (the paper's Delta t = 1 ns)
+PAPER_COST_FORM = dict(c2_norm_power=1, c2_include_endpoint=False,
+                       c3_normalize=False, c3_dt=DT * 1e3)
+
 
 # ---------------------------------------------------------------------------
 # Constraint chain: raw optimizer variable -> physical pulse, and its adjoint
@@ -212,7 +223,7 @@ def fidelity_cost(code_final, Psi_target):
     return c1, inj_code
 
 
-def et_cost(code_traj, err_traj, A):
+def et_cost(code_traj, err_traj, A, norm_power=2, include_endpoint=True):
     """
     C2, running over every step. Compares the normalized photon-loss image
     a|psi_C(t)> against the independently evolved error cardinal |psi_E(t)>.
@@ -229,23 +240,52 @@ def et_cost(code_traj, err_traj, A):
 
     The second term of the psi^C injection is the one that is easy to drop: s
     depends on psi^C as well as the overlap does.
+
+    The printed form is opt-in, exactly as in EST/grape_jax.et_cost (see
+    PAPER_COST_FORM):
+      norm_power=1          F = |o|^2 / sqrt(s), with s = ||A psi_C||^2 + 1e-24
+                            under the root (grape_jax's eps). Then
+                              dC2/dpsi^E*_k = w (o*/sqrt s) A psi^C_k
+                              dC2/dpsi^C*_k = w [ (o/sqrt s) A^dag psi^E_k
+                                               - (|o|^2/(2 s^{3/2})) A^dag A psi^C_k ]
+      include_endpoint=False  average over t = 0 .. N-1 (T = N steps), and the
+                            injection at t = N is zero.
+    The defaults run the original arithmetic unchanged.
     """
+    if norm_power not in (1, 2):
+        raise ValueError(f"norm_power must be 1 or 2, got {norm_power!r}")
+    T_all = code_traj.shape[0]
+    if not include_endpoint:
+        code_traj, err_traj = code_traj[:-1], err_traj[:-1]
     T, n, M = code_traj.shape
     Ad = A.conj().T
     AdA = Ad @ A
 
     APsi = np.einsum('ij,tjm->tim', A, code_traj)                 # (T,n,M)
-    s = np.sum(np.abs(APsi) ** 2, axis=1) + 1e-12                 # (T,M)
-    o = np.einsum('tim,tim->tm', np.conj(err_traj), APsi)         # (T,M)
-    F_et = np.abs(o) ** 2 / s
-    c2 = 1.0 - np.mean(F_et)
-
     w = -1.0 / (T * M)
-    inj_err = w * (np.conj(o) / s)[:, None, :] * APsi
     Ad_err = np.einsum('ij,tjm->tim', Ad, err_traj)
     AdA_code = np.einsum('ij,tjm->tim', AdA, code_traj)
-    inj_code = w * ((o / s)[:, None, :] * Ad_err
-                    - (np.abs(o) ** 2 / s ** 2)[:, None, :] * AdA_code)
+    o = np.einsum('tim,tim->tm', np.conj(err_traj), APsi)         # (T,M)
+    if norm_power == 2:
+        s = np.sum(np.abs(APsi) ** 2, axis=1) + 1e-12             # (T,M)
+        F_et = np.abs(o) ** 2 / s
+        c2 = 1.0 - np.mean(F_et)
+        inj_err = w * (np.conj(o) / s)[:, None, :] * APsi
+        inj_code = w * ((o / s)[:, None, :] * Ad_err
+                        - (np.abs(o) ** 2 / s ** 2)[:, None, :] * AdA_code)
+    else:
+        s = np.sum(np.abs(APsi) ** 2, axis=1) + 1e-24
+        r = np.sqrt(s)
+        F_et = np.abs(o) ** 2 / r
+        c2 = 1.0 - np.mean(F_et)
+        inj_err = w * (np.conj(o) / r)[:, None, :] * APsi
+        inj_code = w * ((o / r)[:, None, :] * Ad_err
+                        - (np.abs(o) ** 2 / (2.0 * s * r))[:, None, :] * AdA_code)
+
+    if T != T_all:                       # endpoint excluded: zero row at t = N
+        pad = np.zeros((1, n, M), dtype=complex)
+        inj_code = np.concatenate([inj_code, pad], axis=0)
+        inj_err = np.concatenate([inj_err, pad], axis=0)
     return c2, inj_code, inj_err
 
 
@@ -351,6 +391,56 @@ def photon_number_mismatch_cost(code_words, Nop, eps=1e-12):
     return c5, inj, r
 
 
+def leakage_cost(code_words, err_words, A):
+    """
+    C_L, running. Eq. 7's leakage of the error state out of the INSTANTANEOUS
+    error space, averaged over the gate:
+
+        C_L = mean_{t=0..N} L(t),    L(t) = 1 - 1/2 Tr[P_E(t) E(t) E(t)^dag]
+        P_E = G S^-1 G^dag,          G = A C(t),  S = G^dag G   (2 x 2)
+
+    with C(t), E(t) the two evolved code and error WORDS, (n, 2) each. The
+    six-cardinal average of EST/diagnostics.leakage_Ej equals this two-word form
+    exactly: the six cardinals sum to 3 x the identity on the error space.
+    P_E is built from G itself, not from diagnostics' polar isometry, but both
+    span the same space, so the projector -- and L -- are identical.
+
+    Relation to C2 (repo form, N_norm^2). Per cardinal, the normalized image
+    a|psi_C>/||a|psi_C>|| lies in E(t), so 1 - F_ET = L + (1 - L)(1 - f), with f
+    the overlap of the projected, renormalized error state with that image.
+    Hence C2 = C_L + C_mis with C_mis >= 0, and C_L <= C2: this term reweights
+    the leakage part of C2 only.
+
+    Injections (Wirtinger, Lambda = dC/dPsi*), with B = G^dag E, Y = S^-1 B and
+    f = 1/2 Tr[B^dag Y], so that P_E E = G Y:
+
+        dC_L/dE*_t = -(1/T) 1/2 G Y                      (= -(1/T) 1/2 P_E E)
+        dC_L/dC*_t = -(1/T) 1/2 A^dag (E - G Y) Y^dag   (= ... A^dag (1-P_E) E B^dag S^-1)
+
+    The code-word term carries (1 - P_E): moving the space helps only where the
+    error states sit outside it. S is Hermitian, so B^dag S^-1 = Y^dag.
+
+    code_words, err_words : (T, n, 2) evolved |0_L>,|1_L> and |0_E>,|1_E>
+                            (the +Z, -Z columns of the code and error stacks)
+    Returns (c_leak, inj_code (T,n,2), inj_err (T,n,2), L (T,)).
+    """
+    T = code_words.shape[0]
+    G = np.einsum('ij,tjm->tim', A, code_words)                   # (T,n,2)
+    Gh = np.conj(np.swapaxes(G, 1, 2))                            # (T,2,n)
+    S = Gh @ G                                                    # (T,2,2)
+    B = Gh @ err_words                                            # (T,2,2)
+    Y = np.linalg.solve(S, B)                                     # S^-1 B
+    f = 0.5 * np.real(np.einsum('tkm,tkm->t', np.conj(B), Y))
+    L = 1.0 - f
+    c_leak = float(np.mean(L))
+
+    GY = G @ Y                                                    # P_E E
+    inj_err = (-0.5 / T) * GY
+    inj_code = (-0.5 / T) * np.einsum(
+        'ij,tjm->tim', A.conj().T, (err_words - GY) @ np.conj(np.swapaxes(Y, 1, 2)))
+    return c_leak, inj_code, inj_err, L
+
+
 def smoothness_cost(u):
     """
     C6. The incumbent cat-code smoothness penalty, sum_k ||u_{k+1} - u_k||^2 on
@@ -391,26 +481,28 @@ def amplitude_cost(u, eps_max=EPS_MAX):
 # ---------------------------------------------------------------------------
 
 def _unpack_weights(weights):
-    """(w1..w4) or (w1..w4, w_err, w5, w6) -> 7 floats, extras zero-padded."""
+    """(w1..w4), (w1..w4, w_err, w5, w6) or (..., w_L) -> 8 floats, extras zero-padded."""
     w = [float(x) for x in weights]
-    if len(w) == 4:
-        w += [0.0, 0.0, 0.0]
-    if len(w) != 7:
-        raise ValueError(f"weights must have 4 or 7 entries, got {len(w)}")
-    return w
+    if len(w) not in (4, 7, 8):
+        raise ValueError(f"weights must have 4, 7 or 8 entries, got {len(w)}")
+    return w + [0.0] * (8 - len(w))
 
 
 def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
                   eps_max=EPS_MAX, c3_normalize=True, want_grad=True,
-                  Psi_target_err=None, Nop=None):
+                  Psi_target_err=None, Nop=None, c2_norm_power=2,
+                  c2_include_endpoint=True, c3_dt=None):
     """
     C_tot = sum_i w_i C_i and its gradient with respect to the PHYSICAL pulse u.
 
     weights : (w1, w2, w3, w4) for (fidelity, ET, velocity-variance, amplitude),
               or (w1, w2, w3, w4, w_err, w5, w6) adding the error-space
               infidelity `cerr`, the photon-number mismatch C5 and the
-              smoothness penalty C6. A 4-tuple is exactly the original
-              objective: the extra injections are skipped, not multiplied by 0.
+              smoothness penalty C6, or that plus w_L for the leakage C_L
+              (`cleak`). A 4-tuple is exactly the original objective: the extra
+              injections are skipped, not multiplied by 0. A 7-tuple, or an
+              8-tuple with w_L = 0, is the 7-term objective bit for bit; `cleak`
+              is then only reported.
     Setting w2 = w3 = 0 gives the 'Ord' variant from this same code path, exactly
     as in EST/grape_jax.make_cost_and_grad -- the whole EsT-vs-Ord comparison
     rests on the control differing by weights alone.
@@ -421,13 +513,18 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
     Either may be None when its weight is zero; the term is then omitted from
     `terms` as well.
 
-    These three terms exist on this pipeline only. Their autodiff reference
+    c2_norm_power, c2_include_endpoint : forwarded to `et_cost`.
+    c3_dt : time step used for the C3 velocity only (None -> dt); propagation
+            always uses dt. Together with c3_normalize these select the cost
+            form; pass **PAPER_COST_FORM for App. C as printed.
+
+    These four terms exist on this pipeline only. Their autodiff reference
     lives in EST/test_grape_eigh.py, not in EST/grape_jax.py.
 
     Returns (cost, grad, terms) with grad shaped (N,4), or (cost, None, terms)
     when want_grad is False.
     """
-    w1, w2, w3, w4, w_err, w5, w6 = _unpack_weights(weights)
+    w1, w2, w3, w4, w_err, w5, w6, w_leak = _unpack_weights(weights)
     if w_err and Psi_target_err is None:
         raise ValueError("w_err > 0 needs Psi_target_err")
     if w5 and Nop is None:
@@ -445,8 +542,10 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
     n = traj.shape[1]
 
     c1, inj1_code = fidelity_cost(code[-1], Psi_target)
-    c2, inj2_code, inj2_err = et_cost(code, err, A)
-    c3, inj3_code = velocity_variance_cost(code, dt, normalize=c3_normalize)
+    c2, inj2_code, inj2_err = et_cost(code, err, A, norm_power=c2_norm_power,
+                                      include_endpoint=c2_include_endpoint)
+    c3, inj3_code = velocity_variance_cost(code, dt if c3_dt is None else c3_dt,
+                                           normalize=c3_normalize)
     c4, grad4 = amplitude_cost(u, eps_max)
     terms = {"c1": float(c1), "c2": float(c2), "c3": float(c3), "c4": float(c4)}
     cost = w1 * c1 + w2 * c2 + w3 * c3 + w4 * c4
@@ -469,6 +568,14 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
         terms["c6"] = c6
         if w6:
             cost += w6 * c6
+    if Psi_target_err is not None or Nop is not None or w_leak:
+        # Columns 0, 1 of both stacks are the +Z, -Z cardinals: the code words
+        # |0_L(t)>, |1_L(t)> and the error words |0_E(t)>, |1_E(t)>.
+        c_leak, inj_leak_code, inj_leak_err, _ = leakage_cost(
+            code[:, :, :2], err[:, :, :2], A)
+        terms["cleak"] = c_leak
+        if w_leak:
+            cost += w_leak * c_leak
 
     if not want_grad:
         return float(cost), None, terms
@@ -482,6 +589,9 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
         inj[N, :, M:] += w_err * inj_err_T         # cerr is terminal, error columns
     if w5:
         inj[:, :, :2] += w5 * inj5_words           # C5 reads the two code words
+    if w_leak:
+        inj[:, :, :2] += w_leak * inj_leak_code    # C_L reads both pairs of words
+        inj[:, :, M:M + 2] += w_leak * inj_leak_err
 
     # Backward sweep. Lambda_k = inj_k + U_k^dag Lambda_{k+1}; the gradient at
     # step k reads Lambda_{k+1} against Psi_k through dU_k/du.
@@ -522,19 +632,24 @@ def cost_and_grad(u, H0, Hc, A, Psi0_code, Psi0_err, Psi_target, dt, weights,
 def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
                          weights=(1.0, 0.7, 7.0, 1.0), band=BAND_MHZ,
                          ramp_ns=RAMP_NS, eps_max=EPS_MAX, use_control_mask=True,
-                         c3_normalize=True, extra_terms=False):
+                         c3_normalize=True, extra_terms=False, **form):
     """
     Assemble the scipy-ready objective for a named gate.
 
-    `weights` may be a 4- or 7-tuple (see `cost_and_grad`). The error-space
+    `weights` may be a 4-, 7- or 8-tuple (see `cost_and_grad`). The error-space
     target and a^dag a are built when `extra_terms` is set or the weights are a
-    7-tuple; `report` then also returns `cerr`, `c5`, `c6`. With a 4-tuple and
-    extra_terms=False the objective and report are exactly the original ones.
+    7- or 8-tuple; `report` then also returns `cerr`, `c5`, `c6`, `cleak`. With a
+    4-tuple and extra_terms=False the objective and report are exactly the
+    original ones.
 
     Same signature, same truncation average (Heeres Eq. 23) and same return
     triple as EST/grape_jax.build_gate_objective, so the two are drop-in
     interchangeable in EST/train_est.py's stage loop and in any comparison
     script.
+
+    `**form` (c2_norm_power, c2_include_endpoint, c3_dt) and `c3_normalize`
+    select the cost-term form; pass **PAPER_COST_FORM for App. C as printed.
+    Omitted means the repo's form.
 
     Returns
     -------
@@ -547,7 +662,7 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
     constrain, constrain_adj = make_constrainer(N, dt, band=band,
                                                 ramp_ns=ramp_ns, cmask=cmask)
 
-    extras = bool(extra_terms) or len(tuple(weights)) == 7
+    extras = bool(extra_terms) or len(tuple(weights)) >= 7
     _unpack_weights(weights)                      # validate length up front
 
     systems = []
@@ -584,7 +699,7 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
         for (H0, Hc, A, P0c, P0e, Ptg, kw) in systems:
             c, g, _ = cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt, weights,
                                     eps_max=eps_max, c3_normalize=c3_normalize,
-                                    **kw)
+                                    **kw, **form)
             cost += c
             grad += g
         grad /= K
@@ -599,7 +714,7 @@ def build_gate_objective(gate, N, dt=DT, n_t=N_T, trunc_list=TRUNC_LIST,
             _, _, terms = cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt, weights,
                                         eps_max=eps_max,
                                         c3_normalize=c3_normalize,
-                                        want_grad=False, **kw)
+                                        want_grad=False, **kw, **form)
             out[n_c] = terms
         return out
 

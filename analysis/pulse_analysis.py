@@ -56,7 +56,7 @@ USE_SAVED_PULSE = True          # ← Change to False if you want to re-optimize
 PULSE_DIR = "pulses"
 os.makedirs(PULSE_DIR, exist_ok=True)
 
-TRUNC_LIST = [22, 24, 26]  # cavity truncations trained on simultaneously (matches logical_gate_analysis1.py)
+TRUNC_LIST = [22, 24, 26]  # cavity truncations trained on simultaneously (the production trunc_list)
 
 def get_g6_state_pairs(n_c, n_t=3):
     """Factory for the |g,0> -> |g,6> state transfer at a given cavity truncation."""
@@ -64,9 +64,14 @@ def get_g6_state_pairs(n_c, n_t=3):
     psi_f = basis_state(n_t, n_c, 0, 6)
     return [(psi_i, psi_f)]
 
+# The saved pulse is the canonical |g,0> -> |g,6> pulse. Re-optimizing writes a
+# separate file so this demo never overwrites it.
+SAVED_PULSE = "u_opt_main.npy"
+DEMO_PULSE = "u_opt_pulse_analysis.npy"
+
 if USE_SAVED_PULSE:
-    u_opt = np.load(os.path.join(PULSE_DIR, "u_opt.npy"))
-    print(f"Loaded optimized pulse from {PULSE_DIR}/u_opt.npy")
+    u_opt = np.load(os.path.join(PULSE_DIR, SAVED_PULSE))
+    print(f"Loaded optimized pulse from {PULSE_DIR}/{SAVED_PULSE}")
 
 else:
     #Run the optimizer, averaging fidelity+gradient across TRUNC_LIST at every step
@@ -79,7 +84,7 @@ else:
         warm_start_amp=amp_init,
         warm_start_cutoff_frac=cutoff_frac,
         warm_start_seed=seed,
-        save_path=os.path.join(PULSE_DIR, "u_opt.npy"),
+        save_path=os.path.join(PULSE_DIR, DEMO_PULSE),
         penalties={'deriv': 0.00002, 'amp': 0.00001, 'amp_max': 40.0},
         maxiter=2000,
         cav_band=(-27.0, 27.0),
@@ -89,7 +94,7 @@ else:
 
     print(f"optimized fidelity (at max trunc n_c={max(TRUNC_LIST)}): {info['final_fidelity']:.6f}")
     print(f"Optimizer stopped because: {info['message']}")
-    print(f"Optimized pulse saved to {PULSE_DIR}/u_opt.npy")
+    print(f"Optimized pulse saved to {PULSE_DIR}/{DEMO_PULSE}")
 
 
 

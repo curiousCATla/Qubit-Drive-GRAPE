@@ -111,8 +111,8 @@ def load_pulses(gates=GATES):
         path = os.path.join(PULSE_DIR, f"u_{gate}_main.npy")
         u = np.load(path)
         # dt is hardcoded to DT below, so reject anything that isn't a main
-        # pulse: the dt-refined pulses/*10x_light.npy are 5500x4 at dt=2e-4 and
-        # would be scored at the wrong timestep.
+        # pulse: a dt-refined pulse (e.g. a 10x refine_pulse_dt output, 5500x4
+        # at dt=2e-4) would be scored at the wrong timestep.
         assert u.shape == EXPECTED_PULSE_SHAPE, (
             f"{path} has shape {u.shape}, expected {EXPECTED_PULSE_SHAPE}; this "
             f"script scores 550-step main pulses at dt={DT}"

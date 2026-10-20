@@ -285,7 +285,7 @@ def plot_fig1a(results, path, gate="H", cardinals=None):
         ax.plot(r["t_us"], r["r2_err"].mean(axis=1), color=CODE_COLOR,
                 lw=1.0, alpha=0.75, ls="--", label=r"$r^2$ error")
         ax.set_ylim(-0.02, 1.32)
-        ax.set_ylabel("fraction")
+        ax.set_ylabel(r"$\mathcal{M}$, $r^2$  (dimensionless)")
         ax.grid(alpha=0.25, lw=0.5)
         ax.set_title(r"$\overline{\mathcal{M}}$ = "
                      f"{r['mismatch'].mean():.3f}    "

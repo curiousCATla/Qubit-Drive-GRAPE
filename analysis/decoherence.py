@@ -12,7 +12,7 @@ after/bwhile applying your optimized control pulse.
 Usage:
     from decoherence_sim import simulate_with_decoherence
 
-    u = np.load("pulses/u_opt.npy")
+    u = np.load("pulses/u_opt_main.npy")
     psi0 = basis_state(n_t=3, n_c=24, t_level=0, c_level=0)  # |g,0⟩
     rho_final = simulate_with_decoherence(u, psi0)
     # Then compute fidelity, Wigner function, etc.
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     # For demo, use a short zero pulse (you should load your real pulse)
     N_steps = 200
     u_demo = np.zeros((N_steps, 4))
-    u_load = np.load("pulses/u_opt.npy")
+    u_load = np.load("pulses/u_opt_main.npy")
 
     rho_final = simulate_with_decoherence(
         u=u_load,

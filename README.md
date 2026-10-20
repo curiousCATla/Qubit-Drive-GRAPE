@@ -193,7 +193,7 @@ Convergence was restored by implementing the full Heeres recipe with a cold star
 - **Eqs. 23 and 24, recomputed at every iteration.** `optimize_multi_state_pulse` optionally applies a discrepancy penalty $\sum_{k_1 \neq k_2} (F_{k_1} - F_{k_2})^2$ (`penalties['disc']`, default `0.0`), constructed from the same per-truncation fidelity evaluations used for the averaged objective—without additional propagation or stale penalty terms.
 - **Cold start rather than warm start.** Because L-BFGS-B is a local method, refinement of a wall-exploiting pulse tends to remain in that basin. Optimization from random initialization yielded qualitatively different solutions; for `U_Z` and `U_T` in particular, nearly pure-phase gates driven primarily through the transmon with negligible cavity amplitude, consistent with the paper's own T and I controls (Supplementary Figure 4).
 
-All eight logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_T`, `U_I`) were retrained under this protocol and, subsequently, under the endpoint ramp: cold start, `trunc_list=[22,24,26]`, `maxiter=1500`, saved as `pulses/u_*_main.npy` (with `x_*_main.npy` pre-images). Across the six logical gates, $F_{\rm pedersen}$ over $n_c = 18$–32 now spans 0.9899–0.9998, flat above the trained range. The retired max-truncation module has been removed; only `pulses/u_opt_mt.npy` remains from that procedure.
+All eight logical-gate pulses (`U_enc`, `U_dec`, `U_X`, `U_Y`, `U_Z`, `U_H`, `U_T`, `U_I`) were retrained under this protocol and, subsequently, under the endpoint ramp: cold start, `trunc_list=[22,24,26]`, `maxiter=1500`, saved as `pulses/u_*_main.npy` (with `x_*_main.npy` pre-images). Across the six logical gates, $F_{\rm pedersen}$ over $n_c = 18$–32 now spans 0.9899–0.9998, flat above the trained range. The retired max-truncation module and its pulses have been removed.
 
 One row deserves reading carefully rather than being taken as a failure: $U_Y$'s minimum, 0.98985, is the only value under 0.99, and the entire deficit sits at $n_c=18$ — the *lowest* truncation swept, and below the trained range. Y then reads 0.99645 at $n_c=20$, 0.99836, 0.99872, 0.99877, and is dead flat at 0.998767 from $n_c=26$ through 32. The Heeres criterion asks that fidelity plateau *above* the training truncation, which it does exactly. A dip *below* it means the pulse genuinely requires $n_c \geq 20$ to be represented — the opposite of exploiting the truncation wall. `analysis/rescore_saved_pulses.py` flags the held-out spread automatically and prints this caveat next to the flag.
 
@@ -222,7 +222,7 @@ import numpy as np
 from core.grape_core import basis_state
 from analysis.decoherence import simulate_with_decoherence, compute_fidelity
 
-u = np.load("pulses/u_opt.npy")
+u = np.load("pulses/u_opt_main.npy")
 psi0 = basis_state(n_t=3, n_c=24, t_level=0, c_level=0)      # |g,0⟩
 psi_target = basis_state(n_t=3, n_c=24, t_level=0, c_level=6) # |g,6⟩
 
@@ -243,9 +243,6 @@ print(compute_fidelity(rho_final, psi_target))
 | `validation/test_grape_core_perf.py` | Regression suite for the batched fidelity core: pre-refactor equivalence, finite-difference gradients, optimizer smoke tests |
 | `validation/truncation_convergence.py` | Truncation sweep of bare fidelity (Eqs. 23–24 validity criterion) |
 | `validation/validate_logical_gates.py` | Five-tier validation suite for logical-gate pulses |
-| `analysis/logical_gate_analysis.py` | Standalone encode-optimization script |
-| `analysis/logical_gate_analysis1.py` | Gate-optimization examples and encode/decode round-trip checks |
-| `analysis/refine_dt_and_compare.py` | Pulse refinement with pre-/post-refinement fidelity comparison |
 | `QuTip/qutip_validate.py` | Independent fidelity cross-check via `qutip.sesolve` |
 | `QuTip/qutip_grape_optimizer.py` | Pedagogical GRAPE implementation on QuTiP `Qobj` physics — adjoint/L-BFGS-B structure as in `optimizer.py`, without band limiting, discrepancy penalty, or joblib |
 | `analysis/pulse_analysis.py` | Trajectory simulation, Fock populations, and basic optimization demonstration |
@@ -307,13 +304,6 @@ python main.py --gate X                  # seed 42, ramp_ns 48, amp_max = hard_a
 python main.py --gate Y --seed 46        # Y: seed 42 drives max|x| into the box (F = 0.899)
 python main.py --gate enc --seed 47      # enc: clipped at every seed; 47 is the best of them
 python main.py --gate X --ramp-ns 0      # disable the ramp (0 means off)
-```
-
-**Refine and compare** an existing pulse:
-
-```bash
-# Set INPUT_PULSE_PATH / GET_STATE_PAIRS in analysis/refine_dt_and_compare.py, then, from the repo root:
-python analysis/refine_dt_and_compare.py
 ```
 
 **Full validation suite** on pulses in `pulses/`:

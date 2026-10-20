@@ -8,10 +8,11 @@ objective of DGRAPE/objective.py. Tested by 5-iteration smoke runs
 Defaults are the experiments.ipynb / main.py production recipe (DGRAPE/recipe.py): bands
 +-27 / +-33 MHz, 48 ns ramp, lambda_deriv 1e-5, lambda_amp 8e-5 on |I+iQ| > 25 rad/us,
 lambda_disc 0.5, hard_amp_limit 25, smooth seeded cold start. They were tuned on the Heeres
-chip; dissipation_grape.ipynb §12 lists what is still to validate here. Gate duration and dt
+chip; dissipation_grape.ipynb §13 lists what is still to validate here. Gate duration and dt
 stay REQUIRED: they depend on this chip. The truncation list defaults to [12, 14, 16] (not the
 Heeres [22, 24, 26]), evaluated as --n-jobs 3 parallel jobs, and the DGRAPE-only forbidden-state
-penalty (lambda_forbid 1e-3 on storage Fock >= 10) is on; see DGRAPE/recipe.py.
+penalty (lambda_forbid 1e-3 on storage Fock >= 10) is on; the transmon-excitation penalty
+(--lambda-transmon) is off by default. See DGRAPE/recipe.py.
 
 Pulses go to pulses/dgrape/, never pulses/: every analysis/ and validation/ script locates
 pulses there by name and assumes the Heeres cat code.
@@ -112,7 +113,8 @@ def _run(obj, gate, N, dt, maxiter, seed, init_x, warm_start, warm_start_strict,
                         **{k: v for k, v in terms.items() if k != "F_pro"},
                         "F_pro": list(terms["F_pro"]), "t": time.time() - t0})
         if verbose:
-            extra = f"  forbid {terms['forbid']:.3e}" if "forbid" in terms else ""
+            extra = "".join(f"  {k} {terms[k]:.3e}" for k in ("forbid", "transmon")
+                            if k in terms)
             print(f"it {len(history):4d}  cost {c:.6e}  F_pro {terms['F_pro']}{extra}",
                   flush=True)
 
@@ -155,7 +157,8 @@ def _run(obj, gate, N, dt, maxiter, seed, init_x, warm_start, warm_start_strict,
     if verbose:
         c, m = info["constraints"], info["max_drive_modulus"]
         print(f"returned {picked}; F_pro per truncation {Fs}; "
-              f"C_forbid {[r['C_forbid'] for r in per_trunc]}")
+              f"C_forbid {[r['C_forbid'] for r in per_trunc]}; "
+              f"C_transmon {[r['C_transmon'] for r in per_trunc]}")
         print(f"peak |I+iQ|: cavity {m['cav']:.2f}, transmon {m['tra']:.2f} rad/us "
               f"(amp_max {obj.penalties['amp_max']}); max|x| {info['max_abs_preimage']:.2f}, "
               f"{pinned:.2%} pinned at {hard_amp_limit}; endpoints "
@@ -194,6 +197,8 @@ def build_arg_parser():
     p.add_argument("--lambda-disc", type=float, default=pen["disc"])
     p.add_argument("--lambda-forbid", type=float, default=pen["forbid"],
                    help="forbidden-state penalty weight (0 disables)")
+    p.add_argument("--lambda-transmon", type=float, default=pen["transmon"],
+                   help="transmon-excitation penalty weight (0 disables; T1 price ~ dt/(2 T1_ge))")
     p.add_argument("--forbid-fock-min", type=int, default=RECIPE["forbid_fock_min"],
                    help="P_F projects on storage Fock >= this")
     p.add_argument("--n-jobs", type=int, default=RECIPE["n_jobs"],
@@ -226,7 +231,8 @@ def main():
         hard_amp_limit=a.hard_amp_limit, backend=a.backend,
         cav_band=parse_band(a.cav_band), tra_band=parse_band(a.tra_band), ramp_ns=a.ramp_ns,
         penalties={"deriv": a.lambda_deriv, "amp": a.lambda_amp, "amp_max": a.amp_max,
-                   "disc": a.lambda_disc, "forbid": a.lambda_forbid},
+                   "disc": a.lambda_disc, "forbid": a.lambda_forbid,
+                   "transmon": a.lambda_transmon},
         forbid_fock_min=a.forbid_fock_min, n_jobs=a.n_jobs,
         amp_norm=a.amp_norm, dephasing=a.dephasing, heating=a.heating,
         include_higher_order=a.higher_order)

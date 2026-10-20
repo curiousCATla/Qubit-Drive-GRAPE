@@ -10,10 +10,11 @@ and the `main.py` CLI defaults (validation/test_dgrape.py pins RECIPE to
            + deriv * sum_k |u_k - u_{k-1}|^2
            + amp   * sum_k sum_{d in C,T} (|eps_d(k)| - amp_max)_+^2   (Supp. Eq. 19, 'modulus')
            + forbid * mean_i sum_{k=1}^{N} sum_{b=0_L,1_L} Tr[P_F rho_b(k)]   (forbidden states)
+           + transmon * mean_i sum_{k=1}^{N} sum_{b=0_L,1_L} Tr[P_T rho_b(k)] (transmon excitation)
     u = ramp(bandlimit(x)),  |x| <= hard_amp_limit elementwise         (Supp. Eq. 22, core/ramp.py)
 
 THESE NUMBERS WERE TUNED ON THE HEERES CHIP (core/grape_core.py), not on Shirol's. They are
-defaults to validate on this device (dissipation_grape.ipynb §8 and §12), not results. In
+defaults to validate on this device (dissipation_grape.ipynb §8 and §13), not results. In
 particular the 25 rad/us cap is the Heeres-recipe drive limit; Shirol et al. publish none.
 
 TRUNCATIONS. `trunc_list = [12, 14, 16]` is NOT the Heeres recipe (main.py trains on
@@ -33,6 +34,13 @@ steps: lambda_forbid = 1e-3 makes 1 % forbidden population held for N = 550 step
 size of the infidelity; rescale it if N changes a lot. Every training n_c must exceed
 forbid_fock_min, or the term is identically zero (the objective refuses).
 
+TRANSMON EXCITATION (DGRAPE-specific, OFF by default). The same time sum with P_T = |e><e| + |f><f|
+on the transmon. The fidelity already charges the exact T1 price of an excited transmon, about
+dt / T1_ge per unit population per step; summed over the two code inputs that is lambda_transmon
+= dt / (2 T1_ge) = 2e-5 at dt = 2 ns. A positive weight charges extra, as a stand-in for the
+dephasing and heating that training leaves out (dissipation_grape.ipynb §12 uses 1e-4, 5x the T1
+price). Like forbid it is a raw sum over steps: rescale it if N or dt changes a lot.
+
 Deliberately ABSENT: gate duration and dt, which depend on this chip (chi_ge/2pi = 1.12 MHz,
 half of Heeres') and stay required arguments of train.py.
 """
@@ -44,7 +52,8 @@ RECIPE = dict(
     tra_band=(-33.0, 33.0),        # MHz, on eps_T = T_I - i T_Q
     ramp_ns=48.0,                  # Gaussian rise/fall, core.ramp.ramp_envelope
     penalties={"deriv": 1e-5, "amp": 8e-5, "amp_max": 25.0, "disc": 0.5,
-               "forbid": 1e-3},    # forbid: DGRAPE only, see FORBIDDEN STATES above
+               "forbid": 1e-3,     # forbid: DGRAPE only, see FORBIDDEN STATES above
+               "transmon": 0.0},   # DGRAPE only, off; see TRANSMON EXCITATION above
     forbid_fock_min=10,            # P_F projects on storage Fock >= this
     amp_norm="modulus",            # amp_max caps |I + iQ| per drive
     hard_amp_limit=25.0,           # L-BFGS-B box on the raw pre-image x

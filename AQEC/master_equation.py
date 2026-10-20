@@ -14,6 +14,10 @@ photon numbers (Fig. 2d): a transmon decay at a random time leaves a photon-numb
 dependent phase that frame (i) hides inside its frame transformation. Solved by
 integrating the density-matrix ODE (solve_ivp, DOP853).
 
+Jump operators (collapse_operators): decay, thermal + drive-induced heating and pure
+dephasing, all on by default. The dephasing operators are diagonal, so frame (i) is exact for
+them; the heating jumps, like the decay jumps, lose a photon-number phase in frame (i).
+
 Space: storage (Fock 0..n_c-1) x transmon (g, e, f) x readout (m = 0, 1), storage
 outermost, so |n, j, m> sits at index (n*3 + j)*2 + m. Eq. (3) never creates a second
 readout photon, so m <= 1 is exact for it.
@@ -77,8 +81,11 @@ def build_operators(n_c=MIN_N_C):
     s_ge[G, E] = 1.0
     s_ef = np.zeros((N_Q, N_Q), dtype=complex)
     s_ef[E, F] = 1.0
+    a = _embed(annihilation(n_c), Iq, Ir)
+    with np.errstate(**_QUIET):
+        n_a = a.conj().T @ a             # same construction as DGRAPE.model (compared exactly)
     return {
-        "a": _embed(annihilation(n_c), Iq, Ir),
+        "a": a,
         "q": _embed(Ia, q, Ir),
         "r": _embed(Ia, Iq, r),
         "Pg": _embed(Ia, proj(G), Ir),
@@ -86,6 +93,7 @@ def build_operators(n_c=MIN_N_C):
         "Pf": _embed(Ia, proj(F), Ir),
         "s_ge": _embed(Ia, s_ge, Ir),
         "s_ef": _embed(Ia, s_ef, Ir),
+        "n_a": n_a,
     }
 
 
@@ -114,9 +122,44 @@ def higher_order_shifts(n_c=MIN_N_C, K=dev.K_a, chi_q_p=dev.chi_q_p):
     return np.diag(diag).astype(complex)
 
 
+def jump_rates(kappa_a=dev.kappa_a, drive_heating=True):
+    """Every rate the jump operators use, in 1/us (notebook Table 5).
+
+    gamma_ge, gamma_ef -- transmon decay, 1/T1_GE and 1/T1_EF (Table I)
+    r_thermal          -- up/down ratio at equilibrium, P_e/(1 - P_e) with P_e = 1.7% (Table I)
+    r                  -- up/down ratio used: r_thermal, plus DELTA_GAMMA_UP_DRIVE * T1_GE when
+                          drive_heating (App. D: 0.42 ms^-1 extra g->e under the pumps)
+    up_ge, up_ef       -- transmon heating g->e and e->f, r * gamma_ge and r * gamma_ef. App. D
+                          uses one ratio r for both transitions
+    up_a               -- storage heating, detailed balance at P_1 = 0.6% against the kappa_a
+                          passed in (kappa_a = 0 switches storage heating off too)
+    phi_ge, phi_gf     -- transmon pure dephasing from Ramsey: 1/T2R - gamma_ge/2, 1/T2gf - gamma_ef/2
+    phi_a              -- storage pure dephasing NOT already produced by thermal transmon heating:
+                          1/T2a - kappa_a/2 - r_thermal * gamma_ge (measured kappa_a, not the argument).
+                          T2a was measured at equilibrium, where each thermal g->e jump shifts the
+                          storage by chi_ge for ~T1_GE and so dephases it at ~the jump rate. Frame (ii)
+                          simulates that explicitly, so it is subtracted (0.58 -> 0.23 ms^-1); the full
+                          drives-off model then reproduces T2a to ~2% (tested)
+    Thermal heating and the transmon dephasing rates equal DGRAPE.model.rates(); DGRAPE's phi_a is
+    the unsubtracted 1/T2a - kappa_a/2 (tested).
+    """
+    g_ge, g_ef = 1.0 / dev.T1_GE, 1.0 / dev.T1_EF
+    r_th = dev.P_E_THERMAL / (1.0 - dev.P_E_THERMAL)
+    r = r_th + (dev.DELTA_GAMMA_UP_DRIVE * dev.T1_GE if drive_heating else 0.0)
+    return {
+        "gamma_ge": g_ge, "gamma_ef": g_ef, "r_thermal": r_th, "r": r,
+        "up_ge": r * g_ge, "up_ef": r * g_ef,
+        "up_a": kappa_a * dev.P_CAVITY_THERMAL / (1.0 - dev.P_CAVITY_THERMAL),
+        "phi_ge": 1.0 / dev.T2_RAMSEY - 0.5 * g_ge,
+        "phi_gf": 1.0 / dev.T2_GF_RAMSEY - 0.5 * g_ef,
+        "phi_a": 1.0 / dev.T2_CAVITY - 0.5 * dev.kappa_a - r_th * g_ge,
+    }
+
+
 def collapse_operators(n_c=MIN_N_C, transmon_decay="split", gamma=None,
-                       kappa_a=dev.kappa_a, kappa_r=dev.kappa_r):
-    """Jump operators of the notebook's Table 5 (rows marked 'yes').
+                       kappa_a=dev.kappa_a, kappa_r=dev.kappa_r, heating="driven",
+                       dephasing=True):
+    """Jump operators of the notebook's Table 5. Default: every row (decay, heating, dephasing).
 
     transmon_decay:
       "split"    -- sqrt(1/T1_GE)|g><e| and sqrt(1/T1_EF)|e><f| (notebook §8.1; both
@@ -125,7 +168,17 @@ def collapse_operators(n_c=MIN_N_C, transmon_decay="split", gamma=None,
                     since <e|q|f> = sqrt2, f->e runs at 2 gamma. Default 1/T1_GE gives
                     T1_ef = 25 us instead of the measured 31 us (§8.1)
       "none"     -- no transmon decay
+    heating (independent of transmon_decay; rates from jump_rates):
+      "driven"   -- sqrt(up_ge)|e><g|, sqrt(up_ef)|f><e| at thermal + drive-induced ratio r,
+                    and sqrt(up_a) a'
+      "thermal"  -- the same at the equilibrium ratio only
+      "none"     -- no heating
+    dephasing:  sqrt(2 phi_ge)|e><e|, sqrt(2 phi_gf)|f><f|, sqrt(2 phi_a) n_a. D[sqrt(G)|j><j|]
+                damps the (g, j) coherence at G/2, so G = 2 phi gives phi exactly.
+    heating="none", dephasing=False is the decay-only set used before these were added.
     """
+    if heating not in ("driven", "thermal", "none"):
+        raise ValueError(f"unknown heating={heating!r}")
     ops = build_operators(n_c)
     c_ops = [np.sqrt(kappa_a) * ops["a"], np.sqrt(kappa_r) * ops["r"]]
     if transmon_decay == "split":
@@ -136,6 +189,15 @@ def collapse_operators(n_c=MIN_N_C, transmon_decay="split", gamma=None,
         c_ops.append(np.sqrt(g) * ops["q"])
     elif transmon_decay != "none":
         raise ValueError(f"unknown transmon_decay={transmon_decay!r}")
+    R = jump_rates(kappa_a, drive_heating=(heating == "driven"))
+    if heating != "none":
+        c_ops += [np.sqrt(R["up_ge"]) * ops["s_ge"].conj().T,
+                  np.sqrt(R["up_ef"]) * ops["s_ef"].conj().T,
+                  np.sqrt(R["up_a"]) * ops["a"].conj().T]
+    if dephasing:
+        c_ops += [np.sqrt(2 * R["phi_ge"]) * ops["Pe"],
+                  np.sqrt(2 * R["phi_gf"]) * ops["Pf"],
+                  np.sqrt(2 * R["phi_a"]) * ops["n_a"]]
     return [c for c in c_ops if np.any(c)]
 
 

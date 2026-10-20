@@ -530,9 +530,13 @@ python EST/train_est.py --gate X --variant est --maxiter 1000 \
 # Cold vs. warm-stage-1 vs. warm-stage-2 vs. Ord, scored through both code paths
 python EST/compare_warmstart.py
 
-# T gate, end-of-pulse drive: stage-2-only schedule changes on the eigh pipeline
-# (STAGE2_VARIANTS in EST/train_est_eigh.py; est_optimization.ipynb §2). Seed 1, cold starts;
-# the control is est_experiments.ipynb §9.2's u_T_est_best2000. *_d2 variants require --w-smooth.
+# T gate, drive shape, SINGLE STAGE (est_optimization.ipynb §3): C6 alone (`est_sm`, needs
+# --w-smooth) at seed 1, 2000 it; the control is reused (stage 1 of u_T_est_best2000).
+python3 EST/drive_shape_t.py commands   # three C6 runs + a check retrain of the control
+python3 EST/drive_shape_t.py compare    # -> tables/est_drive_T_seed1_sp{.csv,_traces.npz}
+
+# FROZEN two-stage record of the same question: stage-2-only schedule changes
+# (STAGE2_VARIANTS in EST/train_est_eigh.py). No longer in any notebook.
 python EST/stage2_t.py commands     # prints the scan + full-run commands
 python EST/stage2_t.py scan         # picks w6 by the rule in the module docstring
 python EST/stage2_t.py compare      # -> tables/est_stage2_T_seed1{.csv,_traces.npz}

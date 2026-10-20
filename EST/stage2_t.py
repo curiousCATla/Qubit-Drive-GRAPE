@@ -2,6 +2,11 @@
 T gate, end-of-pulse drive: does changing STAGE 2 of the `est` schedule move the
 transmon drive away from t = T? Eigh pipeline, seed 1, cold two-stage starts.
 
+FROZEN two-stage record. est_optimization.ipynb is now single-stage throughout;
+its T study is EST/drive_shape_t.py, which imports this module's scoring
+(drive_metrics, dynamics, score_run) and reads this module's tables only for a
+grey reference curve. Do not change the scoring here without rerunning both.
+
     python EST/stage2_t.py commands     # print the training commands
     python EST/stage2_t.py scan         # score the w6 scan, apply the rule below
     python EST/stage2_t.py compare      # score control + configs 1-3
@@ -35,7 +40,7 @@ Outputs
     tables/est_stage2_T_seed1_scan.csv      one row per scan run (+ control)
     tables/est_stage2_T_seed1.csv           one row per (run, stage)
     tables/est_stage2_T_seed1_traces.npz    per-time traces, keys "<run>/<stage>/<name>"
-The figures are drawn in est_optimization.ipynb §2.
+Its figures (fig7*_stage2_*) were drawn by the two-stage version of est_optimization.ipynb.
 """
 
 import argparse

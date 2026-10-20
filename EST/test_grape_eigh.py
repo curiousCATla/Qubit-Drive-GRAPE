@@ -582,18 +582,104 @@ class ExtraTermsFiniteDifferenceTest(unittest.TestCase):
         self.assertEqual(c4, c7)
         np.testing.assert_array_equal(g4, g7)
         self.assertEqual(sorted(t4), ["c1", "c2", "c3", "c4"])
-        self.assertEqual(sorted(t7), ["c1", "c2", "c3", "c4", "c5", "c6", "cerr"])
+        self.assertEqual(sorted(t7),
+                         ["c1", "c2", "c3", "c4", "c5", "c6", "cerr", "cleak"])
+
+    # --- C_L, leakage out of the instantaneous error space -------------------
+
+    def test_cleak_alone(self):
+        self._fd_check((0, 0, 0, 0, 0, 0, 0, 1.0), seed=37)
+
+    def test_full_cost_all_eight_terms(self):
+        self._fd_check((1.0, 0.7, 7.0, 1.0, 1.0, 100.0, 1e-2, 1.0), seed=38, dt=0.05,
+                       u_scale=20.0)
+
+    def test_eight_tuple_at_zero_w_leak_is_the_seven_term_objective(self):
+        """w_L = 0 must leave cost and gradient bit-identical: C_L is reported only."""
+        n_t, n_c, N, dt = 3, 8, 8, 0.02
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(n_t, n_c)
+        kw = _extra_kw(n_t, n_c)
+        u = np.random.default_rng(39).uniform(-4, 4, size=(N, 4))
+        w7 = (1.0, 0.7, 7.0, 1.0, 0.3, 3.0, 5e-6)
+        c7, g7, t7 = grape_eigh.cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt, w7, **kw)
+        c8, g8, t8 = grape_eigh.cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                              w7 + (0.0,), **kw)
+        self.assertEqual(c7, c8)
+        np.testing.assert_array_equal(g7, g8)
+        self.assertEqual(t7, t8)
+
+    def _random_trajectory(self, seed, n_c=10, N=60, dt=0.01, u_scale=20.0):
+        n_t = 3
+        H0, Hc, A, P0c, P0e, _ = _est_system(n_t, n_c)
+        u = np.random.default_rng(seed).uniform(-u_scale, u_scale, size=(N, 4))
+        traj = grape_eigh.propagate_trajectory(
+            u, H0, Hc, np.concatenate([P0c, P0e], axis=1), dt)
+        return traj[:, :, :6], traj[:, :, 6:], A
+
+    def test_cleak_is_the_reported_leakage_metric(self):
+        """
+        The training term IS Eq. 7 as EST/diagnostics.py reports it: the two-word
+        form equals the six-cardinal mean (the cardinals sum to 3 x the identity
+        on the error space), and P_E from G equals the projector of diagnostics'
+        polar basis (same span).
+        """
+        from EST import diagnostics
+        code, err, A = self._random_trajectory(seed=40)
+        c_leak, _, _, L = grape_eigh.leakage_cost(code[:, :, :2], err[:, :, :2], A)
+        want = diagnostics.leakage_Ej(code[:, :, :2], err, A).mean(axis=1)
+        np.testing.assert_allclose(L, want, atol=1e-12)
+        self.assertAlmostEqual(c_leak, float(want.mean()), places=12)
+        self.assertGreater(c_leak, 1e-3, "no leakage: the comparison would be vacuous")
+
+    def test_c2_splits_into_leakage_plus_in_space_mismatch(self):
+        """
+        C2 = C_L + C_mis exactly, per cardinal 1 - F_ET = L + (1 - L)(1 - f), with
+        f the overlap of the projected, renormalized error state with the
+        normalized image a|psi_C>/||a|psi_C>||, which lies in E(t). This is the
+        formulation claim of est_optimization.ipynb section 1.2.
+        """
+        from EST import diagnostics
+        code, err, A = self._random_trajectory(seed=41)
+        c2, _, _ = grape_eigh.et_cost(code, err, A)
+        c_leak, _, _, _ = grape_eigh.leakage_cost(code[:, :, :2], err[:, :, :2], A)
+
+        W = diagnostics._instantaneous_error_basis(code[:, :, :2], A)    # (T,n,2)
+        cE = np.einsum('tik,tim->tkm', np.conj(W), err)                  # (T,2,6)
+        L_m = 1.0 - np.sum(np.abs(cE) ** 2, axis=1)                      # (T,6)
+        img = np.einsum('ij,tjm->tim', A, code)
+        img /= np.linalg.norm(img, axis=1, keepdims=True)
+        cI = np.einsum('tik,tim->tkm', np.conj(W), img)                  # image in E
+        np.testing.assert_allclose(np.sum(np.abs(cI) ** 2, axis=1), 1.0, atol=1e-10)
+        f = (np.abs(np.sum(np.conj(cI) * cE, axis=1)) ** 2
+             / np.maximum(1.0 - L_m, 1e-300))
+        c_mis = float(np.mean((1.0 - L_m) * (1.0 - f)))
+
+        self.assertAlmostEqual(c_leak, float(L_m.mean()), places=12)
+        # et_cost adds 1e-12 to ||a psi_C||^2, hence the 1e-10 tolerance.
+        self.assertAlmostEqual(c2, c_leak + c_mis, delta=1e-10)
+        self.assertGreaterEqual(c_mis, 0.0)
+        self.assertLessEqual(c_leak, c2 + 1e-10)
 
 
 class ExtraTermsCrossBackendTest(unittest.TestCase):
-    """Hand adjoint of all seven terms against JAX autodiff, production chain."""
+    """Hand adjoint of all extra terms against JAX autodiff, production chain."""
     n_t, n_c, N, dt = 3, 10, 200, DT
 
     def test_seven_term_gradient_matches_autodiff(self):
-        from EST.grape_jax import make_cost_terms
         # w5 = 30: at production-scale pulses c5 ~ 1e-2, so a unit weight would
         # leave its injection invisible under the others.
-        weights = (1.0, 0.7, 7.0, 1.0, 1.0, 30.0, 5e-6)
+        self._compare((1.0, 0.7, 7.0, 1.0, 1.0, 30.0, 5e-6))
+
+    def test_eight_term_gradient_matches_autodiff(self):
+        self._compare((1.0, 0.7, 7.0, 1.0, 1.0, 30.0, 5e-6, 1.0))
+
+    def test_cleak_alone_matches_autodiff(self):
+        """C_L alone, so its two injections are not hidden under C1's."""
+        self._compare((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+
+    def _compare(self, weights):
+        from EST.grape_jax import make_cost_terms
+        weights = tuple(weights) + (0.0,) * (8 - len(weights))
         sysargs = _est_system(self.n_t, self.n_c)
         H0, Hc, A, P0c, P0e, Ptg = sysargs
         kw = _extra_kw(self.n_t, self.n_c)
@@ -621,9 +707,16 @@ class ExtraTermsCrossBackendTest(unittest.TestCase):
             r = (nbar[:, 0] - nbar[:, 1]) / (nbar[:, 0] + nbar[:, 1] + 1e-12)
             c5 = jnp.mean(r ** 2)
             c6 = jnp.sum((u[1:] - u[:-1]) ** 2)
+            # C_L, written independently: projector onto span(a C(t)) via a 2x2 solve.
+            G = jnp.einsum('ij,tjm->tim', jargs[2], words)
+            Gh = jnp.conj(jnp.swapaxes(G, 1, 2))
+            Y = jnp.linalg.solve(Gh @ G, Gh @ err[:, :, :2])
+            PE = G @ Y
+            cleak = 1.0 - 0.5 * jnp.mean(jnp.sum(jnp.real(jnp.conj(err[:, :, :2]) * PE),
+                                                 axis=(1, 2)))
             w = weights
             return (w[0] * t["c1"] + w[1] * t["c2"] + w[2] * t["c3"] + w[3] * t["c4"]
-                    + w[4] * cerr + w[5] * c5 + w[6] * c6)
+                    + w[4] * cerr + w[5] * c5 + w[6] * c6 + w[7] * cleak)
 
         cj, gj = jax.value_and_grad(total)(jnp.asarray(x))
         cj, gj = float(cj), np.asarray(gj)
@@ -637,7 +730,127 @@ class ExtraTermsCrossBackendTest(unittest.TestCase):
         rel = np.max(np.abs(gn - gj)) / np.max(np.abs(gj))
         self.assertLess(rel, 1e-8, f"gradient disagrees with autodiff at rel={rel:.3e}")
         self.assertEqual(sorted(report(x.ravel())[self.n_c]),
-                         ["c1", "c2", "c3", "c4", "c5", "c6", "cerr"])
+                         ["c1", "c2", "c3", "c4", "c5", "c6", "cerr", "cleak"])
+
+
+class PaperFormTest(unittest.TestCase):
+    """
+    The App. C cost form as printed (grape_eigh.PAPER_COST_FORM) on the eigh
+    pipeline, for est_experiments.ipynb Appendix A. It changes C2 (one power of
+    N_norm, t = T left out) and C3 (raw variance, v in rad/ns), so both
+    injections get their own checks: values and gradient against JAX autodiff
+    through grape_jax's existing paper-form option, and central differences on
+    each term alone. The repo form must not move.
+    """
+    n_t, n_c, N, dt = 3, 10, 200, DT
+
+    def test_form_matches_grape_jax(self):
+        from EST.grape_jax import PAPER_COST_FORM as JAX_FORM
+        self.assertEqual(grape_eigh.PAPER_COST_FORM, JAX_FORM)
+
+    def _jax_and_eigh(self, weights, form):
+        sysargs = _est_system(self.n_t, self.n_c)
+        x = np.random.default_rng(3).uniform(-20.0, 20.0, size=(self.N, 4))
+        jc = jax_constrainer(self.N, self.dt, band=BAND_MHZ, ramp_ns=RAMP_NS,
+                             cmask=kitten_code.control_mask("X"))
+        cj, gj = jax_cost_and_grad(*_jax_system(sysargs, self.dt), weights,
+                                   constrain=jc, **form)(jnp.asarray(x))
+        objective, report, _ = grape_eigh.build_gate_objective(
+            "X", self.N, dt=self.dt, n_t=self.n_t, trunc_list=[self.n_c],
+            weights=weights, **form)
+        cn, gn = objective(x.ravel())
+        return x, sysargs, jc, float(cj), np.asarray(gj), cn, gn.reshape(self.N, 4), report
+
+    def _compare(self, weights, rtol_grad):
+        form = grape_eigh.PAPER_COST_FORM
+        _, _, _, cj, gj, cn, gn, _ = self._jax_and_eigh(weights, form)
+        self.assertAlmostEqual(cn, cj, delta=1e-9 * max(abs(cj), 1.0))
+        rel = np.max(np.abs(gn - gj)) / np.max(np.abs(gj))
+        self.assertLess(rel, rtol_grad,
+                        f"paper-form gradient disagrees with JAX at rel={rel:.3e}")
+
+    def test_stage1_weights_match_autodiff(self):
+        self._compare((1.0, 0.7, 7.0, 1.0), rtol_grad=1e-8)
+
+    def test_stage2_weights_match_autodiff(self):
+        self._compare((1.0, 0.1, 0.0, 1.0), rtol_grad=1e-9)
+
+    def test_c2_alone_matches_autodiff(self):
+        """C2 alone, so its injection is not hidden under C1's."""
+        self._compare((0.0, 1.0, 0.0, 0.0), rtol_grad=1e-9)
+
+    def test_report_terms_match_grape_jax(self):
+        from EST.grape_jax import make_cost_terms
+        form = grape_eigh.PAPER_COST_FORM
+        x, sysargs, jc, *_, report = self._jax_and_eigh((1.0, 0.7, 7.0, 1.0), form)
+        jt = make_cost_terms(*_jax_system(sysargs, self.dt), constrain=jc, **form)
+        want = {k: float(v) for k, v in jt(jnp.asarray(x)).items()}
+        got = report(x.ravel())[self.n_c]
+        for k in ("c1", "c2", "c3", "c4"):
+            self.assertAlmostEqual(got[k], want[k], places=10, msg=k)
+
+    def _fd(self, weights, form, seed, dt=0.02, N=8, n_c=8, u_scale=4.0, h=1e-6):
+        rng = np.random.default_rng(seed)
+        x = rng.uniform(-u_scale, u_scale, size=(N, 4))
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(3, n_c)
+
+        def value(xx):
+            return grape_eigh.cost_and_grad(xx, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                            weights, want_grad=False, **form)[0]
+
+        _, grad, _ = grape_eigh.cost_and_grad(x, H0, Hc, A, P0c, P0e, Ptg, dt,
+                                              weights, **form)
+        self.assertGreater(np.abs(grad).max(), 1e-6, "vacuous FD check")
+        scale = np.abs(grad).max()
+        idx = np.random.default_rng(7)
+        for k, j in zip(idx.integers(0, N, size=10), idx.integers(0, 4, size=10)):
+            xp, xm = x.copy(), x.copy()
+            xp[k, j] += h
+            xm[k, j] -= h
+            fd = (value(xp) - value(xm)) / (2 * h)
+            with self.subTest(k=int(k), j=int(j)):
+                self.assertAlmostEqual(fd, grad[k, j], delta=1e-6 * max(scale, 100.0))
+
+    def test_fd_c2_paper_form(self):
+        self._fd((0.0, 1.0, 0.0, 0.0), grape_eigh.PAPER_COST_FORM, seed=13)
+
+    def test_fd_c3_raw_variance(self):
+        """Raw C3 with v in the propagation unit (rad/us): large enough that a
+        broken injection cannot hide under the FD tolerance."""
+        self._fd((0.0, 0.0, 1.0, 0.0), dict(c3_normalize=False), seed=14)
+
+    def test_fd_c3_paper_form(self):
+        self._fd((0.0, 0.0, 1.0, 0.0), grape_eigh.PAPER_COST_FORM, seed=14)
+
+    def test_fd_full_stage1_paper_form(self):
+        self._fd((1.0, 0.7, 7.0, 1.0), grape_eigh.PAPER_COST_FORM, seed=11)
+
+    def test_endpoint_exclusion_zeroes_the_last_injection(self):
+        sysargs = _est_system(3, 8)
+        H0, Hc, A, P0c, P0e, _ = sysargs
+        u = np.random.default_rng(5).uniform(-4, 4, size=(8, 4))
+        traj = grape_eigh.propagate_trajectory(
+            u, H0, Hc, np.concatenate([P0c, P0e], axis=1), 0.02)
+        code, err = traj[:, :, :6], traj[:, :, 6:]
+        c_all, ic_all, ie_all = grape_eigh.et_cost(code, err, A, norm_power=1)
+        c_cut, ic_cut, ie_cut = grape_eigh.et_cost(code, err, A, norm_power=1,
+                                                   include_endpoint=False)
+        self.assertEqual(ic_cut.shape, ic_all.shape)
+        self.assertEqual(np.abs(ic_cut[-1]).max(), 0.0)
+        self.assertEqual(np.abs(ie_cut[-1]).max(), 0.0)
+        self.assertNotEqual(c_all, c_cut)
+
+    def test_default_is_the_repo_form_bit_for_bit(self):
+        H0, Hc, A, P0c, P0e, Ptg = _est_system(3, 8)
+        u = np.random.default_rng(9).uniform(-4, 4, size=(8, 4))
+        w = (1.0, 0.7, 7.0, 1.0)
+        c0, g0, t0 = grape_eigh.cost_and_grad(u, H0, Hc, A, P0c, P0e, Ptg, 0.02, w)
+        c1, g1, t1 = grape_eigh.cost_and_grad(
+            u, H0, Hc, A, P0c, P0e, Ptg, 0.02, w, c3_normalize=True,
+            c2_norm_power=2, c2_include_endpoint=True, c3_dt=None)
+        self.assertEqual(c0, c1)
+        self.assertTrue(np.array_equal(g0, g1))
+        self.assertEqual(t0, t1)
 
 
 class StageWeightScheduleTest(unittest.TestCase):
@@ -672,6 +885,34 @@ class StageWeightScheduleTest(unittest.TestCase):
         self.assertEqual(self.sw("est_err", w_err=0.3, w_smooth=1e-4)[1],
                          s2 + (0.3, 0.0, 0.0))
 
+    def test_weight_variant_est_wB(self):
+        # est_experiments.ipynb Appendix B: only w2 differs from `est`.
+        self.assertEqual(self.sw("est_wB"), [(1.0, 1.0, 7.0, 1.0), (1.0, 0.2, 0.0, 1.0)])
+        self.assertEqual(self.sw("est_wB", n_stages=1), [(1.0, 1.0, 7.0, 1.0)])
+
+    def test_est_lk_is_c_leak_alone_and_needs_w_leak(self):
+        s1, s2 = (1.0, 0.7, 7.0, 1.0), (1.0, 0.1, 0.0, 1.0)
+        self.assertEqual(self.sw("est_lk", w_leak=0.3, n_stages=1),
+                         [s1 + (0.0, 0.0, 0.0, 0.3)])
+        self.assertEqual(self.sw("est_lk", w_leak=0.3),
+                         [s1 + (0.0, 0.0, 0.0, 0.3), s2 + (0.0, 0.0, 0.0, 0.3)])
+        with self.assertRaises(ValueError):
+            self.sw("est_lk", n_stages=1)
+
+    def test_w_leak_does_not_touch_variants_without_leak(self):
+        """Every pre-existing extended variant keeps its 7-tuple."""
+        for v, kw in (("est_err", {"w_err": 0.3}), ("est_dn", {"w_dn": 3.0}),
+                      ("est_all", {"w_err": 0.3, "w_dn": 3.0})):
+            self.assertEqual(self.sw(v, n_stages=1, w_leak=1.0, **kw),
+                             self.sw(v, n_stages=1, **kw), v)
+            self.assertEqual(len(self.sw(v, n_stages=1, **kw)[0]), 7, v)
+
+    def test_est_sm_is_c6_alone_and_needs_w_smooth(self):
+        self.assertEqual(self.sw("est_sm", w_smooth=1e-4, n_stages=1),
+                         [(1.0, 0.7, 7.0, 1.0, 0.0, 0.0, 1e-4)])
+        with self.assertRaises(ValueError):
+            self.sw("est_sm", n_stages=1)
+
     def test_stage2_variants_touch_stage2_only(self):
         s1 = (1.0, 0.7, 7.0, 1.0)
         self.assertEqual(self.sw("est_c3s2"), [s1, (1.0, 0.1, 7.0, 1.0)])
@@ -687,6 +928,14 @@ class StageWeightScheduleTest(unittest.TestCase):
         for v in ("est_d2", "est_c3s2_d2"):
             with self.assertRaises(ValueError):
                 self.sw(v)
+
+    def test_paperform_runs_the_est_weights(self):
+        """est_paperform changes the cost FORM only; its weights are est's."""
+        from EST import train_est_eigh
+        self.assertEqual(self.sw("est_paperform"), self.sw("est"))
+        self.assertEqual(self.sw("est_paperform", n_stages=1), self.sw("est", n_stages=1))
+        self.assertEqual(train_est_eigh.FORM_VARIANTS["est_paperform"],
+                         grape_eigh.PAPER_COST_FORM)
 
     def test_unknown_variant_raises(self):
         with self.assertRaises(KeyError):
@@ -714,6 +963,24 @@ class StageWeightScheduleTest(unittest.TestCase):
         # It is a truncation, not a different tuple.
         for v, kw in (("est", {}), ("est_dn", {"w_dn": 3.0})):
             self.assertEqual(self.sw(v, n_stages=1, **kw), self.sw(v, **kw)[:1])
+
+    def test_w2_override_replaces_c2_weight_of_single_phase(self):
+        """--w2 (est_optimization.ipynb s5): only w2 moves, single phase only."""
+        self.assertEqual(self.sw("est_dn", w_dn=3.0, w2=0.9, n_stages=1),
+                         [(1.0, 0.9, 7.0, 1.0, 0.0, 3.0, 0.0)])
+        self.assertEqual(self.sw("est", w2=0.6, n_stages=1), [(1.0, 0.6, 7.0, 1.0)])
+        # w2=None is the old behaviour, tuple for tuple.
+        self.assertEqual(self.sw("est_dn", w_dn=3.0, w2=None, n_stages=1),
+                         self.sw("est_dn", w_dn=3.0, n_stages=1))
+        self.assertEqual(self.sw("est", w2=None), self.sw("est"))
+        # Ambiguous under two stages, so refused.
+        with self.assertRaises(ValueError):
+            self.sw("est_dn", w_dn=3.0, w2=0.9)
+        # The variant's own checks still run.
+        with self.assertRaises(ValueError):
+            self.sw("est_dn", w2=0.9, n_stages=1)
+        with self.assertRaises(ValueError):
+            self.sw("est_c3s2", w2=0.9, n_stages=1)
 
     def test_stage2_variants_are_refused_under_one_stage(self):
         """They are defined by stage 2, so one stage would silently be `est`."""

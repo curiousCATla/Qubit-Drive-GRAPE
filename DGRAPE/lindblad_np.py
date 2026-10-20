@@ -226,15 +226,30 @@ def forbidden_mask(model, fock_min):
     return (np.arange(model.d) // (N_Q * model.n_r)) >= fock_min
 
 
-def _forbidden_sum(states, mask, idx):
-    """sum_{rho in states} sum_{b in idx} Tr[P_F rho_b] for (B, d, d) stacks."""
+def transmon_mask(model):
+    """Diagonal of P_T = 1_a (x) (|e><e| + |f><f|) (x) 1_r, as a bool (d,): the transmon is
+    excited. The transmon level of index i is (i // n_r) % 3 (g, e, f = 0, 1, 2)."""
+    return (np.arange(model.d) // model.n_r) % N_Q >= 1
+
+
+def _occupations(states, masks, idx):
+    """(K,) sums sum_{rho in states} sum_{b in idx} Tr[P_k rho_b] for (B, d, d) stacks and
+    real diagonal projectors / weights masks (K, d)."""
     diag = np.stack([np.real(np.diagonal(R[list(idx)], axis1=-2, axis2=-1)) for R in states])
-    return float(diag[..., mask].sum())
+    return diag.sum(axis=(0, 1)) @ np.asarray(masks, dtype=float).T
+
+
+def _forbidden_sum(states, mask, idx):
+    """sum_{rho in states} sum_{b in idx} Tr[P_F rho_b] for (B, d, d) stacks: a float for one
+    mask (d,), a (K,) array for a stack (K, d)."""
+    C = _occupations(states, np.atleast_2d(mask), idx)
+    return float(C[0]) if np.ndim(mask) == 1 else C
 
 
 def forbidden_population(model, u, E, dt, spec=None, mask=None, idx=FORBID_IDX):
     """(C, per_step): C = sum_{k=1}^{N} sum_{b in idx} Tr[P_F rho_b(k)] (Heeres' forbidden-state
-    cost) and the forbidden population of each step, (N, len(idx)). No gradient."""
+    cost) and the forbidden population of each step, (N, len(idx)). No gradient. Works for
+    any diagonal projector, e.g. transmon_mask."""
     u = np.asarray(u, dtype=float)
     spec = spec_for_pulse(model, u, dt) if spec is None else spec
     R_N, hist = propagate(model, u, E, dt, spec, store=True)
@@ -252,7 +267,8 @@ def _w_term(a, Bt, d):
     return -1j * (A_wide @ Bd_tall - Bd_wide @ a_tall)
 
 
-def fidelity_and_grad(model, u, E, T, w, dt, spec=None, forbid_mask=None, forbid_idx=FORBID_IDX):
+def fidelity_and_grad(model, u, E, T, w, dt, spec=None, forbid_mask=None, forbid_idx=FORBID_IDX,
+                      occ_weights=None):
     """(F, dF/du) with dF/du of shape (N, 4), exact for the Taylor propagator (W form).
 
     With `forbid_mask` (the bool diagonal of P_F, `forbidden_mask`), also the forbidden-state
@@ -264,6 +280,12 @@ def fidelity_and_grad(model, u, E, T, w, dt, spec=None, forbid_mask=None, forbid
 
     and is carried as extra entries of the costate stack, paired with the forward terms of
     the inputs in forbid_idx. dF/du stays separate, as Eq. 24 needs it.
+
+    SEVERAL OCCUPATION COSTS. `forbid_mask` may also be a stack (K, d) of diagonal projectors
+    (e.g. forbidden_mask and transmon_mask) with weights `occ_weights` (K,), default ones.
+    C is then the (K,) vector of the separate sums C_k, and the gradient returned is that of
+    the weighted total sum_k w_k C_k: every C_k obeys the same recursion, so one costate with
+    the source diag(sum_k w_k mask_k) carries them all at the cost of one.
     """
     u = np.asarray(u, dtype=float)
     spec = spec_for_pulse(model, u, dt) if spec is None else spec
@@ -286,7 +308,9 @@ def fidelity_and_grad(model, u, E, T, w, dt, spec=None, forbid_mask=None, forbid
     forbid = forbid_mask is not None
     if forbid:
         idx = list(forbid_idx)
-        P = np.diag(np.asarray(forbid_mask, dtype=float)).astype(complex)
+        masks = np.atleast_2d(np.asarray(forbid_mask, dtype=float))
+        wts = np.ones(len(masks)) if occ_weights is None else np.asarray(occ_weights, float)
+        P = np.diag(wts @ masks).astype(complex)
         Cval = _forbidden_sum(hist[1:] + [R_N], forbid_mask, idx)
         Lam = np.concatenate([Lam, np.broadcast_to(P, (len(idx), d, d))])
         grad_C = np.empty_like(u)

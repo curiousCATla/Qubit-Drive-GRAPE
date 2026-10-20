@@ -4,11 +4,20 @@ eigh + analytic-adjoint pipeline (EST/grape_eigh.py).
 
     python EST/train_est_eigh.py --gate X --variant est --maxiter 2000
     python EST/train_est_eigh.py --gate X --variant est --stages 1   # single phase
+    python EST/train_est_eigh.py --gate X --variant est_paperform --maxiter 2000 \
+           --seed 0 --tag appA_seed0      # App. C cost form as printed, est weights
+    python EST/train_est_eigh.py --gate X --variant est_wB --maxiter 2000 \
+           --seed 0 --tag seed0           # weights (1,1,7)/(1,0.2,0), Appendix B
+    python EST/train_est_eigh.py --gate X --variant est_dn --stages 1 \
+           --w2 0.9 --w-dn 3 --maxiter 1000  # single phase, C2 weight 0.9 not 0.7
+    python EST/train_est_eigh.py --gate X --variant est_lk --stages 1 \
+           --w-leak 0.3 --maxiter 2000       # + C_L, leakage out of E(t)
 
 `--stages 1` drops stage 2 and holds stage 1's weights (w2=0.7, w3=7) for the
 whole run, so the reported objective is the one that was optimized. That is the
-protocol of est_optimization.ipynb section 1. It is opt-in: everything else,
-including section 2's STAGE2_VARIANTS study, still runs two stages.
+protocol of every study in est_optimization.ipynb (X: section 2, T: section 3).
+It is opt-in: the default is still two stages, and the frozen two-stage
+STAGE2_VARIANTS study (EST/stage2_t.py) needs it.
 
 This is EST/train_est.py's twin. It runs the SAME weight schedule, the same
 L-BFGS-B settings, the same box bounds, and writes the same JSON schema -- the
@@ -42,7 +51,7 @@ from scipy.optimize import minimize
 
 from EST import kitten_code
 from EST.device import DT, EPS_MAX, N_T, BAND_MHZ, RAMP_NS, n_steps
-from EST.grape_eigh import build_gate_objective
+from EST.grape_eigh import PAPER_COST_FORM, build_gate_objective
 # Imported, not restated: identical semantics to the JAX driver by construction.
 from EST.train_est import (LOG_DIR, PULSE_DIR, SCHEDULES, TRAIN_TRUNC,
                            _print_report, check_constraints, deramp)
@@ -52,6 +61,7 @@ from EST.train_est import (LOG_DIR, PULSE_DIR, SCHEDULES, TRAIN_TRUNC,
 #   err     w_err  terminal error-space infidelity (C1's form on error cardinals)
 #   dn      w5     Eq. A7 codeword photon-number mismatch, normalized (C5)
 #   smooth  w6     sum ||u_{k+1}-u_k||^2 smoothness penalty (C6)
+#   leak    w_L    gate-averaged leakage out of the instantaneous error space (C_L)
 # Kept out of train_est.SCHEDULES on purpose: the JAX driver has no such terms.
 EXT_BASE = "est"
 EXT_VARIANTS = {
@@ -59,63 +69,113 @@ EXT_VARIANTS = {
     "est_dn": ("dn",),
     "est_err_dn": ("err", "dn"),
     "est_all": ("err", "dn", "smooth"),
+    # C6 alone. Built for the single-stage T drive-shape study
+    # (EST/drive_shape_t.py, est_optimization.ipynb section 3). Needs an explicit
+    # --w-smooth: a silently defaulted smoothness weight is refused.
+    "est_sm": ("smooth",),
+    # C_L alone (est_optimization.ipynb section 2). Needs --w-leak. Only variants
+    # that use "leak" get an 8-tuple; every other variant keeps its 7-tuple and
+    # sidecar, so their runs are unchanged.
+    "est_lk": ("leak",),
 }
+# Extended variants whose smoothness weight must be given explicitly.
+EXT_REQUIRE_W_SMOOTH = ("est_sm",)
 DEFAULT_W_SMOOTH = 5e-6   # half the cat-code production lambda_deriv = 1e-5
 
 # Eigh-only variants that change STAGE 2 ONLY of the `est` schedule. Stage 1 is
 # the plain `est` stage 1, so at the same --seed it is the same run as `est`.
 #   c3     keep w3 at its stage-1 value in stage 2, instead of dropping it to 0
 #   smooth add the C6 smoothness penalty in stage 2, at --w-smooth (required)
-# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py, est_optimization.ipynb §2).
+# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py; frozen, no longer in est_optimization.ipynb).
 STAGE2_VARIANTS = {
     "est_c3s2": ("c3",),
     "est_d2": ("smooth",),
     "est_c3s2_d2": ("c3", "smooth"),
 }
 
+# Eigh-only variants that change the COST FORM and nothing else: the `est`
+# weight schedule, with the cost terms in another form (grape_eigh.PAPER_COST_FORM:
+# C2 over N_norm without t = T, raw C3 in rad/ns). Built for the fair
+# printed-vs-repo comparison of est_experiments.ipynb Appendix A, where the two
+# runs must differ in form only. Unlike train_est.py's `paper` variant, the
+# weights are NOT changed to (1, 0.6, 6).
+FORM_VARIANTS = {
+    "est_paperform": PAPER_COST_FORM,
+}
+
+# Eigh-only variants that change the WEIGHTS of the `est` schedule and nothing
+# else: same cost form, no extra terms. Built for est_experiments.ipynb
+# Appendix B, where the run must differ from its `est` control in the weights only.
+WEIGHT_VARIANTS = {
+    # w2 0.7 -> 1 in stage 1, 0.1 -> 0.2 in stage 2
+    "est_wB": [(1.0, 1.0, 7.0), (1.0, 0.2, 0.0)],
+}
+
 
 def _print_report_ext(label, rep):
     """_print_report plus the extra terms."""
-    keys = ["c1", "c2", "c3", "c4", "cerr", "c5", "c6"]
+    keys = ["c1", "c2", "c3", "c4", "cerr", "c5", "c6", "cleak"]
     means = {k: np.mean([v[k] for v in rep.values()]) for k in keys}
     print(f"{label}  " + "  ".join(f"{k}={means[k]:.5g}" for k in keys)
           + f"   [F1={1-means['c1']:.5f}  F_ET={1-means['c2']:.5f}"
           f"  F_err={1-means['cerr']:.5f}]")
 
 
-def _ext_weights(variant, w_err, w_dn, w_smooth):
-    """(w_err, w5, w6) for an extended variant; validates the required flags."""
+def _ext_weights(variant, w_err, w_dn, w_smooth, w_leak=None):
+    """(w_err, w5, w6[, w_L]) for an extended variant; validates the required flags.
+
+    w_L is appended only for variants that use "leak", so the others keep their
+    7-tuples bit for bit.
+    """
     on = EXT_VARIANTS[variant]
     if "err" in on and w_err is None:
         raise ValueError(f"variant {variant!r} needs --w-err")
     if "dn" in on and w_dn is None:
         raise ValueError(f"variant {variant!r} needs --w-dn")
-    return (float(w_err) if "err" in on else 0.0,
-            float(w_dn) if "dn" in on else 0.0,
-            float(w_smooth) if "smooth" in on else 0.0)
+    if variant in EXT_REQUIRE_W_SMOOTH and w_smooth is None:
+        raise ValueError(f"variant {variant!r} needs --w-smooth")
+    if "leak" in on and w_leak is None:
+        raise ValueError(f"variant {variant!r} needs --w-leak")
+    extra = (float(w_err) if "err" in on else 0.0,
+             float(w_dn) if "dn" in on else 0.0,
+             float(w_smooth) if "smooth" in on else 0.0)
+    return extra + ((float(w_leak),) if "leak" in on else ())
 
 
 def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
-                  n_stages=2):
+                  n_stages=2, w2=None, w_leak=None):
     """
-    Objective weights per stage for `variant`: a list with one 4- or 7-tuple
-    (w1, w2, w3, w4[, w_err, w5, w6]) per stage, as build_gate_objective takes.
+    Objective weights per stage for `variant`: a list with one 4-, 7- or 8-tuple
+    (w1, w2, w3, w4[, w_err, w5, w6[, w_L]]) per stage, as build_gate_objective
+    takes.
 
     SCHEDULES variants give 4-tuples; EXT_VARIANTS append (w_err, w5, w6) to
-    both stages, with w_smooth=None meaning DEFAULT_W_SMOOTH; STAGE2_VARIANTS
+    both stages, plus w_L for variants that use "leak" (`est_lk`, which requires
+    --w-leak), with w_smooth=None meaning DEFAULT_W_SMOOTH (except `est_sm`,
+    which requires it); STAGE2_VARIANTS
     touch stage 2 only and need an explicit w_smooth when they add C6, so a
     silently-defaulted smoothness weight cannot happen there.
 
     `n_stages=1` truncates to the SINGLE PHASE used by est_optimization.ipynb
-    section 1: stage 1's tuple held for the whole run, so the objective that is
+    (every study): stage 1's tuple held for the whole run, so the objective that is
     reported is the objective that was optimized. Stage 2 (w2 -> 0.1, w3 -> 0)
     is what CLOSES the gate, so a single phase may leave F1 short -- that is a
     property of the protocol, not a bug. STAGE2_VARIANTS are refused here: they
     are defined by what they change in stage 2, so under one stage they would
     silently degenerate into plain `est`.
+
+    `w2` replaces the C2 weight of the single phase (est_optimization.ipynb
+    section 5, EST/tune_c2_c5.py). It is refused with n_stages=2, where it would
+    be ambiguous which stage it means. None leaves every tuple unchanged.
     """
     if n_stages not in (1, 2):
         raise ValueError(f"n_stages must be 1 or 2, got {n_stages!r}")
+    if w2 is not None:
+        if n_stages != 1:
+            raise ValueError("w2 overrides the single phase only; pass n_stages=1")
+        (first,) = stage_weights(variant, w_amp, w_err, w_dn, w_smooth, n_stages=1,
+                                 w_leak=w_leak)
+        return [first[:1] + (float(w2),) + first[2:]]
     if n_stages == 1 and variant in STAGE2_VARIANTS:
         raise ValueError(
             f"variant {variant!r} only modifies stage 2, so it is meaningless "
@@ -123,9 +183,16 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
     if variant in SCHEDULES:
         return [(w1, w2, w3, w_amp)
                 for w1, w2, w3 in SCHEDULES[variant]][:n_stages]
+    if variant in WEIGHT_VARIANTS:
+        return [(w1, w2, w3, w_amp)
+                for w1, w2, w3 in WEIGHT_VARIANTS[variant]][:n_stages]
+    if variant in FORM_VARIANTS:
+        return [(w1, w2, w3, w_amp)
+                for w1, w2, w3 in SCHEDULES[EXT_BASE]][:n_stages]
     if variant in EXT_VARIANTS:
-        extra = _ext_weights(variant, w_err, w_dn,
-                             DEFAULT_W_SMOOTH if w_smooth is None else w_smooth)
+        if w_smooth is None and variant not in EXT_REQUIRE_W_SMOOTH:
+            w_smooth = DEFAULT_W_SMOOTH
+        extra = _ext_weights(variant, w_err, w_dn, w_smooth, w_leak)
         return [(w1, w2, w3, w_amp) + extra
                 for w1, w2, w3 in SCHEDULES[EXT_BASE]][:n_stages]
     if variant in STAGE2_VARIANTS:
@@ -138,13 +205,13 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
             second += (0.0, 0.0, float(w_smooth))
         return [(a1, a2, a3, w_amp), second]
     raise KeyError(f"unknown variant {variant!r}; have "
-                   f"{sorted(SCHEDULES) + sorted(EXT_VARIANTS) + sorted(STAGE2_VARIANTS)}")
+                   f"{sorted(SCHEDULES) + sorted(EXT_VARIANTS) + sorted(STAGE2_VARIANTS) + sorted(FORM_VARIANTS) + sorted(WEIGHT_VARIANTS)}")
 
 
 def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
           w_amp=1.0, maxiter=600, seed=0, amp0=20.0, hard_bound=60.0,
           verbose=True, init=None, init_x=None, stage_hook=None,
-          w_err=None, w_dn=None, w_smooth=None, n_stages=2):
+          w_err=None, w_dn=None, w_smooth=None, n_stages=2, w2=None, w_leak=None):
     """
     Run the schedule and return (u_physical, x_preimage, info).
 
@@ -159,9 +226,10 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
 
     `n_stages=1` runs the SINGLE PHASE (stage 1's weights only); see
     stage_weights. The default 2 is the historical two-stage schedule and is
-    bit-identical to before.
+    bit-identical to before. `w2` replaces the C2 weight of that single phase.
     """
-    schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth, n_stages)
+    schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth, n_stages, w2,
+                             w_leak)
     if init is not None and init_x is not None:
         raise ValueError("pass init or init_x, not both")
 
@@ -208,17 +276,20 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
                   f"max|x0| = {np.abs(x).max():.2f} (bound {hard_bound})")
 
     bounds = [(-hard_bound, hard_bound)] * (N * 4)
+    form = dict(FORM_VARIANTS.get(variant, {}))
 
     stages = []
     for i, weights in enumerate(schedule, start=1):
-        report_fn = _print_report_ext if len(weights) == 7 else _print_report
+        report_fn = _print_report_ext if len(weights) >= 7 else _print_report
         objective, report, constrain_np = build_gate_objective(
-            gate, N, dt=dt, n_t=n_t, trunc_list=trunc_list, weights=weights)
+            gate, N, dt=dt, n_t=n_t, trunc_list=trunc_list, weights=weights,
+            **form)
 
         if verbose:
             print(f"\n=== {gate} / {variant} / stage {i}  weights={weights} ===")
             print(f"    N={N} dt={dt*1e3:.1f} ns  trunc_list={trunc_list}  "
-                  f"[eigh + analytic adjoint]")
+                  f"[eigh + analytic adjoint]"
+                  + (f"  cost form {form}" if form else ""))
             report_fn("    start", report(x))
 
         t0 = time.time()
@@ -252,7 +323,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "trunc_list": list(trunc_list), "w_amp": w_amp, "seed": seed,
         "amp0": amp0, "hard_bound": hard_bound, "maxiter": maxiter,
         # 2 = the historical two-stage schedule; 1 = single phase at stage 1's
-        # weights (est_optimization.ipynb section 1). Read this before comparing
+        # weights (every est_optimization.ipynb study). Read this before comparing
         # two logs: their objectives differ.
         "n_stages": len(schedule),
         "init": warm,
@@ -267,13 +338,24 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     # Only extended variants carry these, so the est_eigh JSON schema that
     # EST/compare_propagators.py diffs is unchanged.
     if variant in EXT_VARIANTS:
-        _, _, _, _, xe, xd, xs = schedule[0]
+        xe, xd, xs = schedule[0][4:7]
         info.update({"base_variant": EXT_BASE, "w_err": xe, "w_dn": xd,
                      "w_smooth": xs})
+        if len(schedule[0]) == 8:          # leak variants only; others unchanged
+            info["w_leak"] = schedule[0][7]
+    elif variant in FORM_VARIANTS:
+        # Same key and value layout as train_est.py's `paper` sidecar.
+        info.update({"base_variant": EXT_BASE, "cost_form": form})
+    elif variant in WEIGHT_VARIANTS:
+        # The weights themselves are in stages[i]["weights"].
+        info.update({"base_variant": EXT_BASE})
     elif variant in STAGE2_VARIANTS:
         info.update({"base_variant": EXT_BASE,
                      "stage2_override": list(STAGE2_VARIANTS[variant]),
                      "w_smooth": schedule[1][6] if len(schedule[1]) == 7 else 0.0})
+    # Only written when set, so every earlier sidecar's schema is unchanged.
+    if w2 is not None:
+        info["w2_override"] = float(w2)
     return u, x_out, info
 
 
@@ -297,15 +379,21 @@ def main():
     p.add_argument("--gate", default="X", choices=sorted(kitten_code.IDEAL_LOGICAL_U))
     p.add_argument("--variant", default="est",
                    choices=sorted(SCHEDULES) + sorted(EXT_VARIANTS)
-                   + sorted(STAGE2_VARIANTS))
+                   + sorted(STAGE2_VARIANTS) + sorted(FORM_VARIANTS)
+                   + sorted(WEIGHT_VARIANTS))
     p.add_argument("--w-err", type=float, default=None,
                    help="error-space infidelity weight (est_err, est_err_dn, est_all)")
     p.add_argument("--w-dn", type=float, default=None,
                    help="C5 photon-number mismatch weight (est_dn, est_err_dn, est_all)")
+    p.add_argument("--w-leak", type=float, default=None,
+                   help="C_L leakage weight (est_lk, required)")
     p.add_argument("--w-smooth", type=float, default=None,
-                   help="C6 smoothness weight: est_all, both stages (default "
-                        f"{DEFAULT_W_SMOOTH:g}); est_d2 / est_c3s2_d2, stage 2 "
-                        "only (required)")
+                   help="C6 smoothness weight: est_all, every stage (default "
+                        f"{DEFAULT_W_SMOOTH:g}); est_sm, every stage (required); "
+                        "est_d2 / est_c3s2_d2, stage 2 only (required)")
+    p.add_argument("--w2", type=float, default=None,
+                   help="C2 weight of the single phase (needs --stages 1); "
+                        "default: the variant's own (0.7 for est-based variants)")
     p.add_argument("--dt", type=float, default=DT, help="us (default 1 ns)")
     p.add_argument("--n-t", type=int, default=N_T)
     p.add_argument("--trunc", type=int, nargs="+", default=TRAIN_TRUNC,
@@ -336,7 +424,7 @@ def main():
     p.add_argument("--stages", type=int, default=2, choices=(1, 2),
                    help="1 runs a SINGLE phase at stage 1's weights "
                         "(w2=0.7, w3=7 held throughout), which is what "
-                        "est_optimization.ipynb section 1 uses; 2 (default) is "
+                        "every est_optimization.ipynb study uses; 2 (default) is "
                         "the historical two-stage schedule. Stage 2 is what "
                         "closes the gate, so check F1 on a --stages 1 run.")
     p.add_argument("--no-save", action="store_true")
@@ -360,7 +448,7 @@ def main():
                        hard_bound=args.hard_bound, init=args.init,
                        init_x=args.init_x, stage_hook=stage_hook,
                        w_err=args.w_err, w_dn=args.w_dn, w_smooth=args.w_smooth,
-                       n_stages=args.stages)
+                       n_stages=args.stages, w2=args.w2, w_leak=args.w_leak)
 
     print("\n--- constraints on the saved pulse ---")
     for k, v in info["constraints"].items():

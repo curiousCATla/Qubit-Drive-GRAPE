@@ -77,12 +77,11 @@ def propagate_states(u, H0, Hc, Psi0, dt):
     """
     Full state-vector trajectory, (N+1, n, M).
 
-    The repo's four existing `simulate_trajectory` variants
-    (visualization/pulse_viz.py:138, analysis/pulse_analysis.py:96, and two in
-    analysis/compare_dt_light_vs_main*.py) all reduce to populations inside the
-    loop and discard the amplitudes, so none of them can supply the overlaps
-    these metrics need. This keeps the state vectors, and amortizes one
-    eigendecomposition per step across all M columns the way
+    The repo's other `simulate_trajectory` variants
+    (visualization/pulse_viz.py, analysis/pulse_analysis.py) all reduce to
+    populations inside the loop and discard the amplitudes, so none of them can
+    supply the overlaps these metrics need. This keeps the state vectors, and
+    amortizes one eigendecomposition per step across all M columns the way
     grape_core._fidelity_core does.
     """
     Psi0 = np.asarray(Psi0, dtype=complex)
@@ -386,7 +385,8 @@ def analyze(u, gate="X", n_t=N_T, n_c=20, dt=DT):
 # Figure
 # ---------------------------------------------------------------------------
 
-def plot_fig1(results, path, scale="log"):
+def plot_fig1(results, path, scale="log", title=None, styles=None,
+              paper_labels=True):
     """
     Three-panel Fig. 1d-f: EsT vs Ord for each metric.
 
@@ -396,6 +396,13 @@ def plot_fig1(results, path, scale="log"):
     EsT-vs-Ord GAP at its true relative size, which a decade grid compresses.
     Each panel autoscales independently, so the narrow Delta_QEC channel stays
     legible next to the wide eta channel.
+
+    `title` is drawn as a figure suptitle (None: no title, as before).
+    `styles` maps a results key to matplotlib line kwargs (color, ls, label, ...)
+    and overrides or extends the built-in variant styles, so a caller can draw
+    keys the defaults do not know (e.g. two seeds of two cost forms).
+    `paper_labels=True` prefixes each panel title with the paper's letter (d, e, f)
+    and cites Eqs. 6 and 8; False drops both, for the notebook's Figure 2.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -405,11 +412,15 @@ def plot_fig1(results, path, scale="log"):
     # single initial state |0_L>, while the six-cardinal mean is the gate-wide
     # summary Table 9 ranks on. Both are drawn so the panel is comparable to the
     # paper without hiding the average.
-    panels = [("d", r"$\Delta_{\rm QEC}(t)$", [("delta_qec", None)]),
-              ("e", r"$L_{E_j}(t)$", [("leakage", None)]),
-              ("f", r"$\eta_{E_j,\psi}(t)$   (Eq. 8, $\in[0,2]$)",
+    # All three metrics are dimensionless; time is in microseconds.
+    panels = [("d", "QEC-Condition Violation (Eq. 6)",
+               r"$\Delta_{\rm QEC}(t)$  (dimensionless)", [("delta_qec", None)]),
+              ("e", "Leakage Out of the Error Space",
+               r"$L_{E_j}(t)$  (dimensionless)", [("leakage", None)]),
+              ("f", "Bloch-Vector Mismatch (Eq. 8)",
+               r"$\eta_{E_j,\psi}(t)$  ($\in[0,2]$, dimensionless)",
                [("eta_0L", r"$|0_L\rangle$"), ("eta_avg", "6-cardinal mean")])]
-    styles = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
+    defaults = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
               "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord"),
               "paper": dict(color="#2e8b57", lw=1.8, ls="-.", label="EsT (paper form)"),
               # The best2000 / seed-0 pair of the notebook's section 9.2. Both are
@@ -417,11 +428,14 @@ def plot_fig1(results, path, scale="log"):
               "b2": dict(color="#2a6fb5", lw=1.8, label="EsT, best2000 (eigh)"),
               "prod": dict(color="#d08b2c", lw=1.6, ls="--",
                            label="EsT, seed 0 (production)")}
+    if styles is not None:
+        defaults.update(styles)
+    styles = defaults
     log = scale == "log"
 
     FLOOR = 1e-12
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.6))
-    for ax, (tag, ylabel, keys) in zip(axes, panels):
+    fig, axes = plt.subplots(1, 3, figsize=(13, 3.9 if title else 3.6))
+    for ax, (tag, name, ylabel, keys) in zip(axes, panels):
         drawn = 0
         for variant, r in results.items():
             base = styles.get(variant, dict(label=variant))
@@ -457,11 +471,25 @@ def plot_fig1(results, path, scale="log"):
             ax.set_ylim(bottom=0.0)
         ax.set_xlabel(r"$t\ (\mu s)$")
         ax.set_ylabel(ylabel)
-        ax.set_title(f"({tag})", loc="left", fontweight="bold")
+        if paper_labels:
+            ax.set_title(f"({tag}) {name}", loc="left", fontsize=10)
+        else:
+            ax.set_title(name.split(" (Eq.")[0], loc="left", fontsize=10)
         ax.grid(alpha=0.25, which="both" if log else "major", lw=0.5)
-    axes[0].legend(frameon=False)
-    axes[2].legend(frameon=False, fontsize=7)
-    fig.tight_layout()
+    # A light frame, so a legend that lands on a curve stays readable.
+    leg = dict(frameon=True, framealpha=0.85, edgecolor="none")
+    if not log:
+        # Headroom above the data in the two legend panels, so the legend sits
+        # above the curves instead of on top of a peak.
+        for ax, room in ((axes[0], 1.3), (axes[2], 1.45)):
+            ax.set_ylim(0.0, ax.get_ylim()[1] * room)
+    axes[0].legend(loc="upper left", **leg)
+    axes[2].legend(loc="upper left", fontsize=7, **leg)
+    if title:
+        fig.suptitle(title, fontsize=11.5)
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+    else:
+        fig.tight_layout()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -546,7 +574,9 @@ def main(gate="X", scale="both", suffix=""):
             path = plot_fig1(
                 results,
                 os.path.join(FIG_DIR, f"fig1def_est_vs_ord{sfx}{tail}.png"),
-                scale=s)
+                scale=s, title=f"{gate} gate: error-transparency metrics against "
+                               f"time, EsT vs Ord ({s} axes)",
+                paper_labels=False)
             print(f"figure ({s:6s}) -> {path}")
         os.makedirs(TABLE_DIR, exist_ok=True)
         csv = os.path.join(TABLE_DIR, f"est_fig1_metrics{sfx}.csv")

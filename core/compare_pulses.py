@@ -41,7 +41,7 @@ N_C_LIST = list(range(20, 37))  # F(n_c) for n_c = 20 … 36 inclusive
 
 
 def get_g6_state_pairs(n_c, n_t=3):
-    """Factory for the |g,0> -> |g,6> state transfer (pulse_analysis.py's u_opt.npy)."""
+    """Factory for the |g,0> -> |g,6> state transfer (pulses/u_opt_main.npy)."""
     psi_i = basis_state(n_t, n_c, 0, 0)
     psi_f = basis_state(n_t, n_c, 0, 6)
     return [(psi_i, psi_f)]

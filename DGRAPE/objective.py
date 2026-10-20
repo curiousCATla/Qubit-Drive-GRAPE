@@ -14,6 +14,7 @@ fidelity F_pro:
               + deriv * sum_k |u_k - u_{k-1}|^2
               + amp   * sum_k sum_d (|eps_d(k)| - amp_max)_+^2        (Supp. Eq. 19, 'modulus')
               + forbid * (1/M) sum_i C_i,  C_i = sum_{k=1}^{N} sum_{b=0_L,1_L} Tr[P_F rho_b(k)]
+              + transmon * (1/M) sum_i C_T,i,  C_T,i the same sum with P_T = |e><e| + |f><f|
     u = R P(x)          P = band-limit projection (Supp. Eq. 22), R = Gaussian ramp
     dcost/dx = P(env * dcost/du)                                      (core.ramp chain)
 
@@ -21,6 +22,12 @@ C_i is Heeres' forbidden-state cost, P_F the projector on storage Fock >= forbid
 (DGRAPE/recipe.py), with its exact gradient from the same backward pass as F_i
 (lindblad_np.fidelity_and_grad). On a truncation with n_c <= forbid_fock_min, P_F = 0 and C_i is
 exactly 0, so it is skipped there (train.py refuses such a training list).
+
+C_T,i is the time-summed transmon excitation of the two code inputs (off by default). The
+fidelity already pays the exact T1 price of an excited transmon; this term charges extra, as a
+stand-in for the dephasing and heating that training leaves out. Both occupation costs share ONE
+extra costate in the backward pass, with the source diag(forbid*P_F + transmon*P_T)
+(lindblad_np.fidelity_and_grad, occ_weights).
 
 Every default comes from DGRAPE/recipe.py (the experiments.ipynb / main.py production
 recipe; n_c=None means its trunc_list [12, 14, 16], which is NOT the Heeres list). Pass None to
@@ -56,10 +63,12 @@ def _pick(value, key):
     return RECIPE[key] if value is _RECIPE else value
 
 
-def _eval_trunc(model, E, T, w, u, dt, want_grad, mask, forbid_idx=lnp.FORBID_IDX):
+def _eval_trunc(model, E, T, w, u, dt, want_grad, mask, forbid_idx=lnp.FORBID_IDX, weights=None):
     """(F, dF/du, C, dC/du) of one truncation -- or of a subset of its process inputs, whose
-    pieces simply add up -- numpy backend; module level so loky can pickle it. Gradients are
-    None without want_grad, C (and dC/du) 0 / None without a mask or forbid_idx."""
+    pieces simply add up -- numpy backend; module level so loky can pickle it. `mask` is a
+    (K, d) stack of occupation projectors with penalty weights `weights`: C is the (K,) vector
+    of their sums and dC/du the gradient of sum_k weights[k] C_k. Gradients are None without
+    want_grad, C (and dC/du) 0 / None without a mask or forbid_idx."""
     if mask is not None and not forbid_idx:
         mask = None
     spec = lnp.spec_for_pulse(model, u, dt)
@@ -68,7 +77,7 @@ def _eval_trunc(model, E, T, w, u, dt, want_grad, mask, forbid_idx=lnp.FORBID_ID
             F, g = lnp.fidelity_and_grad(model, u, E, T, w, dt, spec)
             return F, g, 0.0, None
         return lnp.fidelity_and_grad(model, u, E, T, w, dt, spec, forbid_mask=mask,
-                                     forbid_idx=forbid_idx)
+                                     forbid_idx=forbid_idx, occ_weights=weights)
     if mask is None:
         return lnp.fidelity(model, u, E, T, w, dt, spec), None, 0.0, None
     R_N, hist = lnp.propagate(model, u, E, dt, spec, store=True)
@@ -123,17 +132,29 @@ class OpenGrapeObjective:
             self.models.append(Model(nc, n_r, include_higher_order, decay, dephasing,
                                      heating, rate_scale))
             self.targets.append(process_targets(gate, nc, n_r))
-        # P_F per truncation; None where it is empty (n_c <= fock_min) or the term is off.
-        self.masks = [lnp.forbidden_mask(m, self.forbid_fock_min)
-                      if self.penalties["forbid"] > 0 and m.n_c > self.forbid_fock_min else None
-                      for m in self.models]
+        # Occupation costs per truncation, as a (K, d) mask stack with names and weights:
+        # P_F where the forbidden term is on and non-empty (n_c > fock_min), P_T where the
+        # transmon term is on. masks[i] is None where neither applies.
+        self.occ_names, self.masks, self.occ_weights = [], [], []
+        for m in self.models:
+            names, mks = [], []
+            if self.penalties["forbid"] > 0 and m.n_c > self.forbid_fock_min:
+                names.append("forbid")
+                mks.append(lnp.forbidden_mask(m, self.forbid_fock_min))
+            if self.penalties["transmon"] > 0:
+                names.append("transmon")
+                mks.append(lnp.transmon_mask(m))
+            self.occ_names.append(names)
+            self.masks.append(np.array(mks) if mks else None)
+            self.occ_weights.append(np.array([self.penalties[n] for n in names]))
         self.to_physical, self.to_preimage_grad = make_constraint_chain(
             N, dt, self.cav_band, self.tra_band, self.ramp_ns)
         self.split = self._split_plan()
         if backend == "jax":
             from DGRAPE import lindblad_jax as ljx
-            self._jax = [ljx.make_fidelity_fns(m, *tg, dt, forbid_mask=mk)
-                         for m, tg, mk in zip(self.models, self.targets, self.masks)]
+            self._jax = [ljx.make_fidelity_fns(m, *tg, dt, forbid_mask=mk, occ_weights=wt)
+                         for m, tg, mk, wt in zip(self.models, self.targets, self.masks,
+                                                  self.occ_weights)]
         self._cache_x = None
         self._cache = None
         self.n_evals = 0
@@ -192,7 +213,9 @@ class OpenGrapeObjective:
 
     def evaluate_truncations(self, u, want_grad=True):
         """Per-truncation [(F_i, dF_i/du, C_i, dC_i/du)] of the PHYSICAL pulse u, run as
-        n_jobs parallel jobs. C_i = 0 (gradient None) where the forbidden term is off."""
+        n_jobs parallel jobs. C_i is the (K,) vector of the occupation costs named in
+        occ_names[i], dC_i/du the gradient of their penalty-weighted sum; 0 (gradient None)
+        where none applies."""
         u = np.asarray(u, dtype=float)
         if self.backend == "jax" and want_grad:
             def run(i):
@@ -200,22 +223,33 @@ class OpenGrapeObjective:
                 out = self._jax[i][1](u, *spec)
                 if self.masks[i] is None:
                     return float(out[0]), np.asarray(out[1]), 0.0, None
-                return (float(out[0]), np.asarray(out[1]), float(out[2]), np.asarray(out[3]))
+                return (float(out[0]), np.asarray(out[1]), np.asarray(out[2]), np.asarray(out[3]))
             return self._map(run, [(i,) for i in range(len(self.models))])
         tasks, owner = [], []
-        for i, (m, (E, T, w), mk) in enumerate(zip(self.models, self.targets, self.masks)):
+        for i, (m, (E, T, w), mk, wt) in enumerate(zip(self.models, self.targets, self.masks,
+                                                       self.occ_weights)):
             if i in self.split:
                 for b in range(E.shape[0]):
                     fi = (0,) if b in lnp.FORBID_IDX else ()
                     tasks.append((m, E[b:b + 1], T[b:b + 1], w[b:b + 1], u, self.dt,
-                                  want_grad, mk, fi))
+                                  want_grad, mk, fi, wt))
                     owner.append(i)
             else:
-                tasks.append((m, E, T, w, u, self.dt, want_grad, mk))
+                tasks.append((m, E, T, w, u, self.dt, want_grad, mk, lnp.FORBID_IDX, wt))
                 owner.append(i)
         out = self._map(_eval_trunc, tasks)
         return [_sum_pieces([r for r, o in zip(out, owner) if o == i])
                 for i in range(len(self.models))]
+
+    def occupations(self, res):
+        """{name: [C_i per truncation]} for each occupation cost that is on somewhere, from
+        evaluate_truncations output; 0.0 where a term does not apply (forbid at n_c <= fock_min)."""
+        out = {}
+        for name in ("forbid", "transmon"):
+            if any(name in nm for nm in self.occ_names):
+                out[name] = [float(np.atleast_1d(r[2])[nm.index(name)]) if name in nm else 0.0
+                             for r, nm in zip(res, self.occ_names)]
+        return out
 
     def fidelities(self, u, want_grad=True):
         """Per-truncation F_pro (and dF/du) of the PHYSICAL pulse u."""
@@ -261,13 +295,16 @@ class OpenGrapeObjective:
             cost += pen["amp"] * p
             g_u = g_u + pen["amp"] * gp
             terms["amp"] = pen["amp"] * p
-        if pen["forbid"] > 0 and any(mk is not None for mk in self.masks):
-            # Mean over ALL M truncations (C_i = 0 exactly where P_F is empty), as Eq. 23.
-            p = sum(r[2] for r in res) / M
-            cost += pen["forbid"] * p
-            g_u = g_u + (pen["forbid"] / M) * sum(r[3] for r in res if r[3] is not None)
-            terms["forbid"] = pen["forbid"] * p
-            terms["C_forbid"] = [r[2] for r in res]
+        occ = self.occupations(res)
+        if occ:
+            # Means over ALL M truncations (C_i = 0 exactly where P_F is empty), as Eq. 23.
+            # The gradient pieces already carry the penalty weights (one shared costate).
+            for name, Cs in occ.items():
+                p = sum(Cs) / M
+                cost += pen[name] * p
+                terms[name] = pen[name] * p
+                terms["C_" + name] = Cs
+            g_u = g_u + sum(r[3] for r in res if r[3] is not None) / M
         g_x = self.to_preimage_grad(g_u)
         self.n_evals += 1
         self._cache_x = x.copy()
@@ -283,10 +320,15 @@ class OpenGrapeObjective:
     # -- reporting -----------------------------------------------------------
     def report(self, u):
         """Per-truncation F_pro / F_avg of a PHYSICAL pulse (no gradient), plus the forbidden
-        cost C (0 where the term is off or n_c <= forbid_fock_min)."""
+        cost C_forbid (0 where the term is off or n_c <= forbid_fock_min) and the transmon
+        excitation cost C_transmon (0 where the term is off)."""
         res = self.evaluate_truncations(np.asarray(u, dtype=float), want_grad=False)
-        return [{"n_c": nc, "F_pro": F, "F_avg": average_gate_fidelity(F), "C_forbid": C}
-                for nc, (F, _, C, _) in zip(self.trunc, res)]
+        occ = self.occupations(res)
+        zero = [0.0] * len(res)
+        return [{"n_c": nc, "F_pro": r[0], "F_avg": average_gate_fidelity(r[0]),
+                 "C_forbid": cf, "C_transmon": ct}
+                for nc, r, cf, ct in zip(self.trunc, res, occ.get("forbid", zero),
+                                         occ.get("transmon", zero))]
 
 
 def build_objective(gate, N, dt, n_c, backend="np", **kw):

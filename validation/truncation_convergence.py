@@ -13,11 +13,12 @@ number population which can be populated during the pulse... faster
 pulses can be achieved with higher N").
 
 Reuses cat_code.validate_pulse_truncations (already implements this exact
-check) across every saved gate pulse.
+check) across every canonical gate pulse, pulses/u_*_main.npy. (It used to
+read the retired multi-truncation pulses u_*_mt.npy; those were deleted on
+2026-10-19 and are in git history.)
 
 Usage:
-    python validation/truncation_convergence.py           # checks pulses/u_*_mt.npy
-    python validation/truncation_convergence.py --leak    # checks pulses/u_*_mt_leak.npy instead
+    python validation/truncation_convergence.py
 """
 
 import os
@@ -51,28 +52,23 @@ DT = 0.002
 TRAINING_NC = 26
 TRUNC_RANGE = list(range(18, 37, 2))
 
-# name -> (factory, base _mt.npy filename)
+# name -> (factory, pulse filename)
 GATES = {
-    "U_opt": (get_g6_state_pairs,        "u_opt_mt.npy"),
-    "U_enc": (get_encode_state_pairs,    "u_enc_mt.npy"),
-    "U_dec": (get_decode_state_pairs,    "u_dec_mt.npy"),
-    "U_X":   (get_logical_X_state_pairs, "u_X_mt.npy"),
-    "U_Y":   (get_logical_Y_state_pairs, "u_Y_mt.npy"),
-    "U_Z":   (get_logical_Z_state_pairs, "u_Z_mt.npy"),
-    "U_H":   (get_logical_H_state_pairs, "u_H_mt.npy"),
-    "U_T":   (get_logical_T_state_pairs, "u_T_mt.npy"),
-    "U_I":   (get_identity_state_pairs,  "u_I_mt.npy"),
+    "U_opt": (get_g6_state_pairs,        "u_opt_main.npy"),
+    "U_enc": (get_encode_state_pairs,    "u_enc_main.npy"),
+    "U_dec": (get_decode_state_pairs,    "u_dec_main.npy"),
+    "U_X":   (get_logical_X_state_pairs, "u_X_main.npy"),
+    "U_Y":   (get_logical_Y_state_pairs, "u_Y_main.npy"),
+    "U_Z":   (get_logical_Z_state_pairs, "u_Z_main.npy"),
+    "U_H":   (get_logical_H_state_pairs, "u_H_main.npy"),
+    "U_T":   (get_logical_T_state_pairs, "u_T_main.npy"),
+    "U_I":   (get_identity_state_pairs,  "u_I_main.npy"),
 }
 
 
 def main():
-    use_leak = "--leak" in sys.argv[1:]
-    suffix = "_mt_leak.npy" if use_leak else "_mt.npy"
-    tag = "_leak" if use_leak else ""
-
     all_results = {}
-    for name, (factory, mt_filename) in GATES.items():
-        filename = mt_filename.replace("_mt.npy", suffix)
+    for name, (factory, filename) in GATES.items():
         path = os.path.join(PULSE_DIR, filename)
         if not os.path.exists(path):
             print(f"[SKIP] {name}: {path} not found")
@@ -92,7 +88,7 @@ def main():
     os.makedirs(TABLE_DIR, exist_ok=True)
     df = pd.DataFrame(all_results).T
     df.index.name = 'gate'
-    out_csv = os.path.join(TABLE_DIR, f"truncation_convergence{tag}.csv")
+    out_csv = os.path.join(TABLE_DIR, "truncation_convergence.csv")
     df.to_csv(out_csv)
     print(f"\nSaved table: {out_csv}")
 
@@ -131,11 +127,10 @@ def main():
     for j in range(n_gates, nrows * ncols):
         axes[j // ncols][j % ncols].axis('off')
 
-    plt.suptitle("Truncation convergence check (Heeres et al. 2017 Eq. 23-24 criterion)"
-                 + (" -- leak-refined pulses" if use_leak else ""))
+    plt.suptitle("Truncation convergence check (Heeres et al. 2017 Eq. 23-24 criterion)")
     plt.tight_layout()
     os.makedirs(FIG_DIR, exist_ok=True)
-    out_fig = os.path.join(FIG_DIR, f"truncation_convergence{tag}.png")
+    out_fig = os.path.join(FIG_DIR, "truncation_convergence.png")
     plt.savefig(out_fig, dpi=150)
     plt.close()
     print(f"Saved figure: {out_fig}")
