@@ -40,7 +40,10 @@ real control array is (N, 4) = (eta_1^I, eta_1^Q, eta_2^I, eta_2^Q) with eta = e
 
 INPUT. d2_output(): the three process inputs E_00, E_11, E_01 propagated through
 pulses/dgrape/u_X_open_d2.npy at n_r = 1 (exact: nothing drives the readout during d2), then
-embedded with the readout in |0>.
+embedded with the readout in |0>. gate_output(u) does the same for any (N, 4) gate pulse u on the
+2 ns grid (e.g. the EsT gate of DGRAPE/est_gate.py); score, baselines, loss_time_profile and
+TailObjective take it as `pulse` (None = d2). With `gate_n_c` (score, TailObjective) the gate runs at
+gate_n_c and its output is cut to the tail's n_c (tail_input, cut_storage).
 
 TARGET. The ideal X on the code, transmon in |g>; readout traced out ("traced", the default) or
 required empty ("empty"). No free rotation: the deterministic Kerr phase of the storage and the
@@ -49,6 +52,7 @@ tail's own Stark rotation are errors the tail has to cancel.
 Pulses trained with these tails go to pulses/dgrape/, never pulses/.
 """
 
+import hashlib
 import math
 import os
 from types import SimpleNamespace
@@ -70,7 +74,7 @@ U_D2_PATH = os.path.join(REPO_ROOT, "pulses", "dgrape", "u_X_open_d2.npy")
 # Recipe (FWM_tails.ipynb, decisions of 2026-10-19)
 DT = 0.002                   # us, the DGRAPE control grid
 N_REF = 3                    # reference tooth: comb-1 repair 2 -> 3 (the code's mean photon number)
-TAIL_US = 3.0                # default tail length (a parameter everywhere)
+TAIL_US = 1.0                # default tail length (a parameter everywhere; 3.0 until 2026-10-20)
 ETA_CAP = 0.1                # |eta_c(t)| <= 0.1 per comb (= fwm.py's comb cap on |xi_c|)
 ETA_BAND = (-12.0, 12.0)     # MHz on each eta_c: teeth n = 1, 3, 5 at about -4.1, 0, +4.1 MHz,
 #                              plus the comb-1 Stark shift at the cap (5.4 MHz), plus margin
@@ -147,19 +151,50 @@ def embed_readout(R, n_r):
     return out
 
 
-_D2_CACHE = {}
+def cut_storage(R, n_c, n_r=2):
+    """(..., d, d) states -> the block with storage levels < n_c (storage outermost: index
+    (n*3 + j)*n_r + m, DGRAPE/model.py). Not renormalised: the trace lost is the population at
+    Fock >= n_c."""
+    R = np.asarray(R, dtype=complex)
+    keep = n_c * 3 * n_r
+    if keep > R.shape[-1]:
+        raise ValueError(f"cannot cut {R.shape[-1] // (3 * n_r)} storage levels to {n_c}")
+    return R[..., :keep, :keep].copy()
+
+
+_GATE_CACHE = {}
+
+
+def gate_output(pulse=None, n_c=16, n_r=2, keep=None, include_higher_order=True, dephasing=False,
+                heating=False):
+    """(3, d, d): Phi_gate(E_b) for the process inputs E_00, E_11, E_01 (DGRAPE.code.PROCESS_PAIRS)
+    through the gate pulse (N, 4) on the 2 ns grid (None = d2), propagated at n_r = 1 with the jump
+    operators named in `keep` (None = the decay set, plus the opt-in channels), then embedded with the
+    readout in |0>. Cached in memory, keyed by the pulse's bytes."""
+    u = d2_pulse() if pulse is None else np.ascontiguousarray(pulse, dtype=float)
+    key = (hashlib.sha1(u.tobytes()).hexdigest(), u.shape, n_c, n_r,
+           None if keep is None else frozenset(keep), include_higher_order, dephasing, heating)
+    if key not in _GATE_CACHE:
+        m = fwm.model_with_channels(n_c, 1, keep, include_higher_order, dephasing, heating)
+        E_in, _, _ = process_targets("X", n_c, 1)      # the inputs do not depend on the gate
+        _GATE_CACHE[key] = embed_readout(lnp.propagate(m, u, E_in, DT), n_r)
+    return _GATE_CACHE[key].copy()
 
 
 def d2_output(n_c=16, n_r=2, keep=None, include_higher_order=True, dephasing=False, heating=False):
-    """(3, d, d): Phi_d2(E_b) for the process inputs E_00, E_11, E_01 (DGRAPE.code.PROCESS_PAIRS),
-    propagated at n_r = 1 with the jump operators named in `keep` (None = the decay set, plus the
-    opt-in channels), then embedded with the readout in |0>. Cached in memory."""
-    key = (n_c, n_r, None if keep is None else frozenset(keep), include_higher_order, dephasing, heating)
-    if key not in _D2_CACHE:
-        m = fwm.model_with_channels(n_c, 1, keep, include_higher_order, dephasing, heating)
-        E_in, _, _ = process_targets("X", n_c, 1)      # the inputs do not depend on the gate
-        _D2_CACHE[key] = embed_readout(lnp.propagate(m, d2_pulse(), E_in, DT), n_r)
-    return _D2_CACHE[key].copy()
+    """gate_output for the d2 X gate."""
+    return gate_output(None, n_c, n_r, keep, include_higher_order, dephasing, heating)
+
+
+def tail_input(pulse=None, n_c=16, n_r=2, gate_n_c=None, keep=None, include_higher_order=True,
+               dephasing=False, heating=False):
+    """The tail's input: gate_output at n_c, or, with gate_n_c, the gate propagated at gate_n_c and cut
+    to n_c storage levels (cut_storage). A closed-trained gate needs n_c 24 to run but ends with
+    <= 2e-5 above Fock 16, so its tail can be trained at n_c 16 (FWM_tails.ipynb §7)."""
+    if gate_n_c is None or gate_n_c == n_c:
+        return gate_output(pulse, n_c, n_r, keep, include_higher_order, dephasing, heating)
+    R = gate_output(pulse, gate_n_c, n_r, keep, include_higher_order, dephasing, heating)
+    return cut_storage(R, n_c, n_r)
 
 
 def tail_targets(n_c, n_r=2, gate="X", readout=READOUT):
@@ -346,12 +381,14 @@ class TailObjective:
         eta columns = eta_chain(x) = ramp(bandlimit(x)) / S_ETA
 
     The three process inputs run as separate joblib jobs (n_jobs = 3; they never interact). Mirrors
-    fwm.Stage2Objective. `inputs` replaces the d2 output (3, d, d), e.g. for a positive control.
+    fwm.Stage2Objective. `pulse` is the gate before the tail (None = d2), propagated at `gate_n_c`
+    (None = n_c) and cut to n_c (tail_input); `inputs` replaces the gate output (3, d, d) altogether,
+    e.g. for a positive control.
     """
 
     def __init__(self, tail_us=TAIL_US, dt=DT, n_c=16, n_r=2, n_ref=N_REF, gate="X", readout=READOUT,
                  penalties=None, cap=ETA_CAP, band=ETA_BAND, ramp_ns=RAMP_NS, forbid_fock_min=10,
-                 include_higher_order=True, mixing=0.0, n_jobs=3, inputs=None):
+                 include_higher_order=True, mixing=0.0, n_jobs=3, inputs=None, pulse=None, gate_n_c=None):
         self.N, self.dt, self.tail_us = n_steps(tail_us, dt), dt, tail_us
         self.n_c, self.n_r, self.n_ref, self.gate, self.readout = n_c, n_r, n_ref, gate, readout
         self.cap, self.band, self.ramp_ns = cap, tuple(band), ramp_ns
@@ -360,8 +397,10 @@ class TailObjective:
             self.pen.update(penalties)
         self.hot, self.mixing, self.forbid_fock_min = include_higher_order, mixing, forbid_fock_min
         self.tm = _cached_tail(n_c, n_r, n_ref, include_higher_order, mixing)
-        self.R0 = (d2_output(n_c, n_r, include_higher_order=include_higher_order) if inputs is None
-                   else np.asarray(inputs, dtype=complex))
+        self.gate_n_c = gate_n_c
+        self.R0 = (tail_input(pulse, n_c, n_r, gate_n_c, include_higher_order=include_higher_order)
+                   if inputs is None else np.asarray(inputs, dtype=complex))
+        self.trace_cut = float(1.0 - np.mean([np.trace(self.R0[b]).real for b in lnp.FORBID_IDX]))
         self.T, self.w = tail_targets(n_c, n_r, gate, readout)
         self.chain = eta_chain(self.N, dt, self.band, ramp_ns)
         self.mask_kind = tuple(k for k in ("forbid", "transmon")
@@ -444,15 +483,17 @@ class TailObjective:
 
 def score(eta, dt=DT, n_c=16, n_r=2, n_ref=N_REF, gate="X", readout=READOUT, include_higher_order=True,
           tail_higher_order=None, keep=None, dephasing=False, heating=False, stark=True, mixing=0.0,
-          g_scale=1.0, eta_scale=1.0, occupations=False, forbid_fock_min=10):
-    """F_pro of gate + tail under one condition. The channel options (keep, dephasing, heating) apply to
-    the gate AND the tail; include_higher_order to the gate, and to the tail unless tail_higher_order
-    is given; stark, mixing, g_scale, eta_scale to the tail only. An eta with 0 rows scores d2 alone.
+          g_scale=1.0, eta_scale=1.0, occupations=False, forbid_fock_min=10, pulse=None, gate_n_c=None):
+    """F_pro of gate + tail under one condition; `pulse` is the gate (None = d2), propagated at
+    `gate_n_c` (None = n_c) and cut to n_c before the tail (tail_input). The channel options
+    (keep, dephasing, heating) apply to the gate AND the tail; include_higher_order to the gate, and to
+    the tail unless tail_higher_order is given; stark, mixing, g_scale, eta_scale to the tail only. An
+    eta with 0 rows scores the gate alone.
     Returns F_pro (by `readout`), F_traced, F_empty, and <n_r>, P_e, P_f at the end averaged over
     |0_L>, |1_L> (diagonal entries, so frame independent); with occupations, C_forbid and C_transmon
     as time sums over the tail (code inputs only)."""
     eta = eta_scale * np.asarray(eta, dtype=complex).reshape(-1, 2)
-    R0 = d2_output(n_c, n_r, keep, include_higher_order, dephasing, heating)
+    R0 = tail_input(pulse, n_c, n_r, gate_n_c, keep, include_higher_order, dephasing, heating)
     if eta.shape[0] == 0:
         R, states = R0, []
     else:
@@ -477,19 +518,21 @@ def score(eta, dt=DT, n_c=16, n_r=2, n_ref=N_REF, gate="X", readout=READOUT, inc
 
 
 def baselines(tail_us_list=(0.5, 1.0, 2.0, 3.0), n_c=16, n_r=2, readout=READOUT, dt=DT,
-              n_ref=N_REF, teeth=True):
-    """Rows {case, tail_us, F_pro, change_vs_d2}: d2 alone; d2 + idle tail; d2 + Shirol's Table II
-    teeth held constant over the tail (PReSPA as run)."""
-    F_d2 = score(np.zeros((0, 2)), dt, n_c, n_r, n_ref, readout=readout)["F_pro"]
-    rows = [{"case": "d2 alone", "tail_us": 0.0, "F_pro": F_d2, "change_vs_d2": 0.0}]
+              n_ref=N_REF, teeth=True, pulse=None, label="d2", gate_n_c=None):
+    """Rows {case, tail_us, F_pro, change_vs_d2}: the gate alone; gate + idle tail; gate + Shirol's
+    Table II teeth held constant over the tail (PReSPA as run). `pulse` is the gate (None = d2),
+    `label` its name in the rows; change_vs_d2 is measured against that gate alone."""
+    F_d2 = score(np.zeros((0, 2)), dt, n_c, n_r, n_ref, readout=readout, pulse=pulse,
+                 gate_n_c=gate_n_c)["F_pro"]
+    rows = [{"case": f"{label} alone", "tail_us": 0.0, "F_pro": F_d2, "change_vs_d2": 0.0}]
     for T in tail_us_list:
         N = n_steps(T, dt)
-        cases = [("d2 + idle", np.zeros((N, 2)))]
+        cases = [(f"{label} + idle", np.zeros((N, 2)))]
         if teeth:
-            cases.append(("d2 + Table II teeth", eta_from_teeth(fwm.beta_table2(REPAIR_PATHS), N, dt,
-                                                                n_c, n_ref)))
+            cases.append((f"{label} + Table II teeth", eta_from_teeth(fwm.beta_table2(REPAIR_PATHS), N,
+                                                                      dt, n_c, n_ref)))
         for name, eta in cases:
-            F_ = score(eta, dt, n_c, n_r, n_ref, readout=readout)["F_pro"]
+            F_ = score(eta, dt, n_c, n_r, n_ref, readout=readout, pulse=pulse, gate_n_c=gate_n_c)["F_pro"]
             rows.append({"case": name, "tail_us": T, "F_pro": F_, "change_vs_d2": F_ - F_d2})
     return rows
 
@@ -535,14 +578,15 @@ def ideal_repair_fidelity(R_out, T, w, n_c, n_r=1, starts=None, n_starts=8, seed
     return {"F": float(-best.fun), "phases": np.mod(best.x, 2 * np.pi), "F_phase0": F_of(np.zeros(len(starts)))}
 
 
-def loss_time_profile(phases, n_c=16, include_higher_order=True, keep=None, starts=None, gate="X"):
-    """Which photon losses during d2 can an ideal repair at T_g undo? First-order loss branches
-    K_t = sqrt(kappa_a dt) U_nj(T_g, t) a U_nj(t, 0) on the code (U_nj: no-jump evolution with every
-    channel in `keep` damping it), n_r = 1. Returns arrays t (us), p (jump probability per step),
-    f_repaired and f_unrepaired (conditional process fidelity of that branch against `gate`, with and
-    without the ideal repair of `phases`)."""
+def loss_time_profile(phases, n_c=16, include_higher_order=True, keep=None, starts=None, gate="X",
+                      pulse=None):
+    """Which photon losses during the gate (`pulse`, None = d2) can an ideal repair at T_g undo?
+    First-order loss branches K_t = sqrt(kappa_a dt) U_nj(T_g, t) a U_nj(t, 0) on the code (U_nj:
+    no-jump evolution with every channel in `keep` damping it), n_r = 1. Returns arrays t (us), p
+    (jump probability per step), f_repaired and f_unrepaired (conditional process fidelity of that
+    branch against `gate`, with and without the ideal repair of `phases`)."""
     m = fwm.model_with_channels(n_c, 1, keep, include_higher_order)
-    u = d2_pulse()
+    u = d2_pulse() if pulse is None else np.asarray(pulse, dtype=float)
     N = u.shape[0]
     Heff = m.H_d - 0.5j * np.diag(m.Gdiag)
     steps = [expm(-1j * (Heff + np.tensordot(u[k], m.Hc, axes=1)) * DT) for k in range(N)]

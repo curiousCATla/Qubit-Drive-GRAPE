@@ -1,0 +1,107 @@
+% Shared preamble for the EsT theory deck.
+% Included by est_theory_slides.tex (slides) and est_theory_notes.tex (speaker notes).
+
+\usetheme{default}
+\usefonttheme[onlymath]{serif}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{tikz}
+\usepackage{appendixnumberbeamer}   % backup slides do not count toward the main total
+\usetikzlibrary{arrows.meta, positioning, calc, fit, decorations.pathmorphing,
+                decorations.pathreplacing, backgrounds}
+
+% ---------------------------------------------------------------- colours
+\definecolor{codegreen}{RGB}{ 60,140, 80}
+\definecolor{errpurple}{RGB}{110, 90,175}
+\definecolor{estblue}{RGB}{ 31,105,175}
+\definecolor{ordred}{RGB}{190, 55, 45}
+\definecolor{tagmid}{RGB}{125,125,125}
+
+\setbeamercolor{structure}{fg=estblue}
+\setbeamercolor{frametitle}{fg=black}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+\setbeamertemplate{itemize item}{\color{estblue}$\bullet$}
+\setbeamertemplate{itemize subitem}{\color{tagmid}--}
+\setbeamercolor{block title}{bg=estblue!12, fg=black}
+\setbeamercolor{block body}{bg=estblue!5}
+
+% ---------------------------------------------------------------- footline
+% \framenumprefix is empty in the main deck and set to B after \appendix.
+\newcommand{\framenumprefix}{}
+\setbeamertemplate{footline}{%
+  \hbox{\begin{beamercolorbox}[wd=\paperwidth, ht=2.4ex, dp=1.2ex, leftskip=1.2em,
+                              rightskip=1.2em]{}%
+    \color{tagmid}\scriptsize
+    Error semitransparent control of a bosonic logical qubit
+    \hfill \insertsectionhead \hfill \framenumprefix\insertframenumber/\inserttotalframenumber
+  \end{beamercolorbox}}%
+}
+
+% ---------------------------------------------------------------- macros
+\newcommand{\ket}[1]{\left|#1\right\rangle}
+\newcommand{\bra}[1]{\left\langle#1\right|}
+\newcommand{\brket}[2]{\left\langle#1\middle|#2\right\rangle}
+\newcommand{\melem}[3]{\left\langle#1\middle|#2\middle|#3\right\rangle}
+\newcommand{\proj}[1]{\ket{#1}\!\bra{#1}}
+
+\newcommand{\aop}{\hat{a}}
+\newcommand{\ad}{\hat{a}^{\dagger}}
+\newcommand{\qop}{\hat{q}}
+\newcommand{\qd}{\hat{q}^{\dagger}}
+\newcommand{\nop}{\hat{n}}
+\newcommand{\id}{\mathbb{I}}
+\newcommand{\Tr}{\operatorname{Tr}}
+\newcommand{\spn}{\operatorname{span}}
+
+\newcommand{\Cs}{\mathcal{C}}          % code space
+\newcommand{\Es}{\mathcal{E}}          % error space
+\newcommand{\PC}{P_{\Cs}}
+\newcommand{\PE}[1]{P_{\Es_{#1}}}
+\newcommand{\dqec}{\Delta_{\mathrm{QEC}}}
+\newcommand{\Lleak}{L_{\Es_j}}
+\newcommand{\etam}{\eta_{\Es_j,\psi}}
+
+% Equation provenance tag, right-aligned and unobtrusive.
+\newcommand{\eqtag}[1]{{\color{tagmid}\scriptsize\hfill [#1]}}
+% Same tag, but for use INSIDE a display: \hfill does nothing useful there.
+\newcommand{\eqin}[1]{\qquad{\color{tagmid}\scriptsize[\text{#1}]}}
+% Inline equation reference, for use inside tabulars where \hfill misbehaves.
+\newcommand{\eqn}[1]{{\color{tagmid}\scriptsize (#1)}}
+% Inline "plain words" gloss.
+\newcommand{\plain}[1]{{\color{estblue}\textbf{In plain words:}} #1}
+
+% ---------------------------------------------------------------- note pages
+% Only rendered by est_theory_notes.tex (the `notes=only` driver).  Default
+% beamer note pages waste most of the page on a frame thumbnail and set the
+% text too large, so dense notes overflow; this is a plain full-bleed page.
+\setbeamerfont{note page}{size=\scriptsize}
+\setbeamercolor{note page}{bg=white, fg=black}
+\setbeamertemplate{note page}{%
+  \vspace{0.6em}%
+  \begin{minipage}{\textwidth}%
+    \usebeamerfont{note page}%
+    \insertnote
+  \end{minipage}%
+}
+
+% Tight bullet list used inside \note{} blocks, so a full slide's worth of
+% speaker notes fits on one note page.
+\newenvironment{ntitem}
+  {\begin{itemize}%
+     \setlength{\itemsep}{1.2pt}%
+     \setlength{\parsep}{0pt}%
+     \setlength{\parskip}{0pt}%
+     \setlength{\topsep}{1pt}}
+  {\end{itemize}}
+
+% ---------------------------------------------------------------- slide references
+% \slidelabel{name} inside a frame records that frame's number; \slideref{name}
+% prints it.  Used instead of hard-coded "slide 3" so reordering cannot break them.
+% Use only in frame bodies, not in \note{} (make_script.py cannot resolve them).
+\makeatletter
+\newcommand{\slidelabel}[1]{%
+  \protected@write\@auxout{}{\string\newlabel{sl:#1}{{\insertframenumber}{\thepage}}}}
+\makeatother
+\newcommand{\slideref}[1]{\ref{sl:#1}}

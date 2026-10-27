@@ -123,13 +123,53 @@ with P_f or gain a global phase; targets have the transmon in g), so `fwm.propag
 and the carriers zeroed is exact: one exponential per step, no CF4. `fwm_tail` reuses `fwm.py` unchanged (W-form
 gradient, `BetaChain` with 2 tones = one (N, 4) block, penalties). Decisions (2026-10-19): baseline **d2 alone**
 (0.955554); combs only (the cavity drive would keep the frame exact; the transmon drive would not); |η_c| ≤ 0.1 per
-comb; readout traced (`readout="empty"` available); tail **3 μs default, a parameter**; **no free rotation** (the
+comb; readout traced (`readout="empty"` available); tail **1 μs default** (3 μs until 2026-10-20), **a parameter**; **no free rotation** (the
 storage Kerr phase, 5.1 % over 3 μs closed, must be cancelled by the tail). Upper limits recorded before training:
 ideal instant FWM repair at T_g 0.9652, any recovery 0.9897, kitten limit 0.935 per repaired loss, d2 + idle
-3 μs 0.8488; the optimistic estimate is ≈ −0.1 % vs d2 alone at 3 μs and +0.2–0.3 % at 0.5–1 μs. **Nothing is
-trained.** Training: `DGRAPE/train_fwm_tail.py --start tableII --tag X_tail_a` (`--dry-run`: one timed evaluation,
-~12 s at n_c 16, 3 μs, 3 jobs); outputs to `~/fwm_runs`, then `pulses/dgrape/` (never `pulses/`). Tests:
-`python3 validation/test_fwm_tail.py -v` (10 tests, ~10 s).
+3 μs 0.8488; the optimistic estimate is ≈ −0.1 % vs d2 alone at 3 μs and +0.2–0.3 % at 0.5–1 μs.
+Training: `DGRAPE/train_fwm_tail.py --start tableII --tag X_tail_a` (`--dry-run`: one timed evaluation,
+~4 s at n_c 16, 1 μs, 3 jobs; ~12 s at 3 μs); outputs to `~/fwm_runs`, then `pulses/dgrape/` (never `pulses/`). Every scorer
+takes the gate as `pulse=` (`fwm_tail.gate_output`; `--gate-pulse` on the trainer; None = d2, bit for bit).
+`gate_n_c` (`--gate-n-c`; `fwm_tail.tail_input`, `cut_storage`) runs the gate at that truncation and cuts its output
+to the tail's n_c; the closed-trained gates end with ≤ 2e-5 above Fock 16, so tails after them train at n_c 16 on the
+n_c 24 output (cut F = uncut to 3e-16, ~3x faster). Held-out scorer: `DGRAPE/fwm_tail_score.py` (14 conditions, refs
+gate alone / idle / Table II teeth per condition) → `tables/fwm_tail_heldout.csv`. **On Windows set
+`OPENBLAS_NUM_THREADS=2` at launch** (numpy is OpenBLAS there; loky otherwise gives each worker 8 threads).
+**Trained tails (notebook §6, 2026-10-21/22): no-go.** 15 runs `pulses/dgrape/*X_tail_{est,ord,d2}_T{05,1,2}_{t2,z}*`
+(EsT/Ord/d2 × 0.5/1/2 μs, starts Table II and zero + noise, 300 it), the 8 still climbing resumed 300 more (`*_r*`).
+Only EsT + 1 μs beats its gate alone: **+0.16 %** (0.96966 vs 0.96803; go bar +0.3 %); Ord −0.58 %, d2 −0.67 %
+with the same tail shape. Real repair (0 closed; loss cost 2.22 → 1.81 % after EsT), paid for by transmon decay
+(~0.2 %), all channels −0.11 %. The optimiser builds ONE ~600 ns repair shot (comb 1, then comb 2 at the cap), so
+0.5 μs stalls near idle; 1 μs is best for every gate. The shot sits at the END of the tail because it repairs only
+losses before it (to ~0.92) and none after: sliding it later gains 1.8 %/μs, 0 closed (§6.3, Figure 8,
+`tables/fwm_tail_shot_timing.csv`); the unrepaired end of the shot (~490 ns weighted, ~1.0 %) is the floor. Fragile: η × 0.9 / 1.1 costs the EsT tail 8–10 %, Stark off
+13–63 %, readout-empty scoring removes the gain. Estimate vs result (§6.5, Table 13): of the +1.09 % → +0.16 % gap,
+the slow shot is ~−0.4 % and transmon decay ~−0.2 %. **Re-timed EsT tails (notebook §6.8, 2026-10-26): no-go.**
+0.8 μs and 1.4 μs (`pulses/dgrape/*X_tail_est_T{08,14}_crop*`, started from the 1 μs / 2 μs tail with its front cut,
+600 it): +0.19 % and +0.05 % over the gate alone (1 μs +0.16 %); 0.8 μs is twice as pump-sensitive (η × 0.9 −13.7 %).
+The 1 μs tail's quiet front is not idle (zeroing it costs 2 % closed: Kerr-phase work); every tail ends in the same
+~600 ns shot and leaves ~450–620 ns (~1 %) unrepaired. Tables `fwm_tail_heldout_retimed.csv`,
+`fwm_tail_retimed_crop_check.csv`, `fwm_tail_shot_timing_retimed.csv`. Next: a faster shot (comb 2 above all) is the
+biggest lever, not a shorter wait; robust training over pump scale; a gate trained for repairable losses.
+**EsT gate (notebook §3, 2026-10-20).** `DGRAPE/est_gate.py` trains an error-semitransparent X gate with EST's cost
+unchanged (`EST/grape_eigh.cost_and_grad`, C1–C4, weights (1, 0.7, 7, 1) then (1, 0.1, 0, 1), 2000 it per stage,
+pinned to `EST/train_est.py`) in the CLOSED system on this chip (DGRAPE drift and controls at n_r = 1, n_c 20), with
+d2's duration, dt, bands, ramp, cap, box and seed-42 smooth start; the three transparency measures are
+`EST/diagnostics`' unchanged. `DGRAPE/train_est_gate.py --variant est|ord` (~30 min each, 2 side by side) →
+`pulses/dgrape/*X_{est,ord}_closed*` (+ `_s43`, `_s44` seeds). **The closed-trained gates reach Fock 15–17 and need
+n_c ≥ 20** (closed F1 at n_c 16 reads 0.006 / 0.016 low), so §3 scores at n_c 24 (28 held out). EsT: F1 0.99782
+(just under EST's 0.999 "closed"), F_ET 0.726 (Ord 0.331); mean L 0.27 vs d2 0.59, L(T) 0.13 vs 0.93; Δ_QEC barely
+moves (0.20 vs 0.24). Open: EsT alone 0.96803 > Ord 0.96380 > d2 0.95556; a mid-gate loss repairs ideally to 0.861 (d2
+0.461), the ideal repair gains +1.85 % (d2 +0.96 %), §2.4's estimate for a 1 μs tail becomes +1.1 % (3 μs: +0.8 %). With d2's
+gentle start stage 1 parks or nearly parks: seed 44 parked (zero drive), seeds 42/43 stall at F1 ≈ 0.49 in stage 1
+and stage 2 closes from there (seed 43: F1 0.9985, F_ET 0.774, gain +1.96 %). The R-W best-recovery iteration stops
+3e-4 low at n_c 24 (d2 0.98938 vs 0.98968 at 16): a lower bound.
+Notebook order (rewritten 2026-10-25): Setup (glossary), §1 idea, §2 limits after d2, §3 EsT comparison, §4 method
+(frame, controls, cost, baselines), §5 training as run, §6 results (6.5 = estimate vs result), §7 conclusions,
+Appendix A checks and timing, Appendix B dated decisions, run logistics, seed 43. Every figure and table has a
+markdown caption below it with a *Symbols* line; table gains are shown in %.
+Tests: `python3 validation/test_fwm_tail.py -v` (13 tests, ~90 s on the Windows PC),
+`python3 validation/test_est_gate.py -v` (7 tests, ~1 s).
 
 Full physics/math background for track 1 (Hamiltonian, cat-code definition, adjoint gradients,
 frequency-band-limited controls, penalty terms, truncation-convergence protocol, decoherence
