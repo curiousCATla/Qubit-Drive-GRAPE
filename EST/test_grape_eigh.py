@@ -982,6 +982,47 @@ class StageWeightScheduleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.sw("est_c3s2", w2=0.9, n_stages=1)
 
+    def test_per_stage_overrides(self):
+        """--w2 with --w2-s2 / --w-dn-s2 (est_optimization.ipynb s6): each stage its own."""
+        self.assertEqual(
+            self.sw("est_dn", w_dn=3.5, w2=0.8, w2_s2=0.1, w_dn_s2=0.4),
+            [(1.0, 0.8, 7.0, 1.0, 0.0, 3.5, 0.0), (1.0, 0.1, 0.0, 1.0, 0.0, 0.4, 0.0)])
+        # Overrides equal to the defaults reproduce the plain schedule.
+        self.assertEqual(self.sw("est_dn", w_dn=3.0, w2=0.7, w2_s2=0.1, w_dn_s2=3.0),
+                         self.sw("est_dn", w_dn=3.0))
+        self.assertEqual(self.sw("est", w2_s2=0.2), [(1.0, 0.7, 7.0, 1.0), (1.0, 0.2, 0.0, 1.0)])
+        # None for both stage-2 overrides is the old schedule, tuple for tuple.
+        self.assertEqual(self.sw("est_dn", w_dn=3.0, w2_s2=None, w_dn_s2=None),
+                         self.sw("est_dn", w_dn=3.0))
+        with self.assertRaises(ValueError):       # stage 2 does not exist
+            self.sw("est_dn", w_dn=3.0, w2_s2=0.1, n_stages=1)
+        with self.assertRaises(ValueError):       # no C5 to override
+            self.sw("est", w_dn_s2=0.4)
+        with self.assertRaises(ValueError):       # the variant's own checks still run
+            self.sw("est_dn", w_dn_s2=0.4)
+
+    def test_w_err_s2_override(self):
+        """--w-err-s2 (est_optimization.ipynb s7): C_err in stage 1 only."""
+        self.assertEqual(
+            self.sw("est_err", w_err=0.3, w_err_s2=0.0),
+            [(1.0, 0.7, 7.0, 1.0, 0.3, 0.0, 0.0), (1.0, 0.1, 0.0, 1.0, 0.0, 0.0, 0.0)])
+        # Equal to the default, or None, is the plain schedule.
+        self.assertEqual(self.sw("est_err", w_err=0.3, w_err_s2=0.3), self.sw("est_err", w_err=0.3))
+        self.assertEqual(self.sw("est_err", w_err=0.3, w_err_s2=None), self.sw("est_err", w_err=0.3))
+        # It touches the C_err slot only, alongside the other stage-2 overrides.
+        self.assertEqual(
+            self.sw("est_err_dn", w_err=0.3, w_dn=3.0, w_err_s2=0.0, w_dn_s2=0.4),
+            [(1.0, 0.7, 7.0, 1.0, 0.3, 3.0, 0.0), (1.0, 0.1, 0.0, 1.0, 0.0, 0.4, 0.0)])
+        with self.assertRaises(ValueError):       # stage 2 does not exist
+            self.sw("est_err", w_err=0.3, w_err_s2=0.0, n_stages=1)
+        with self.assertRaises(ValueError):       # no C_err to override
+            self.sw("est_dn", w_dn=3.0, w_err_s2=0.0)
+
+    def test_maxiter_s1_needs_two_stages(self):
+        from EST import train_est_eigh
+        with self.assertRaises(ValueError):
+            train_est_eigh.train(n_stages=1, maxiter_s1=10, verbose=False)
+
     def test_stage2_variants_are_refused_under_one_stage(self):
         """They are defined by stage 2, so one stage would silently be `est`."""
         for v, kw in (("est_c3s2", {}), ("est_d2", {"w_smooth": 2e-5}),

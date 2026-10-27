@@ -12,6 +12,11 @@ eigh + analytic-adjoint pipeline (EST/grape_eigh.py).
            --w2 0.9 --w-dn 3 --maxiter 1000  # single phase, C2 weight 0.9 not 0.7
     python EST/train_est_eigh.py --gate X --variant est_lk --stages 1 \
            --w-leak 0.3 --maxiter 2000       # + C_L, leakage out of E(t)
+    python EST/train_est_eigh.py --gate X --variant est_dn --w2 0.8 --w-dn 3.5 \
+           --w2-s2 0.1 --w-dn-s2 0.4 --maxiter-s1 1000 --maxiter 2000 \
+           --init-x pulses/est/x_X_<grid run>.npy   # per-stage weights, section 6
+    python EST/train_est_eigh.py --gate X --variant est_err --w-err 0.3 \
+           --w-err-s2 0 --seed 0 --maxiter 2000 --tag err2st_seed0   # C_err in stage 1 only, section 7
 
 `--stages 1` drops stage 2 and holds stage 1's weights (w2=0.7, w3=7) for the
 whole run, so the reported objective is the one that was optimized. That is the
@@ -143,7 +148,8 @@ def _ext_weights(variant, w_err, w_dn, w_smooth, w_leak=None):
 
 
 def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
-                  n_stages=2, w2=None, w_leak=None):
+                  n_stages=2, w2=None, w_leak=None, w2_s2=None, w_dn_s2=None,
+                  w_err_s2=None):
     """
     Objective weights per stage for `variant`: a list with one 4-, 7- or 8-tuple
     (w1, w2, w3, w4[, w_err, w5, w6[, w_L]]) per stage, as build_gate_objective
@@ -167,9 +173,35 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
     `w2` replaces the C2 weight of the single phase (est_optimization.ipynb
     section 5, EST/tune_c2_c5.py). It is refused with n_stages=2, where it would
     be ambiguous which stage it means. None leaves every tuple unchanged.
+
+    Per-stage overrides (est_optimization.ipynb section 6, EST/c2c5_two_stage.py):
+    `w2_s2` replaces the C2 weight of stage 2 and `w_dn_s2` the C5 weight (w5)
+    of stage 2. Either one needs n_stages=2, and with either one set, `w2`
+    means the STAGE-1 C2 weight, so nothing is ambiguous. `w_dn_s2` needs a
+    variant that uses "dn". `w_err_s2` likewise replaces the C_err weight (w_err)
+    of stage 2 (est_optimization.ipynb section 7: C_err in stage 1 only) and needs
+    a variant that uses "err". None for all three leaves the schedule unchanged.
     """
     if n_stages not in (1, 2):
         raise ValueError(f"n_stages must be 1 or 2, got {n_stages!r}")
+    if w2_s2 is not None or w_dn_s2 is not None or w_err_s2 is not None:
+        if n_stages != 2:
+            raise ValueError("w2_s2 / w_dn_s2 / w_err_s2 override stage 2; pass n_stages=2")
+        if w_dn_s2 is not None and "dn" not in EXT_VARIANTS.get(variant, ()):
+            raise ValueError(f"w_dn_s2 needs a variant with C5; {variant!r} has none")
+        if w_err_s2 is not None and "err" not in EXT_VARIANTS.get(variant, ()):
+            raise ValueError(f"w_err_s2 needs a variant with C_err; {variant!r} has none")
+        first, second = stage_weights(variant, w_amp, w_err, w_dn, w_smooth,
+                                      n_stages=2, w_leak=w_leak)
+        if w2 is not None:
+            first = first[:1] + (float(w2),) + first[2:]
+        if w2_s2 is not None:
+            second = second[:1] + (float(w2_s2),) + second[2:]
+        if w_dn_s2 is not None:
+            second = second[:5] + (float(w_dn_s2),) + second[6:]
+        if w_err_s2 is not None:
+            second = second[:4] + (float(w_err_s2),) + second[5:]
+        return [first, second]
     if w2 is not None:
         if n_stages != 1:
             raise ValueError("w2 overrides the single phase only; pass n_stages=1")
@@ -211,7 +243,8 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
 def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
           w_amp=1.0, maxiter=600, seed=0, amp0=20.0, hard_bound=60.0,
           verbose=True, init=None, init_x=None, stage_hook=None,
-          w_err=None, w_dn=None, w_smooth=None, n_stages=2, w2=None, w_leak=None):
+          w_err=None, w_dn=None, w_smooth=None, n_stages=2, w2=None, w_leak=None,
+          w2_s2=None, w_dn_s2=None, maxiter_s1=None, w_err_s2=None):
     """
     Run the schedule and return (u_physical, x_preimage, info).
 
@@ -227,9 +260,14 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     `n_stages=1` runs the SINGLE PHASE (stage 1's weights only); see
     stage_weights. The default 2 is the historical two-stage schedule and is
     bit-identical to before. `w2` replaces the C2 weight of that single phase.
+    `w2_s2` / `w_dn_s2` / `w_err_s2` override stage 2 (see stage_weights), and `maxiter_s1`
+    replaces `maxiter` for stage 1 only (a warm start that already has some
+    stage-1 iterations behind it); both need n_stages=2.
     """
     schedule = stage_weights(variant, w_amp, w_err, w_dn, w_smooth, n_stages, w2,
-                             w_leak)
+                             w_leak, w2_s2, w_dn_s2, w_err_s2)
+    if maxiter_s1 is not None and n_stages != 2:
+        raise ValueError("maxiter_s1 sets stage 1 of two; under n_stages=1 use maxiter")
     if init is not None and init_x is not None:
         raise ValueError("pass init or init_x, not both")
 
@@ -293,8 +331,9 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
             report_fn("    start", report(x))
 
         t0 = time.time()
+        n_iter = maxiter_s1 if (i == 1 and maxiter_s1 is not None) else maxiter
         res = minimize(objective, x, method="L-BFGS-B", jac=True, bounds=bounds,
-                       options={"maxiter": maxiter, "ftol": 1e-12, "gtol": 1e-8})
+                       options={"maxiter": n_iter, "ftol": 1e-12, "gtol": 1e-8})
         x = res.x
         elapsed = time.time() - t0
 
@@ -356,6 +395,14 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
     # Only written when set, so every earlier sidecar's schema is unchanged.
     if w2 is not None:
         info["w2_override"] = float(w2)
+    if w2_s2 is not None:
+        info["w2_s2_override"] = float(w2_s2)
+    if w_dn_s2 is not None:
+        info["w_dn_s2"] = float(w_dn_s2)
+    if w_err_s2 is not None:
+        info["w_err_s2"] = float(w_err_s2)
+    if maxiter_s1 is not None:
+        info["maxiter_stage1"] = int(maxiter_s1)
     return u, x_out, info
 
 
@@ -392,8 +439,20 @@ def main():
                         f"{DEFAULT_W_SMOOTH:g}); est_sm, every stage (required); "
                         "est_d2 / est_c3s2_d2, stage 2 only (required)")
     p.add_argument("--w2", type=float, default=None,
-                   help="C2 weight of the single phase (needs --stages 1); "
+                   help="C2 weight of the single phase (needs --stages 1), or of "
+                        "stage 1 when --w2-s2, --w-dn-s2 or --w-err-s2 is also given; "
                         "default: the variant's own (0.7 for est-based variants)")
+    p.add_argument("--w2-s2", type=float, default=None,
+                   help="C2 weight of stage 2 (needs --stages 2; default 0.1)")
+    p.add_argument("--w-dn-s2", type=float, default=None,
+                   help="C5 weight of stage 2 (needs --stages 2 and a dn variant; "
+                        "default: --w-dn)")
+    p.add_argument("--w-err-s2", type=float, default=None,
+                   help="C_err weight of stage 2 (needs --stages 2 and an err "
+                        "variant; default: --w-err)")
+    p.add_argument("--maxiter-s1", type=int, default=None,
+                   help="iterations of stage 1 only (needs --stages 2; "
+                        "default: --maxiter)")
     p.add_argument("--dt", type=float, default=DT, help="us (default 1 ns)")
     p.add_argument("--n-t", type=int, default=N_T)
     p.add_argument("--trunc", type=int, nargs="+", default=TRAIN_TRUNC,
@@ -448,7 +507,9 @@ def main():
                        hard_bound=args.hard_bound, init=args.init,
                        init_x=args.init_x, stage_hook=stage_hook,
                        w_err=args.w_err, w_dn=args.w_dn, w_smooth=args.w_smooth,
-                       n_stages=args.stages, w2=args.w2, w_leak=args.w_leak)
+                       n_stages=args.stages, w2=args.w2, w_leak=args.w_leak,
+                       w2_s2=args.w2_s2, w_dn_s2=args.w_dn_s2,
+                       maxiter_s1=args.maxiter_s1, w_err_s2=args.w_err_s2)
 
     print("\n--- constraints on the saved pulse ---")
     for k, v in info["constraints"].items():

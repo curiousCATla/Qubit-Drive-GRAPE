@@ -1,0 +1,14 @@
+{
+  "reference": "est_appB_ctrl_seed0",
+  "control": "est_err2st_ctrl_seed0",
+  "stage1": {
+    "max_abs_dx": 120.0,
+    "max_abs_du_rad_per_us": 47.59359654284377,
+    "identical": false
+  },
+  "final": {
+    "max_abs_dx": 114.57946042444458,
+    "max_abs_du_rad_per_us": 48.60063910155776,
+    "identical": false
+  }
+}

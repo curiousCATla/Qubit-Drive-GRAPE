@@ -172,7 +172,8 @@ different device and code. Full details in `EST/README.md`.
   **X study (now §2, was §1) is the SINGLE-PHASE campaign** (`--stages 1`, X, 1000 it
   scan / 2000 it full runs), not the two-stage one. Artifacts: `tables/est_newterms_smoke_X_6seeds_sp.csv`
   (scan, 6 seeds x 12 cells + 6 freshly trained controls, tags `sp1000_ctrl_seed<s>` /
-  `sp1000_seed<s>_w<w>`) and `tables/est_newterms_X_seed4_sp_win.csv` + `_traces.npz` (5 full runs
+  `sp1000_seed<s>_w<w>`; Mac-trained, frozen -- the live PC scan is `_win`, see the end of this
+  bullet) and `tables/est_newterms_X_seed4_sp_win.csv` + `_traces.npz` (6 full runs incl. `est_lk`
   at **seed 4**, tag `sp2000_seed4_win`, one row per run; `compare_new_terms.SEED` and
   `MACHINE_SUFFIX` name the paths). The full runs moved from seed 0 because seed-0 `est_dn` parked;
   seeds 4, 6 and 8 drive in all 12 scan cells. The seed-0 tables (`est_newterms_X_seed0_sp*`) were
@@ -210,6 +211,25 @@ different device and code. Full details in `EST/README.md`.
   `est_dn` at 2000 it -- the full runs used w_err=0.3 / w5=3, and the revised rule picks 0.1 / 10,
   so **neither §2.2 weight is one the scan selects**. Do not carry a weight that parks any scanned
   seed to a single-seed full run.
+  **The scan was retrained on the PC (2026-10-19) with a third ladder, C_L; the Mac scan table
+  above (`..._6seeds_sp.csv`) is frozen.** `smoke_new_terms.MACHINE_SUFFIX = "_win"` names every
+  tag (`sp1000_seed<s>_w<w>_win`, `sp1000_ctrl_seed<s>_win`) and the live table
+  `tables/est_newterms_smoke_X_6seeds_sp_win.csv`; `run --jobs N` is a resumable launcher (logs and
+  score cache in `~/est_runs/newterms_win/`). PC training is deterministic: the fresh seed-0/4
+  controls equal §5's `c2c5_sp1000_ctrl` bit for bit. PC vs Mac on the 78 shared cells: the same 6
+  park, the same picks (w_err 3 / 0.1, w5 10), seed means within 0.003 F1, 0.013 F_ET, 0.048
+  Delta_QEC (single runs up to 0.23 in L(T)). **C_L range came from a smoke screen** (`smoke`,
+  w_L {0.01..30} on seeds 0, 4; rule fixed beforehand: w_lo = smallest weight with mean-L drop
+  >= 0.01, w_hi = smallest where a seed parks or c1 > 3x, 6 rungs from one {1,3}x10^k rung below
+  w_lo to w_hi; record `tables/est_newterms_leak_range_X_win.json`, which `smoke` refuses to
+  change): w_lo 0.3, w_hi 1, ladder (0.1, 0.15, 0.3, 0.5, 0.7, 1). Ladder result (drove-only
+  means): w_L 0.5 lowers mean L 0.259 -> 0.177, Delta_QEC 0.245 -> 0.131, eta 0.227 -> 0.182, raises
+  F_ET 0.727 -> 0.811, costs F1 0.942 -> 0.879, barely moves L(T) (0.645 -> 0.55); **cliff above
+  0.5**: 4/6 seeds park at 0.7, 5/6 at 1 (a do-nothing pulse has L ~ 0). Both rules pick w_L 0.5.
+  **Full run `est_lk` (w_L 0.5, seed 4, 2000 it, `sp2000_seed4_win`)**: F1 0.8678 (baseline
+  0.9438), mean L 0.242 -> 0.169, F_ET 0.742 -> 0.822, mean eta 0.244 -> 0.167, mean Delta_QEC
+  0.188 -> 0.147; no mid-gate bump (L <= 0.34 before 0.8 T, where est_err peaks at 0.65) but L(T)
+  0.568, F_err(T) 0.227: C_L and C_err fix opposite ends. `est_err_lk` (both) is not run.
 - **`--w2` / `EST/tune_c2_c5.py` (`est_optimization.ipynb` §5, "Phase 1")** — `--w2` on
   `train_est_eigh.py` replaces the C2 weight of the single phase; it **raises** with `--stages 2`
   (which stage would be ambiguous), `None` is bit-identical, the sidecar gets `w2_override` only when
@@ -229,6 +249,43 @@ different device and code. Full details in `EST/README.md`.
   0.6 -> 1.0, mean F1 -0.011 per +0.1); w5 in 2-4 has no visible effect on the score. Run-to-run F1
   noise (same seed and w2, different w5) is ~0.009, about the 0.01 bar. Post hoc only: w2 = 0.8,
   w5 = 3 / 3.5 gives score 0.93 / 0.91 at mean dF1 -0.004. The bar change is the user's call.
+- **Per-stage overrides / `EST/c2c5_two_stage.py` (`est_optimization.ipynb` §6, "Phase 2")** —
+  `--w2-s2` (stage-2 C2 weight), `--w-dn-s2` (stage-2 C5 weight, dn variants only) and
+  `--maxiter-s1` (stage-1 iterations; `--maxiter` is then stage 2) on `train_est_eigh.py`, all
+  `--stages 2` only. With `--w2-s2` or `--w-dn-s2` set, `--w2` means the STAGE-1 C2 weight; without
+  them it still raises under two stages. `None` is bit-identical; sidecar keys `w2_s2_override`,
+  `w_dn_s2`, `maxiter_stage1` only when set (`StageWeightScheduleTest.test_per_stage_overrides`).
+  The campaign (user's choice, 2026-10-20): X, tuned arm `est_dn` stage 1 (1,0.8,7,1,0,3.5,0),
+  stage 2 (1,0.1,0,1,0,0.4,0), warm `--init-x` from §5's (0.8, 3.5) grid run; control `est`
+  warm from §5's control; both 1000 more stage-1 it (2000 in all) + 2000 stage-2 it. Seeds = §5's
+  minus seed 0 (its grid run parked), replaced by the first of 17-21 whose (0.8, 3.5) grid run
+  drives (trained with §5's command). Runs `est_dn_c2c5_2st_seed<s>` / `est_c2c5_2st_ctrl_seed<s>`,
+  logs + score cache `~/est_runs/c2c5_2st/`, tables `tables/est_c2c5_2st_X_{runs,paired}.csv`,
+  `_traces.npz`, `_seeds.json`. Reading rule: paired tuned - control over seeds where both drive,
+  resolved when |mean| > 2 SE. Trained on the Windows PC (8.4 h at 23 jobs, ~7 h per run; every
+  run hit its full 1000 + 2000 it). Figures `figures/est/fig9{a,b}_c2c5_2st_*_X.png`.
+  **Result (2026-10-20):** seed 17 replaced 0; nothing parked. Only mean Delta_QEC is resolved:
+  0.291 -> 0.209 (-0.083 +- 0.038, 10/12 seeds; c5 0.0043 -> 0.0010). Mean L, mean eta, F_ET
+  (0.735 vs 0.733) and all three tails unchanged within noise; tail Delta_QEC is ~0 for any closed
+  gate (kitten code meets KL for {I, a}), L(T) ~0.5 and eta(T) ~0.8 in both arms. F1 0.9993 vs
+  0.9991 (not resolved) but only 6/12 tuned gates close (>= 0.999) against 10/12 controls. At the
+  end of stage 1 the tuned arm already led only on Delta_QEC, so §5's L/eta lead was noise.
+  Tuned seed 6 reaches Fock 14 (n_c 16 reads 0.004 low; 20-28 agree to 1e-5).
+- **`--w-err-s2` / `EST/err_two_stage.py` (`est_optimization.ipynb` §7)** — `--w-err-s2` replaces the C_err weight
+  of stage 2 (err variants only, `--stages 2` only; `None` bit-identical; sidecar key `w_err_s2` only when set;
+  `StageWeightScheduleTest.test_w_err_s2_override`). The run (user's choice, 2026-10-26): X, seed 0 (est_experiments
+  Figure 2a's), cold start, `est_err --w-err 0.3 --w-err-s2 0 --maxiter 2000`, i.e. (1,0.7,7,1,0.3,0,0) then
+  (1,0.1,0,1,0,0,0), against a plain `est` control trained alongside (tags `err2st_seed0`, `err2st_ctrl_seed0`; one
+  BLAS thread each, ~1.5 h each on the PC; logs + score cache `~/est_runs/err2st/`). Tables
+  `tables/est_err2st_X_seed0{.csv,_traces.npz,_control_check.json}`, figure `figures/est/fig10a_err2st_traces_X.png`.
+  **The fresh control is NOT `est_appB_ctrl_seed0`** (same command, PC, 2026-10-14; max|du| 48 rad/us, scalars agree
+  within seed spread), so that older run used a different BLAS setup; compare only runs trained together.
+  **Result (single seed):** both gates close (F1 0.9993 vs 0.9997). Stage 2 gives back about half of C_err's
+  endpoint lead (L(T) 0.111 -> 0.158 vs control 0.317; F_err(T) 0.938 -> 0.830 vs 0.654), but the run ends far
+  more transparent DURING the gate, built in stage 2 (after stage 1 they were level): F_ET 0.815 vs 0.739, mean L
+  0.179 vs 0.237, mean eta 0.124 vs 0.322 (control's mid-gate eta peak 1.44 gone). Mean Delta_QEC level (0.226 vs
+  0.242) but the run has one spike to 3.3 at 0.65 us. Against §6's 12 control finals (warm-start protocol, a rough
+  noise scale) the run is outside their range on F_ET, mean L, mean eta, L(T), F_err(T). Next: the pair over §6's seeds.
 - **`EST/test_grape_jax.py`** — the anchor is the C1 gradient checked against
   `grape_core.fidelity_multi_state`'s analytic adjoint at rtol 1e-6 (sign-flipped: JAX
   returns cost, numpy returns fidelity).
