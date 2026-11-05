@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Six related tracks sharing one repository.
+Seven related tracks sharing one repository.
 
 **1. Cat-code GRAPE (the main pipeline, `core/` + everything downstream).** Gradient Ascent
 Pulse Engineering optimal control for a dispersively coupled transmon–cavity circuit-QED
@@ -135,23 +135,26 @@ to the tail's n_c; the closed-trained gates end with ≤ 2e-5 above Fock 16, so 
 n_c 24 output (cut F = uncut to 3e-16, ~3x faster). Held-out scorer: `DGRAPE/fwm_tail_score.py` (14 conditions, refs
 gate alone / idle / Table II teeth per condition) → `tables/fwm_tail_heldout.csv`. **On Windows set
 `OPENBLAS_NUM_THREADS=2` at launch** (numpy is OpenBLAS there; loky otherwise gives each worker 8 threads).
-**Trained tails (notebook §6, 2026-10-21/22): no-go.** 15 runs `pulses/dgrape/*X_tail_{est,ord,d2}_T{05,1,2}_{t2,z}*`
-(EsT/Ord/d2 × 0.5/1/2 μs, starts Table II and zero + noise, 300 it), the 8 still climbing resumed 300 more (`*_r*`).
-Only EsT + 1 μs beats its gate alone: **+0.16 %** (0.96966 vs 0.96803; go bar +0.3 %); Ord −0.58 %, d2 −0.67 %
-with the same tail shape. Real repair (0 closed; loss cost 2.22 → 1.81 % after EsT), paid for by transmon decay
-(~0.2 %), all channels −0.11 %. The optimiser builds ONE ~600 ns repair shot (comb 1, then comb 2 at the cap), so
-0.5 μs stalls near idle; 1 μs is best for every gate. The shot sits at the END of the tail because it repairs only
-losses before it (to ~0.92) and none after: sliding it later gains 1.8 %/μs, 0 closed (§6.3, Figure 8,
-`tables/fwm_tail_shot_timing.csv`); the unrepaired end of the shot (~490 ns weighted, ~1.0 %) is the floor. Fragile: η × 0.9 / 1.1 costs the EsT tail 8–10 %, Stark off
-13–63 %, readout-empty scoring removes the gain. Estimate vs result (§6.5, Table 13): of the +1.09 % → +0.16 % gap,
-the slow shot is ~−0.4 % and transmon decay ~−0.2 %. **Re-timed EsT tails (notebook §6.8, 2026-10-26): no-go.**
-0.8 μs and 1.4 μs (`pulses/dgrape/*X_tail_est_T{08,14}_crop*`, started from the 1 μs / 2 μs tail with its front cut,
-600 it): +0.19 % and +0.05 % over the gate alone (1 μs +0.16 %); 0.8 μs is twice as pump-sensitive (η × 0.9 −13.7 %).
-The 1 μs tail's quiet front is not idle (zeroing it costs 2 % closed: Kerr-phase work); every tail ends in the same
-~600 ns shot and leaves ~450–620 ns (~1 %) unrepaired. Tables `fwm_tail_heldout_retimed.csv`,
-`fwm_tail_retimed_crop_check.csv`, `fwm_tail_shot_timing_retimed.csv`. Next: a faster shot (comb 2 above all) is the
-biggest lever, not a shorter wait; robust training over pump scale; a gate trained for repairable losses.
-**EsT gate (notebook §3, 2026-10-20).** `DGRAPE/est_gate.py` trains an error-semitransparent X gate with EST's cost
+**The notebook's EsT gate is the "good" one (2026-11-01, user decision):** seed 24 of the C_err cost
+(`u_X_est_err_closed_s24.npy`, see "Seed selection" below) is "EsT" in §1–§8 and Appendices B–C (`EST_PULSE` in Setup);
+its tails are `pulses/dgrape/*X_tail_estg_T{05,08,1,14,2}_{t2,z}*` (600 it, one leg) and its held-out scores
+`tables/fwm_tail_heldout_good.csv` (gate `EsT-good`, renamed `EsT` on load). The earlier seed-42 "mid" gate
+(`u_X_est_closed.npy`, tails `X_tail_est_*`) appears only in Appendix D (good vs mid). §6 merges d2 and Ord rows of
+`fwm_tail_heldout.csv` with the good table; the re-timed (cropped) mid tails and their crop check (old Table C8) are
+dropped; `tables/fwm_tail_runs.csv` now holds the good rows. **Trained tails (notebook §6): one GO, at the bar.**
+19 runs: d2/Ord × 0.5/1/2 μs (300 it; 5 resumed `*_r*`), EsT × 0.5/0.8/1/1.4/2 μs. EsT + 0.8 μs **+0.32 %** (0.97027
+vs 0.96706, held-out n_c 28 the same; clears the +0.3 % bar by the spread between its two starts), 1 μs +0.28 %, 1.4 μs
++0.14 %, 2 μs −0.06 %; Ord −0.58 %, d2 −0.67 % at best (1 μs). Real repair (0 closed; loss cost 2.38 → 1.85 % at 1 μs),
+paid for by transmon decay (~0.25 %). The optimiser builds ONE ~600 ns shot (comb 1, then comb 2 at the cap) at the END
+of every tail (0.5 μs stays off): it repairs losses before it (to ~0.92) and none after; sliding the whole 1 μs tail later in a 2 μs window gains
+1.77 %/μs, 0 closed (§6.2, `tables/fwm_tail_shot_timing_good.csv`); the unrepaired end of the shot (458–604 ns
+weighted, 0.9–1.2 %) is the floor. Estimate vs result (§6.4, Table 9, 1 μs): +1.23 % → +0.28 %, slow shot −0.41 %,
+non-loss −0.25 %, remainder −0.29 %. Fragile (§6.5): 0.8 μs η × 0.9 / 1.1 −10.3 / −12.8 %, Stark off −77 %, all
+channels +0.03 %, readout-empty −1.2 %. Next: a faster shot (comb 2 above all); robust training over pump scale; a gate
+trained for repairable losses. Mid's record (first campaign 2026-10-21/22: mid 1 μs +0.16 %; cropped 0.8/1.4 μs
++0.19/+0.05 %, `X_tail_est_T{08,14}_crop*`, `fwm_tail_heldout_retimed.csv`, `fwm_tail_retimed_crop_check.csv`,
+`fwm_tail_shot_timing{,_retimed}.csv`) stays on disk, unused by the notebook except Appendix D.
+**EsT gate, first version = mid (2026-10-20; now notebook Appendix D only).** `DGRAPE/est_gate.py` trains an error-semitransparent X gate with EST's cost
 unchanged (`EST/grape_eigh.cost_and_grad`, C1–C4, weights (1, 0.7, 7, 1) then (1, 0.1, 0, 1), 2000 it per stage,
 pinned to `EST/train_est.py`) in the CLOSED system on this chip (DGRAPE drift and controls at n_r = 1, n_c 20), with
 d2's duration, dt, bands, ramp, cap, box and seed-42 smooth start; the three transparency measures are
@@ -164,12 +167,109 @@ moves (0.20 vs 0.24). Open: EsT alone 0.96803 > Ord 0.96380 > d2 0.95556; a mid-
 gentle start stage 1 parks or nearly parks: seed 44 parked (zero drive), seeds 42/43 stall at F1 ≈ 0.49 in stage 1
 and stage 2 closes from there (seed 43: F1 0.9985, F_ET 0.774, gain +1.96 %). The R-W best-recovery iteration stops
 3e-4 low at n_c 24 (d2 0.98938 vs 0.98968 at 16): a lower bound.
-Notebook order (rewritten 2026-10-25): Setup (glossary), §1 idea, §2 limits after d2, §3 EsT comparison, §4 method
-(frame, controls, cost, baselines), §5 training as run, §6 results (6.5 = estimate vs result), §7 conclusions,
-Appendix A checks and timing, Appendix B dated decisions, run logistics, seed 43. Every figure and table has a
-markdown caption below it with a *Symbols* line; table gains are shown in %.
+**Seed selection with C_err (`est_gate_selection.ipynb`, 2026-10-29).** Variant `est_err` of `est_gate.py` =
+est_optimization §7's cost ((1,0.7,7,1,0.3,0,0) then (1,0.1,0,1,0,0,0), pinned to `EST/err_two_stage.WEIGHTS["run"]`);
+`DGRAPE/est_gate_seeds.py run|status|summarize|open_score` (runs in `~/fwm_runs/est_err_seeds`, 25 single-thread jobs,
+1.5 h a wave). Rule fixed before training, scored closed at n_c 24: F1 >= 0.99, peaks of Delta_QEC, L, eta <= 0.5, tails
+(mean t >= 0.9 T) <= 0.1 / 0.2 / 0.2, |F1(28) - F1(24)| < 1e-4; rank by (mean Delta_QEC + mean L + mean eta)/3. Wave 1
+(seeds 0-24) met the stop rule (3 candidates); wave 2 (25-49) was run anyway at the user's request, rule unchanged.
+Over 50 seeds: **pick still seed 24** (`pulses/dgrape/u_X_est_err_closed_s24.npy`, score 0.110 vs the current gate's
+0.203, which fails peak Delta_QEC 0.61, peak L 0.52, tail L 0.27), then seeds 45 (0.127), 38 (0.130), 16, 7; picks
+copied to `pulses/dgrape/`. C_err parks 22/50 starts (plain est 1/3); seed 9 trains against the n_c 20 wall (tier
+"wall"); 27 make a gate, 5 pass. The L bars bind (15 fail peak L, 13 tail L). Plain-est seed 43 also passes every bar
+(0.135), so the gain is the seed's, not the cost's. Open system (top 3): F_pro alone and mid-gate repairability
+unchanged (0.967-0.968; 0.84-0.85 vs 0.86), ideal-repair gain +1.95-1.99 % vs +1.85 %. More seeds will not help; a
+cost on L(t) would.
+**H gate at 2 us (notebook §7, 2026-11-02): pick seed 17** (`pulses/dgrape/u_H_est_err_closed_T2_s17.npy`).
+`--duration-us 2` on `train_est_gate.py` and
+`est_gate_seeds.py` (N 1000; `est_gate.train(duration_us=)`; tags/dirs/tables carry `_T2`: `~/fwm_runs/est_err_seeds_H_T2`,
+`tables/est_gate_seeds_H_T2_*`; 1.1 us names unchanged, tested). Same est_err cost and bars; user: rank by the MEAN score.
+Wave 1 (seeds 0-24): 0 parked, 0 wall, 25 gates; at §1's bars 3 candidates 7 (score 0.084), 17 (0.086), 23 (0.105).
+**User then lowered peak Delta_QEC to 0.4 for this search only** (`PEAK_MAX_BY[("H", 2.0)]`, `peak_max()`, tested): only
+17 passes (peak dQEC 0.36; 7 is 0.44, 23 0.4015). **Wave 2 (seeds 25-49, 2026-11-02/03, user, rule unchanged; 7.5 h,
+half the per-run speed of wave 1)**: 24 gates + seed 29 wall (F1 0.9997 at n_c 20, 0.016 at 24). Over 50: 49 gates (F1
+0.9982-0.9998), 6 pass at 0.5 (+27, 35, 45), **2 at 0.4: 17 (pick, rank 1) and 27 (rank 2, score 0.111, peak dQEC 0.31,
+L(T) 0.09 vs 0.16, eta tail 0.16 vs 0.07)**; lowest score of all, seed 32 (0.082), fails only tail L. 0.3 check over 50:
+19 gates <= 0.3, none passes (4, 5, 21 fail only eta tail, 41 only L tail). Seeds 7/17/23/27 copied to `pulses/dgrape/`.
+Binding bars over 49 gates: eta tail 39, L tail 39, dQEC peak (0.4) 22. Open (`open_score --top 3 --extra-seeds 7 23`,
+decay): seed 17 F_pro 0.9501 vs X pick 0.967 (losses 0.044 vs 0.027 per gate), ideal repair +3.1 %, mid-gate loss repaired
+0.75 vs 0.85; **seed 27 F_pro 0.9504 but repairs better (mid-gate 0.81, +3.4 %)**; 7 and 23 within 0.0015. All runs hit
+2000 it. §7.2 = chip
+table (chi 3.66 vs 1.12 MHz; chi*T 3.7 EST H vs 1.2 at 1.1 us, 2.2 at 2 us). §7 = 7.1 condensed 1.1 us, 7.2 chips, 7.3-7.8
+the 2 us search; the 1.1 us record is Appendix B, commands/decisions Appendix A.
+**H gate at 1.1 us (now notebook §7.1 + Appendix B, 2026-11-01/02): no candidate.** `--gate H` on `train_est_gate.py` and
+`est_gate_seeds.py` (X defaults and X tables unchanged, tested); runs in `~/fwm_runs/est_err_seeds_H`, tables
+`tables/est_gate_seeds_H_*`. Same cost, bars, 1.1 us; user: rank by peak score = mean of the three peaks, both waves, no
+H reference. 50 seeds: 28 parked, seed 9 wall, 21 gates (F1 0.990-0.999), **0 candidates**: all 21 fail peak/tail L
+and peak/tail eta (eta tail 0.68-0.98 vs X median 0.10). Stage 1 keeps eta low (F1 0.24-0.83); stage 2 (C_err off)
+closes the gate and eta climbs to ~0.9 over the last third. Follow-up (user): variant `est_err2` = C_err kept in stage
+2 ((1,0.1,0,1,0.3)), the 21 gates resumed from their stage-1 pre-images (`--variant est_err2`, `train --start-stage 2`;
+`~/fwm_runs/est_err2_seeds_H`, `tables/est_gate_seeds_H_err2_*`): eta -0.47 but F1 0.935-0.980 (all fail), Delta_QEC up,
+L still fails; 0 candidates; all hit 2000 it. H on the EST chip was the most transparent gate at **1.0 us** (not 2 us, as
+written here until 2026-11-02), but with chi 3.66 MHz vs 1.12 here: chi*T = 3.7 cycles there vs 1.2 here, so the short gate
+in units of 1/chi is the likely limit. Next options: longer H gate (duration is a module constant; chi*T = 3.7 needs ~3.3
+us), a cost on L(t)/eta(t), longer est_err2 stage 2. Done: 2 us, above.
+**Good vs mid EsT tails (notebook Appendix D, 2026-10-31; was §8).** "mid" = the seed-42 `u_X_est_closed.npy`; "good" =
+seed 24 above, which replaced mid in the rest of the notebook on 2026-11-01. Tails after both, both starts at 0.5/0.8/1/1.4/2 us, 600 it (`pulses/dgrape/*X_tail_estg_*`, new mid
+`*X_tail_est_T{08,14}_{t2,z}*`; ran 8 side by side x 1 BLAS thread, +12 % throughput over 4 x 2). Held-out tables
+`fwm_tail_heldout_{good,mid_extra,ord_idle_T08}.csv`. Good gains +0.12-0.21 % more at every length: **0.8 us +0.32 %
+(the first GO, just at the bar; mid +0.19 %)**, absolute only +0.03 %; same waveform; more pump-fragile (eta x 0.9:
+-10 % vs -5 %). **Repeated X gates (notebook §8; was §9; no mid line since 2026-11-01)**: `DGRAPE/fwm_repeat.py` (B1 = N gates + one tail, B2 = N gate +
+tail pairs, frame hand-off after each tail, teeth reference), `DGRAPE/fwm_repeat_run.py` (~4 h on 16 cores) ->
+`tables/fwm_tail_repeat_B{1,2}.csv`; tails `X_tail_{estg,ord,est,idle}_T08_*` (`train_fwm_tail.py --target I` after
+the zero pulse `u_idle_X_duration.npy` for idle). N = 20: one tail after 20 good EsT gates +7.3 %; 20 good pairs
+0.642 vs 0.520 back to back (p 0.979 per pair vs 0.968 per gate); Ord pairs gain nothing per gate. **Memory
+references use a Kerr-corrected decoding** (2026-11-01, Gertler 2021 Methods: `fwm_repeat.kerr_decode` = cavity frame
+shift 2.5 K + logical Z 2 K t, free; `fwm_repeat_run.py --tails idle=X_tail_idle_T08_t2 --kerr-decode --n-jobs 8`,
+~15 min -> `tables/fwm_tail_repeat_kerr.csv`, rows `decode` none|kerr; B1 = idle with/without its tail and the Table II
+teeth sampled every 1.1 us, B2 = plain idle and the teeth every 1.9 us; the two teeth samplings are one waveform and
+agree exactly at 20.9 us). Uncorrected, idle fell to 0.13 by N = 20 on Kerr phase alone. Decoded: idle closed 1
+exactly, open 0.624 at N = 20 (2.1 %/us = nbar/T1a), above every gated curve; idle + one tail 0.849 (+22.5 %); teeth
+beat plain idle from 4.4 us (0.741 at 22 us), 1.14 %/us (= EsT-good pairs, which stay above the teeth at the same time:
+0.642 vs 0.613 at 38 us; plain idle 0.450). Closed teeth fall to 0.540 at 22 us, below open (0.741), and it is NOT a
+phase (best phase correction +1.4 %): a Raman leak |n,g,0> -> |n+1,g,1> (comb-1 + comb-2 tooth n; middle state off by
+chi_gf, two-tone detuning only K; 43 % in |n+1,g,1> at 22 us), which kappa_r turns into weak heating (kappa_r as the
+only jump: 0.956); checked at n_c 12, notebook §8.1/§8.2 (2026-11-03). B2 "gate + idle" cannot be
+corrected (gates in between). Shown in the notebook (user, 2026-11-03): Figure 8 (B1) = gates + idle, idle + tail and
+teeth, all memory Kerr decoded, panel b at 0.9-1; Figure 9 (B2) = gate + tail pairs and gates back to back, plus
+memory (idle, teeth; Kerr decoded, same time) in panel a only; gate + idle not shown (rows stay in the CSV); no time
+panel. Tests: `python validation/test_fwm_repeat.py -v` (10, ~5 s).
+**Is the tail error transparent? (notebook §9, 2026-11-04).** One jump put in by hand at time t of the EsT + 0.8 us
+tail (readout decay only, n_c 16; the next pair at n_c 24), scored as is, + ideal repair, and by best recovery.
+**Semi-transparent to photon loss**: a late loss ends as a clean error word (0.000 as is, 0.93 after an ideal repair,
+best recovery 0.999), and the next gate + tail repairs it to 0.71; that is the B2 first-pair vs later-pair gap (2.97 %
+vs 2.07 %, = Table 7's 0.91 %). The next gate is the leak (0.93 -> 0.78 repairable), plus readout decay during
+comb 2 (an early loss 0.83 closed -> 0.77). **Not transparent to f->e** (0.25 % per tail, all lost, time-summed best
+recovery 0.62): mostly code words lifted to |f> by the strong comb 1, with a jump-time phase (chi_ef); neither comb
+acts on |e>. Caches `tables/fwm_tail_transparency_{jumps,summary,pair2}.csv` (~16 min with 8 jobs to rebuild).
+Notebook order (2026-11-04): Setup (glossary), §1 idea, §2 limits after d2, §3 EsT comparison, §4 method
+(frame, controls, cost, baselines), §5 training as run, §6 results (6.4 = estimate vs result, 6.5 robustness), §7
+conclusions, §8 repeated gates, §9 error transparency of the tail, Appendix A checks and timing, Appendix B dated decisions and run logistics, Appendix C
+supporting tables (no C8), Appendix D good vs mid. Runs top to bottom with `python3 -m nbconvert --execute --inplace`
+(~9 min with the shot-timing cache). Every figure and table has a markdown caption below it with a *Symbols* line;
+table gains are shown in %.
 Tests: `python3 validation/test_fwm_tail.py -v` (13 tests, ~90 s on the Windows PC),
-`python3 validation/test_est_gate.py -v` (7 tests, ~1 s).
+`python3 validation/test_est_gate.py -v` (15 tests, ~1 s).
+
+**7. FWM tails with Gertler combs (`DGRAPE/fwm_tail_ge.py`, `FWM_tails_ge.ipynb`, 2026-11-03/04).** Track 6 redone with
+Gertler 2021 Eq. 4 instead of Shirol's |f> combs, gates EsT (s24) and Ord only (no d2). Comb T = a selective linear
+transmon drive (u[:, 2:4]) exciting g -> e on the even error states; comb M = `g_m xi_M a'r'q + h.c.`,
+g_m = sqrt(chi_ge chi_qr) = 2pi 1.125 MHz (11x weaker than Shirol's comb 2), |n,e,0> -> |n+1,g,1>. The tail runs on
+transmon {g, e} (`restrict_model`, d = 2 n_c n_r = 64 at n_c 16; the gate runs on 3 levels at n_c 24, cut and
+projected), DGRAPE frame, one exponential per step (`fwm.propagate` midpoint S=1, exact), pump Stark
+`S = 2 alpha q'q + chi_ge n_a + chi_qr n_r` added by hand. Controls (N, 4) = eps_T I/Q, xi_M I/Q, band +-12 MHz, caps
+2pi 1 MHz / xi_M 0.1 or 0.2. No free rotation in training; `frame_tracked_fidelity` (best e^{i theta n}) reported. Scripts:
+`train_fwm_tail_ge.py`, `fwm_tail_ge_grid.py` (24 runs, 8 side by side, 12.9 h), `fwm_tail_ge_prescan.py`,
+`fwm_tail_ge_score.py` (12 conditions incl. `three_level`) -> `tables/fwm_tail_ge_{prescan,heldout}.csv`; tails
+`pulses/dgrape/*X_tailge_{est,ord}_T{1,2,3}_c{10,20}_{g,z}*` (b4 physical, x pre-image). **Result: no go.** Every tail
+loses to its gate alone: −2.1 % at 1 us, −3.4/−3.7 % at 2 us (cap 0.2), −5.1 to −5.7 % at 3 us; EsT = Ord against their
+own gates. At 1 us the mixing comb stays off and the transmon comb only cancels a cavity rotation (+0.00 % vs a
+frame-tracked idle tail). Real repair needs >= 2 us at cap 0.2 (photon loss only: +1.0–2.3 % over tracked idle, readout
+photons 0.01–0.03), less than the 2.2 %/us the tail costs. The pump's storage Stark shift chi_ge|xi|^2 is a logical
+rotation on this code; repairing tails cancel it and are fragile (2 us cap 0.2: pump ±10 % −2 to −7 %, Stark off −43 to
+−47 %). Dropping |f> is safe (3-level held out within 1e-4). Ceilings at n_c 24: ideal instant repair EsT +1.99 %,
+Ord +1.07 %. Next options in notebook §7 (Gertler combs as a memory, §8-style; cap 0.3 forward check).
+Tests: `python validation/test_fwm_tail_ge.py -v` (12 tests, ~10 s).
 
 Full physics/math background for track 1 (Hamiltonian, cat-code definition, adjoint gradients,
 frequency-band-limited controls, penalty terms, truncation-convergence protocol, decoherence

@@ -14,7 +14,8 @@ fwm_tail.score under the training condition and under conditions it was not trai
     closed, loss_only, no_loss                   channel split: no jumps / photon loss only / all
                                                  but photon loss (in the gate and the tail)
 
-Every gain is against references scored in the SAME condition: "alone" (the gate, no tail) and
+Runs with a "target" in their json (train_fwm_tail.py --target, e.g. I after the idle pulse) are scored
+against that gate. Every gain is against references scored in the SAME condition: "alone" (the gate, no tail) and
 "idle" (the gate + a zero tail of the same length); under "train" also "teeth" (Shirol's Table II
 teeth held on over the tail, raw, as notebook Table 8). Rows carry F_pro (readout traced), F_empty,
 <n_r>, P_e, P_f at the end and max|eta_c|; gain_vs_alone and gain_vs_idle are added at the end.
@@ -72,12 +73,13 @@ def gate_name(gate_pulse):
     if gate_pulse == "d2":
         return "d2"
     base = os.path.basename(gate_pulse)
-    return {"u_X_est_closed.npy": "EsT", "u_X_ord_closed.npy": "Ord"}.get(base, base)
+    return {"u_X_est_closed.npy": "EsT", "u_X_ord_closed.npy": "Ord",
+            "u_X_est_err_closed_s24.npy": "EsT-good", "u_idle_X_duration.npy": "idle"}.get(base, base)
 
 
-def condition_kwargs(cond, gate_pulse, gate_n_c):
+def condition_kwargs(cond, gate_pulse, gate_n_c, target="X"):
     """ft.score keyword arguments (minus eta) for one condition."""
-    kw = {"n_c": N_C_TRAIN, "n_r": 2, "gate_n_c": gate_n_c,
+    kw = {"n_c": N_C_TRAIN, "n_r": 2, "gate_n_c": gate_n_c, "gate": target,
           "pulse": None if gate_pulse == "d2" else np.load(os.path.join(REPO_ROOT, gate_pulse))}
     if cond in ("nc_a", "nc_b"):
         kw["n_c"] = HELD_OUT_NC[gate_kind(gate_pulse)][0 if cond == "nc_a" else 1]
@@ -88,7 +90,7 @@ def condition_kwargs(cond, gate_pulse, gate_n_c):
 
 
 def run(row, eta, cond):
-    kw = condition_kwargs(cond, row["gate_pulse"], row["gate_n_c"])
+    kw = condition_kwargs(cond, row["gate_pulse"], row["gate_n_c"], row["target"])
     res = ft.score(eta, occupations=(cond == "train" and len(eta) > 0), **kw)
     return {**row, "condition": cond, "n_c_scored": kw["n_c"], **res}
 
@@ -109,7 +111,7 @@ def main():
         eta = np.load(os.path.join(a.indir, f"eta_{tag}.npy"))
         gp = info["gate_pulse"]
         base = {"gate": gate_name(gp), "gate_pulse": gp, "gate_n_c": info.get("gate_n_c", N_C_TRAIN),
-                "tail_us": info["tail_us"]}
+                "tail_us": info["tail_us"], "target": info.get("target", "X")}
         for cond in a.conditions:
             jobs.append(({**base, "tag": tag, "kind": "trained", "start": info["start"]}, eta, cond))
             N = ft.n_steps(info["tail_us"])

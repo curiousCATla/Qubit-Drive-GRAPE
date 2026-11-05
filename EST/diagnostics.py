@@ -386,7 +386,7 @@ def analyze(u, gate="X", n_t=N_T, n_c=20, dt=DT):
 # ---------------------------------------------------------------------------
 
 def plot_fig1(results, path, scale="log", title=None, styles=None,
-              paper_labels=True):
+              paper_labels=True, eta_mean=True):
     """
     Three-panel Fig. 1d-f: EsT vs Ord for each metric.
 
@@ -403,6 +403,8 @@ def plot_fig1(results, path, scale="log", title=None, styles=None,
     keys the defaults do not know (e.g. two seeds of two cost forms).
     `paper_labels=True` prefixes each panel title with the paper's letter (d, e, f)
     and cites Eqs. 6 and 8; False drops both, for the notebook's Figure 2.
+    `eta_mean=False` draws only the |0_L> trace in panel (f), as the paper does,
+    and names the state in the panel title instead of in every legend entry.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -420,6 +422,9 @@ def plot_fig1(results, path, scale="log", title=None, styles=None,
               ("f", "Bloch-Vector Mismatch (Eq. 8)",
                r"$\eta_{E_j,\psi}(t)$  ($\in[0,2]$, dimensionless)",
                [("eta_0L", r"$|0_L\rangle$"), ("eta_avg", "6-cardinal mean")])]
+    if not eta_mean:
+        panels[2] = ("f", r"Bloch-Vector Mismatch, $|0_L\rangle$ (Eq. 8)",
+                     panels[2][2], [("eta_0L", None)])
     defaults = {"est": dict(color="#2a6fb5", lw=1.8, label="EsT"),
               "ord": dict(color="#c4453c", lw=1.8, ls="--", label="Ord"),
               "paper": dict(color="#2e8b57", lw=1.8, ls="-.", label="EsT (paper form)"),

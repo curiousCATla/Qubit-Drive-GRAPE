@@ -9,7 +9,7 @@ words the way it moves the code words, so a loss at any time should end as a cle
 
 SAME SYSTEM AS d2. Drift and controls are DGRAPE/model.py's at n_r = 1 (the readout is inert during a
 gate), higher-order terms on; the code is DGRAPE/code.py's odd kitten code with the transmon in |g>.
-Duration 1.1 us, dt 2 ns (N = 550), and d2's drive limits (DGRAPE/recipe.py): bands +-27 / +-33 MHz,
+Duration 1.1 us (a parameter of train(); est_gate_selection.ipynb §7 runs H at 2 us), dt 2 ns (N = 550), and d2's drive limits (DGRAPE/recipe.py): bands +-27 / +-33 MHz,
 48 ns ramp, box |x| <= 25 on the pre-image, cap |eps| <= 25 rad/us per drive, and d2's seed-42 smooth
 start. Only the cost differs from d2.
 
@@ -23,6 +23,12 @@ with EST's two-stage weights (EST/train_est.py SCHEDULES; validation/test_est_ga
     ord   (1, 0, 0, 1)    twice               -- the control: same code path with C2 = C3 = 0
 The error cardinals are a|cardinal> renormalized. They equal the cardinals built on the error words
 (|0> + sqrt5 |4>)/sqrt6, |2> because a|0_L> and a|1_L> have the same norm sqrt3 (asserted in system()).
+
+VARIANT est_err (est_gate_selection.ipynb, 2026-10-29) is est_optimization.ipynb §7's cost: `est` plus
+C_err = C1's form on the error cardinals at t = T (target: the ideal X in the error basis), in stage 1 only:
+    est_err  (1, 0.7, 7, 1, 0.3, 0, 0)  then  (1, 0.1, 0, 1, 0, 0, 0)    (w1, w2, w3, w4, w_err, w5, w6)
+pinned to EST/err_two_stage.WEIGHTS["run"]. Its 7-tuples make cost_and_grad report cerr in both stages; the
+4-tuple variants est and ord are untouched.
 
 THE CHAIN is core.ramp.make_constraint_chain (d2's band -> ramp); dcost/dx is its adjoint of dcost/du.
 
@@ -68,16 +74,24 @@ W_AMP = 1.0                        # C4 weight, as EST/
 SCHEDULES = {                      # (w1, w2, w3) per stage, copied from EST/train_est.py
     "est": [(1.0, 0.7, 7.0), (1.0, 0.1, 0.0)],
     "ord": [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+    # (w1, w2, w3, w_err): est_optimization.ipynb §7, C_err in stage 1 only
+    "est_err": [(1.0, 0.7, 7.0, 0.3), (1.0, 0.1, 0.0, 0.0)],
+    # est_gate_selection.ipynb §7 (2026-11-02): est_err with C_err kept on in stage 2. Stage 1 is est_err's,
+    # so a run resumed at stage 2 from an est_err stage-1 pre-image is this variant's full run
+    "est_err2": [(1.0, 0.7, 7.0, 0.3), (1.0, 0.1, 0.0, 0.3)],
 }
 OPTIONS = {"ftol": 1e-12, "gtol": 1e-8}    # EST/train_est.py
 CLOSED_F1 = 0.999                  # EST's bar for "the gate closed"
 
 
 def stage_weights(variant):
-    """[(w1, w2, w3, w4)] per stage."""
+    """[(w1, w2, w3, w4)] per stage, or [(w1, w2, w3, w4, w_err, 0, 0)] for a schedule that carries w_err."""
     if variant not in SCHEDULES:
         raise KeyError(f"unknown variant {variant!r}; have {sorted(SCHEDULES)}")
-    return [(w1, w2, w3, W_AMP) for w1, w2, w3 in SCHEDULES[variant]]
+    out = []
+    for w in SCHEDULES[variant]:
+        out.append((w[0], w[1], w[2], W_AMP) if len(w) == 3 else (w[0], w[1], w[2], W_AMP, w[3], 0.0, 0.0))
+    return out
 
 
 def tier(F1, gate=GATE):
@@ -89,11 +103,16 @@ def tier(F1, gate=GATE):
     return "open" if F1 < CLOSED_F1 else "closed"
 
 
-def system(n_c, include_higher_order=True, gate=GATE):
+def system(n_c, include_higher_order=True, gate=GATE, chip=None):
     """Closed system at n_r = 1: H0 (d, d), Hc (4, d, d), A (storage a), code words (d, 2), the six code
     cardinals C0 and error cardinals E0 (d, 6), columns in EST.kitten_code.CARDINAL_ORDER, and the gate
-    targets (d, 6)."""
-    H0 = drift_hamiltonian(n_c, 1, include_higher_order)
+    targets (d, 6). chip (DGRAPE.ge_chip; FWM_tails_ge_chips.ipynb): None = Shirol's chip, unchanged;
+    otherwise the drift is that chip's."""
+    if chip is None:
+        H0 = drift_hamiltonian(n_c, 1, include_higher_order)
+    else:
+        from DGRAPE import ge_chip
+        H0 = ge_chip.drift(chip, n_c, 1, include_higher_order)
     Hc = control_hamiltonians(n_c, 1)
     A = operators(n_c, 1)["a"]
     words = embedded_basis(n_c, 1)
@@ -110,8 +129,14 @@ def system(n_c, include_higher_order=True, gate=GATE):
         raise AssertionError("a|cardinal> renormalized is not the error-word cardinal: the equal-norm "
                              "property of the code no longer holds")
     target = words @ (IDEAL_LOGICAL_U[gate] @ coeff)
+    # C_err's target, the ideal gate in the error basis; the same coincidence makes it a|target> renormalized
+    target_err = err_words @ (IDEAL_LOGICAL_U[gate] @ coeff)
+    with np.errstate(**_QUIET):
+        raw = A @ target
+    if not np.allclose(target_err, raw / np.linalg.norm(raw, axis=0, keepdims=True), atol=1e-12):
+        raise AssertionError("the error-basis gate target is not a|target> renormalized")
     return SimpleNamespace(n_c=n_c, H0=H0, Hc=Hc, A=A, words=words, err_words=err_words, C0=C0, E0=E0,
-                           target=target)
+                           target=target, target_err=target_err)
 
 
 def start_preimage(seed=SEED, N=N_STEPS):
@@ -127,19 +152,21 @@ class EstObjective:
     """
 
     def __init__(self, weights, n_c=N_C_TRAIN, N=N_STEPS, dt=DT, gate=GATE, cav_band=CAV_BAND,
-                 tra_band=TRA_BAND, ramp_ns=RAMP_NS, eps_max=EPS_MAX, include_higher_order=True):
+                 tra_band=TRA_BAND, ramp_ns=RAMP_NS, eps_max=EPS_MAX, include_higher_order=True, chip=None):
         self.weights = tuple(float(w) for w in weights)
         self.N, self.dt, self.gate, self.eps_max = N, dt, gate, eps_max
-        self.sys = system(n_c, include_higher_order, gate)
+        self.sys = system(n_c, include_higher_order, gate, chip)
         self.to_physical, self.to_preimage_grad = make_constraint_chain(N, dt, cav_band, tra_band, ramp_ns)
         self.n_evals = 0
         self._cache_x, self._cache = None, None
 
     def _terms(self, u, want_grad):
         s = self.sys
+        err_target = s.target_err if len(self.weights) > 4 else None     # 4-tuples: the original C1-C4 path
         with np.errstate(**_QUIET):
             cost, g, terms = cost_and_grad(u, s.H0, s.Hc, s.A, s.C0, s.E0, s.target, self.dt, self.weights,
-                                           eps_max=self.eps_max, want_grad=want_grad)
+                                           eps_max=self.eps_max, want_grad=want_grad,
+                                           Psi_target_err=err_target)
         terms.update({"F1": 1.0 - terms["c1"], "F_ET": 1.0 - terms["c2"]})
         return cost, g, terms
 
@@ -167,21 +194,26 @@ class EstObjective:
 
 
 def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, gate=GATE, verbose=True,
-          stage_hook=None, print_every=100):
+          stage_hook=None, print_every=100, start_stage=1, duration_us=DURATION_US, chip=None):
     """Run the two-stage schedule from d2's start (or init_x) and return (u, x, info).
 
     Each stage is L-BFGS-B on the pre-image in the box |x| <= U_BOX, with EST's options, warm-started
     from the previous stage's x. An init_x outside the box is refused rather than clipped (as EST/).
-    stage_hook(i, u, x, terms) runs after each stage (the CLI saves there)."""
-    N = N_STEPS
+    start_stage > 1 skips the earlier stages (init_x is then the previous stage's pre-image); info["stages"]
+    holds only the stages run. stage_hook(i, u, x, terms) runs after each stage (the CLI saves there).
+    duration_us sets N = duration_us / DT (est_gate_selection.ipynb §7: H at 2 us); everything else is unchanged.
+    chip (DGRAPE.ge_chip) trains on that chip's drift; None = Shirol's chip (info["chip"] is then absent)."""
+    if start_stage > 1 and init_x is None:
+        raise ValueError("start_stage > 1 needs init_x, the pre-image the earlier stage ended at")
+    N = int(round(duration_us / DT))
     x = start_preimage(seed, N) if init_x is None else np.asarray(init_x, dtype=float).reshape(N, 4)
     if np.abs(x).max() > U_BOX:
         raise ValueError(f"start pre-image reaches {np.abs(x).max():.2f} > box {U_BOX}")
     stages = []
     t_run = time.time()
     obj = None
-    for i, weights in enumerate(stage_weights(variant), start=1):
-        obj = EstObjective(weights, n_c, N, DT, gate)
+    for i, weights in enumerate(stage_weights(variant)[start_stage - 1:], start=start_stage):
+        obj = EstObjective(weights, n_c, N, DT, gate, chip=chip)
         start = obj.report(x)
         if verbose:
             print(f"=== {gate} / {variant} / stage {i}  weights={weights}  n_c={n_c}  N={N}", flush=True)
@@ -215,19 +247,23 @@ def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, ga
     eps_c = np.hypot(u[:, 0], u[:, 1]).max()
     eps_t = np.hypot(u[:, 2], u[:, 3]).max()
     info = {"gate": gate, "variant": variant, "seed": seed, "n_c": n_c, "N": N, "dt": DT,
-            "duration_us": DURATION_US, "maxiter": maxiter, "init": "d2 smooth start" if init_x is None
-            else "init_x", "cav_band": list(CAV_BAND), "tra_band": list(TRA_BAND), "ramp_ns": RAMP_NS,
+            "duration_us": duration_us, "maxiter": maxiter, "init": "d2 smooth start" if init_x is None
+            else "init_x", "start_stage": start_stage, "cav_band": list(CAV_BAND), "tra_band": list(TRA_BAND), "ramp_ns": RAMP_NS,
             "u_box": U_BOX, "eps_max": EPS_MAX, "options": OPTIONS, "stages": stages, "F1": F1,
             "F_ET": stages[-1]["end"]["F_ET"], "tier": tier(F1, gate),
             "max_drive_modulus": {"cav": float(eps_c), "tra": float(eps_t)},
             "max_abs_preimage": float(np.abs(x).max()),
             "frac_preimage_pinned": float(np.mean(np.abs(x) >= U_BOX * (1 - 1e-9))),
             "wall_s": time.time() - t_run}
+    if chip is not None:
+        from DGRAPE import ge_chip
+        info["chip"] = ge_chip.resolve(chip).table_row()
     return u, x, info
 
 
 def _fmt(terms):
     return (f"F1 {terms['F1']:.6f}  F_ET {terms['F_ET']:.4f}  c3 {terms['c3']:.4f}  c4 {terms['c4']:.2e}"
+            + (f"  cerr {terms['cerr']:.4f}" if "cerr" in terms else "")
             + (f"  cost {terms['cost']:.6e}" if "cost" in terms else ""))
 
 
@@ -235,12 +271,12 @@ def _fmt(terms):
 # Scoring in the closed system
 # ---------------------------------------------------------------------------
 
-def metrics(u, n_c=N_C_TRAIN, gate=GATE, include_higher_order=True, dt=DT, fock_thresh=0.01):
+def metrics(u, n_c=N_C_TRAIN, gate=GATE, include_higher_order=True, dt=DT, fock_thresh=0.01, chip=None):
     """Eqs. 6-8 over the gate, closed system. Returns t (us), delta_qec (T,), leakage (T,) and eta_avg (T,)
     (means over the six cardinals, i.e. the maximally mixed error state), eta_0L (|0_L> alone, the
     paper's Fig. 1f state), F1 (closed six-cardinal fidelity), max_active_fock (highest storage level
     above fock_thresh on any cardinal at any time) and fock_peak (n_c,)."""
-    s = system(n_c, include_higher_order, gate)
+    s = system(n_c, include_higher_order, gate, chip)
     Psi0 = np.concatenate([s.words, s.C0, s.E0], axis=1)
     with np.errstate(**_QUIET):
         traj = dg.propagate_states(np.asarray(u, dtype=float), s.H0, list(s.Hc), Psi0, dt)
@@ -263,11 +299,11 @@ def summary(m):
             "eta_mean": float(m["eta_avg"].mean()), "max_active_fock": m["max_active_fock"]}
 
 
-def truncation_scan(u, trunc=(16, 18, 20, 24, 28), gate=GATE, include_higher_order=True, dt=DT):
+def truncation_scan(u, trunc=(16, 18, 20, 24, 28), gate=GATE, include_higher_order=True, dt=DT, chip=None):
     """{n_c: closed F1}: a pulse that does not use the truncation wall reads the same at every n_c."""
     out = {}
     for n_c in trunc:
-        s = system(n_c, include_higher_order, gate)
+        s = system(n_c, include_higher_order, gate, chip)
         with np.errstate(**_QUIET):
             _, _, terms = cost_and_grad(np.asarray(u, dtype=float), s.H0, s.Hc, s.A, s.C0, s.E0, s.target, dt,
                                         (1.0, 0.0, 0.0, 0.0), want_grad=False)

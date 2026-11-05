@@ -43,7 +43,14 @@ RUN_DIR = os.path.join(os.path.expanduser("~"), "est_runs", "err2st")   # logs, 
 
 GATE, SEED, MAXITER = "X", 0, 2000
 W_ERR_S1, W_ERR_S2 = 0.3, 0.0
-RUNS = {"control": "est_err2st_ctrl_seed0", "run": "est_err_err2st_seed0"}
+
+
+def run_name(arm, seed=SEED):
+    """Pulse/sidecar stem of one arm at one seed. EST/err_two_stage_seeds.py reuses it."""
+    return f"est_err2st_ctrl_seed{seed}" if arm == "control" else f"est_err_err2st_seed{seed}"
+
+
+RUNS = {"control": run_name("control"), "run": run_name("run")}
 REFERENCE = "est_appB_ctrl_seed0"      # the same control command, trained 2026-10-14
 STAGES = ("stage1", "final")
 WEIGHTS = {"control": [(1.0, 0.7, 7.0, 1.0), (1.0, 0.1, 0.0, 1.0)],
@@ -55,13 +62,14 @@ TRACES_NPZ = os.path.join(TABLE_DIR, "est_err2st_X_seed0_traces.npz")
 CHECK_JSON = os.path.join(TABLE_DIR, "est_err2st_X_seed0_control_check.json")
 
 
-def train_args(arm):
-    base = ["EST/train_est_eigh.py", "--gate", GATE, "--seed", str(SEED),
+def train_args(arm, seed=SEED):
+    name = run_name(arm, seed)
+    base = ["EST/train_est_eigh.py", "--gate", GATE, "--seed", str(seed),
             "--maxiter", str(MAXITER)]
     if arm == "control":
-        return base + ["--variant", "est", "--tag", RUNS[arm][len("est_"):]]
+        return base + ["--variant", "est", "--tag", name[len("est_"):]]
     return base + ["--variant", "est_err", "--w-err", f"{W_ERR_S1:g}",
-                   "--w-err-s2", f"{W_ERR_S2:g}", "--tag", RUNS[arm][len("est_err_"):]]
+                   "--w-err-s2", f"{W_ERR_S2:g}", "--tag", name[len("est_err_"):]]
 
 
 def stage_paths(name, stage):

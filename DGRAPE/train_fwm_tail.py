@@ -11,7 +11,8 @@ on each eta_c, 48 ns ramp, box |x| <= 25 with x = 250 eta, gtol 1e-12 (as DGRAPE
 best-vs-final.
 
 The gate before the tail is d2 unless --gate-pulse FILE names another (N, 4) pulse on the 2 ns grid
-(e.g. pulses/dgrape/u_X_est_closed.npy, DGRAPE/est_gate.py). --gate-n-c propagates the gate at that
+(e.g. pulses/dgrape/u_X_est_closed.npy, DGRAPE/est_gate.py); --target names the ideal gate at the end
+(default X; I after the idle pulse pulses/dgrape/u_idle_X_duration.npy). --gate-n-c propagates the gate at that
 truncation and cuts its output to --n-c for the tail (fwm_tail.tail_input): the closed-trained gates
 need n_c 24 to run but end with <= 2e-5 above Fock 16.
 
@@ -64,18 +65,18 @@ def start_preimage(start, tail_us, n_c):
     return np.load(start)
 
 
-def make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse=None, gate_n_c=None):
+def make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse=None, gate_n_c=None, target="X"):
     pulse = None if gate_pulse is None else np.load(gate_pulse)
-    return ft.TailObjective(tail_us=tail_us, n_c=n_c, readout=readout, band=band, cap=cap,
+    return ft.TailObjective(tail_us=tail_us, n_c=n_c, gate=target, readout=readout, band=band, cap=cap,
                             mixing=mixing, n_jobs=n_jobs, pulse=pulse, gate_n_c=gate_n_c)
 
 
 def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, band=ft.ETA_BAND,
-            cap=ft.ETA_CAP, mixing=0.0, gate_pulse=None, gate_n_c=None):
+            cap=ft.ETA_CAP, mixing=0.0, gate_pulse=None, gate_n_c=None, target="X"):
     """One cost + gradient evaluation of the start, timed. No optimizer."""
     x0 = start_preimage(start, tail_us, n_c)
     t0 = time.time()
-    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c)
+    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target)
     t_build = time.time() - t0
     try:
         t0 = time.time()
@@ -83,7 +84,7 @@ def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, ban
         t_eval = time.time() - t0
     finally:
         obj.close()
-    out = {"start": start, "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c,
+    out = {"start": start, "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c, "target": target,
            "trace_cut": obj.trace_cut, "tail_us": tail_us, "N": obj.N, "n_c": n_c, "n_jobs": n_jobs, "cost": cost,
            "grad_norm": float(np.linalg.norm(g)), "build_s": t_build, "eval_s": t_eval, **terms}
     print(json.dumps(out, indent=1, default=float), flush=True)
@@ -92,7 +93,7 @@ def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, ban
 
 def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise=0.0, n_c=16, n_jobs=3,
           readout=ft.READOUT, band=ft.ETA_BAND, cap=ft.ETA_CAP, mixing=0.0, max_hours=None, verbose=True,
-          gate_pulse=None, gate_n_c=None):
+          gate_pulse=None, gate_n_c=None, target="X"):
     x0 = start_preimage(start, tail_us, n_c)
     N = ft.n_steps(tail_us)
     if x0.shape != (N, 4):
@@ -100,7 +101,7 @@ def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise
     if noise > 0:
         x0 = x0 + noise * ft.S_ETA * np.random.default_rng(seed).normal(size=x0.shape)
     x0 = np.clip(x0, -ft.U_BOX, ft.U_BOX)
-    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c)
+    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target)
     history = []
     t0 = time.time()
     try:
@@ -147,6 +148,7 @@ def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise
     eta = fwm.beta_from_real(b4)
     pinned = float(np.mean(np.abs(x) >= ft.U_BOX * (1 - 1e-9)))
     info = {"tag": tag, "start": str(start), "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c,
+            "target": target,
             "trace_cut": obj.trace_cut, "seed": seed, "noise": noise,
             "tail_us": tail_us, "N": N,
             "n_c": n_c, "n_r": obj.n_r, "n_ref": obj.n_ref, "readout": readout, "mixing": mixing,
@@ -186,15 +188,18 @@ def main():
     p.add_argument("--gate-pulse", default=None, help="(N, 4) gate pulse .npy before the tail (default d2)")
     p.add_argument("--gate-n-c", type=int, default=None,
                    help="propagate the gate at this n_c, then cut its output to --n-c (default: --n-c)")
+    p.add_argument("--target", default="X",
+                   help="ideal logical gate at the end of the tail (I after an idle gate pulse)")
     p.add_argument("--dry-run", action="store_true", help="one timed cost + gradient evaluation, no training")
     a = p.parse_args()
     if a.dry_run:
         dry_run(a.start, a.tail_us, a.n_c, a.n_jobs, a.readout, tuple(a.band), a.cap, a.mixing, a.gate_pulse,
-                a.gate_n_c)
+                a.gate_n_c, a.target)
         return
     os.makedirs(a.outdir, exist_ok=True)
     train(a.start, a.tag, a.outdir, a.tail_us, a.max_iter, a.seed, a.noise, a.n_c, a.n_jobs, a.readout,
-          tuple(a.band), a.cap, a.mixing, a.max_hours, gate_pulse=a.gate_pulse, gate_n_c=a.gate_n_c)
+          tuple(a.band), a.cap, a.mixing, a.max_hours, gate_pulse=a.gate_pulse, gate_n_c=a.gate_n_c,
+          target=a.target)
 
 
 if __name__ == "__main__":
