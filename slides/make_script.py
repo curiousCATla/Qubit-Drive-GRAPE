@@ -30,6 +30,7 @@ MACROS = [
     (r'\sqrt{', 1, lambda a: f'sqrt({a})'),
     (r'\mathrm{', 1, lambda a: a),
     (r'\mathcal{', 1, lambda a: a),
+    (r'\mathbb{', 1, lambda a: a),
     (r'\tfrac{', 2, lambda a, b: f'({a}/{b})'),
     (r'\frac{', 2, lambda a, b: f'({a}/{b})'),
 ]
@@ -43,12 +44,12 @@ SIMPLE = [
     (r'\bar n', 'nbar'), (r'\sum', 'sum'), (r'\cdots', '...'), (r'\cdot', '.'), (r'\pm', '±'),
     (r'\Delta', 'Delta'), (r'\partial', 'd'), (r'\Omega', 'Omega'), (r'\omega', 'omega'),
     (r'\max', 'max'), (r'\min', 'min'), (r'\exp', 'exp'), (r'\log', 'log'),
-    (r'\alpha', 'alpha'), (r'\chi', 'chi'), (r'\delta', 'delta'),
+    (r'\alpha', 'alpha'), (r'\beta', 'beta'), (r'\chi', 'chi'), (r'\delta', 'delta'),
     (r'\varepsilon', 'varepsilon'), (r'\epsilon', 'epsilon'), (r'\eta', 'eta'), (r'\lambda', 'lambda'),
     (r'\mu', 'mu'), (r'\phi', 'phi'), (r'\psi', 'psi'), (r'\rho', 'rho'),
     (r'\sigma', 'sigma'), (r'\tau', 'tau'), (r'\pi', 'pi'),
     (r'\propto', ' ∝ '), (r'\approx', ' ≈ '), (r'\times', 'x'), (r'\sim', '~'),
-    (r'\Longrightarrow', ' => '), (r'\Rightarrow', ' => '),
+    (r'\leftrightarrow', ' <-> '), (r'\Longrightarrow', ' => '), (r'\Rightarrow', ' => '),
     (r'\rightarrow', ' -> '), (r'\to', ' -> '),
     (r'\forall', 'for all '), (r'\in', ' in '), (r'\leq', ' <= '), (r'\neq', ' != '),
     (r'\vec', ''), (r'\tilde', ''), (r'\bar', 'conj '), (r'\hat', ''), (r'\,', ' '), (r'\;', ' '),
@@ -91,6 +92,9 @@ def textify(s):
     s = re.sub(r'\\t?frac(\d)(\d)', r'(\1/\2)', s)
     s = re.sub(r'\^\{?\\dagger\}?', '^dag', s)
     s = s.replace('\\dagger', 'dag')
+    # Short macros that prefix longer ones (\le / \left): match whole names only.
+    for name, rep in (('le', ' <= '), ('ge', ' >= '), ('rm', ''), ('hbar', 'hbar')):
+        s = re.sub(r'\\' + name + r'(?![a-zA-Z])', rep, s)
     s = expand(s)
     s = re.sub(r'\\textbf\{([^{}]*)\}', r'**\1**', s)
     s = re.sub(r'\\emph\{([^{}]*)\}', r'*\1*', s)
