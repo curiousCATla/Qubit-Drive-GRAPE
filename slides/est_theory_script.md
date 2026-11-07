@@ -229,9 +229,26 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - Check 2: once a photon is lost, does the rest of the gate keep the state on the moving error ribbon, or does it drift off into states the recovery does not expect? The number is the leakage.
 - Check 3: on the two ribbons, do the arrows turn together? The number is the trajectory mismatch: how far apart the code arrow and the error arrow point.
 - All three zero at every moment is exact transparency, which linear drives cannot reach. The EsT gate is the one whose pulse was optimised to keep them small.
-- These are the curves on the paper's Fig. 1d–f and on our comparison slides near the end. Formulas for all three, and the conditions behind them, are in the appendix.
+- These are the curves on the paper's Fig. 1d–f, compared with ours on the next two slides. Formulas for all three, and the conditions behind them, are in the appendix.
 
-## 25. How they test a gate in the lab
+## 25. Our X gate vs the paper: the three metrics in time
+
+- Same three metrics, same gate, same duration, same linear axes. Top row is the paper's Fig. 1d–f, cut from the PDF; bottom row is our own Figure 2a from `est\_experiments.ipynb`, recomputed from our trained pulses.
+- Read it column by column. Left, QEC violation: both start and end near zero, because both pulses bring the code words back into the code at t=T; Ord peaks mid-pulse in both, EsT stays lower through the middle.
+- Middle, leakage: Ord climbs towards 0.8–1 in both. The EsT curves are at a similar level mid-pulse. The visible difference is the very end: the paper's EsT drops to zero at t=T, ours stays near 0.4.
+- Right, trajectory mismatch for |0_L>: Ord reaches the maximum of 2 in both, EsT stays well below. At the very end the paper's Ord falls back to about 0.2; ours stays near 1.5.
+- Our legend says "Bloch-vector mismatch" and the paper says "trajectory mismatch"; it is the same Eq. 8.
+- The next slide puts numbers on this.
+
+## 26. What agrees, and what does not
+
+- Where the numbers come from. Paper time averages: every curve of Fig. 1d–f digitised from the PDF (`slides/digitise\_paper\_fig1.py`; 400 and 600 dpi agree to 0.004, and it reproduces the notebook's leakage 0.22 / 0.61). Paper peaks and eta(T): read off the figure by eye, good to about 0.05–0.1. Ours: computed from the trained pulses with the eigh propagator.
+- The good news first: the top three rows, each metric averaged over the gate. QEC violation 0.16 / 0.48 against their 0.18 / 0.65, leakage 0.26 / 0.74 against 0.22 / 0.61, trajectory mismatch 0.17 / 1.11 against 0.17 / 0.99. Every pair is within about 25%, and EsT sits well below Ord in both. Same metrics, same gate, same ballpark: the replication is in the right place on average.
+- Peaks: our Ord QEC violation tops out at 1.5 against their 1.9; EsT is about the same height, 0.68 vs 0.6, but ours peaks late, at 0.78 mus, where theirs peaks at 0.40 mus.
+- The real difference is the endpoint, in bold. Their EsT gate finishes with leakage 0.013, essentially transparent. Ours finishes at 0.396. Their Ord pulse also returns to a small trajectory mismatch at t=T (about 0.2); ours ends at 1.55.
+- Why the endpoint matters: QEC runs at t=T. A gate that is transparent on average but leaks at the end hands the recovery an error state in the wrong place.
+
+## 27. How they test a gate in the lab
 
 - This is the measurement behind all the results that follow; worth a minute.
 - First box: a transmon rotation (identity, ± X/2, Y/2, X) picks one of the test states; the encode pulse maps it from the transmon into the kitten code in the cavity.
@@ -241,7 +258,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The number to watch is the error-space fidelity: given that a photon was lost, how much of the logical information made it. 0.25 is the value for a completely scrambled qubit, which is the floor on the plots.
 - Note there is no correction here: the parity check only sorts. Correction comes with AQEC later.
 
-## 26. X gate: same in code space, better in error space
+## 28. X gate: same in code space, better in error space
 
 - Left, the measured process fidelity against the number of X gates. Circles: shots sorted into the code space. Triangles: shots sorted into the error space. Blue EsT, red Ord. Lines are the paper's model.
 - Code space: blue and red lie on top of each other. The transparency cost did not make the gate worse when nothing goes wrong. That was not guaranteed.
@@ -249,7 +266,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - Why the error-space curve first rises: after only a few gates, a photon has rarely been lost, so most shots sorted as odd are actually mistakes — a little error-space weight from state preparation, and the parity check itself is wrong about 5% of the time. Those shots carry no logical information. As N grows, real losses take over.
 - Right: the model with parity-readout errors removed, the "intrinsic" behaviour. Here the gap between EsT and Ord in the error space is clean from the first gate.
 
-## 27. H and T gates: the same pattern
+## 29. H and T gates: the same pattern
 
 - The same experiment for the other two gates of the set. Top row Hadamard, bottom row T.
 - Left column: as for X, code space the same for EsT and Ord, error space clearly higher for EsT.
@@ -258,14 +275,14 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - For H the EsT gate ends odd slightly more often than Ord. The paper puts this down to a higher average photon number during the EsT pulse — more photons, more losses. Transparency is about what happens *after* a loss, not about having fewer.
 - For T, the paper notes a small mismatch between model and data for the Ord gate's error space that it does not fully understand.
 
-## 28. Per gate: about 5x less infidelity after a loss
+## 30. Per gate: about 5x less infidelity after a loss
 
 - The headline number, and where it comes from. Each decay curve is fitted with the paper's model, which separates out the parity-readout errors and gives a per-gate fidelity.
 - Left half: the case transparency is about. A photon is lost during one gate, so that gate starts in the code space and ends in the error space. Ord loses about half the logical information in that case; EsT about 15% for X. Averaged over X, H, T, the infidelity is about five times lower. This is the "five-fold" of the abstract.
 - Right half: a gate applied to a state that is already in the error space (a loss happened earlier). The EsT pulses were also optimised to work there, and they are 15–21 times better. The Ord pulses were never asked to.
 - Be careful with the claim: these are per-gate numbers from a model fit to the data, not a direct single-gate measurement.
 
-## 29. With error correction, in the lab
+## 31. With error correction, in the lab
 
 - Now the question that matters: does transparency still pay off once you actually correct the error, rather than just sort shots?
 - Sequence (a): N gates, then a single autonomous correction step (AQEC). The AQEC pulse is itself GRAPE-optimised, 1 mus long; it maps the odd-parity error states back into the code and moves the entropy into the transmon. The transmon is then reset, which takes another 1.2 mus.
@@ -273,16 +290,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - EsT beats Ord, and the gap grows with N at first — more gates means more chance a photon was lost mid-gate, which is exactly the case EsT handles. The gap peaks around 0.17 near 10 gates (Fig. 4c of the paper, not shown).
 - Both gate curves still fall faster than idling with AQEC: errors the scheme does not cover (two photons lost, transmon decay or dephasing during the gate, control errors) accumulate.
 
-## 30. With error correction, simulated
-
-- Say clearly that this one is a simulation, not data. It uses the same pulses and the measured coherence times, but no control errors.
-- Left (a, b): the lab sequence, one AQEC step after N gates. Right (c, d): an AQEC step after every gate, which is what you would do in practice.
-- The third curve, LE, is a control experiment the paper designed: a pulse optimised to work well in both the code space and the error space, but without the transparency cost. It lands between Ord and EsT.
-- So the ordering EsT > LE > Ord says the gain is not just "the pulse also works in the error space": making a loss *mid-gate* harmless (transparency) adds on top.
-- With correction after every gate, the EsT advantage is larger: 0.72 against 0.61 after 10 gates.
-- The paper presents this as evidence that the EsT gain holds without control errors, i.e. it comes from the pulses themselves.
-
-## 31. What GRAPE does (Gradient Ascent Pulse Engineering)
+## 32. What GRAPE does (Gradient Ascent Pulse Engineering)
 
 - GRAPE is Gradient Ascent Pulse Engineering (Khaneja et al., 2005). The name says "ascent" because it was written to maximise a fidelity; minimising a cost is the same thing with the sign flipped.
 - It is *open loop and model based*: the pulse is designed entirely on a computer model of the device, then sent to the hardware as is. Nothing is learned from the experiment during the optimisation.
@@ -293,7 +301,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - Ours, if asked: JAX autodiff for the gradient, but scipy's L-BFGS-B as the optimiser, plus a second, pure-numpy pipeline with a hand-derived gradient that agrees with it. Same cost, different step rule.
 - The next four slides fill in the loop: the model that is simulated, the controls as real numbers, how a staircase pulse becomes a gate and a gradient, and which states go in. Then the cost.
 
-## 32. The model the optimiser simulates
+## 33. The model the optimiser simulates
 
 - "Characterising the system for optimisation" means: decide exactly what the computer simulates. Three decisions — the frame, the truncation, and what to leave out.
 - The frame. App. C says both drives are applied on resonance. In the frame rotating at omega_a and omega_q the two big frequencies vanish. Every other term commutes with both photon-number operators, so it survives unchanged. That leftover is the drift H_0: always on, not under our control.
@@ -302,7 +310,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The K' term (K'/6)a^dag{}^3a^3 is exactly as Table I writes it. It is a 590 Hz term and barely matters.
 - The key point to repeat: the optimisation is lossless. No jump is ever simulated. The annihilation operator appears only as an algebraic object inside C_2, just as it did in the metrics. Decoherence is assessed afterwards, not trained against.
 
-## 33. Rewriting the drive as real controls: I and Q
+## 34. Rewriting the drive as real controls: I and Q
 
 - The Hamiltonian on the device slide has complex drives epsilon(t) and Omega(t). An optimiser wants a plain vector of real numbers, so split each into a real part I (in-phase) and an imaginary part Q (quadrature).
 - Check the identity in one line: (epsilon_I + iepsilon_Q)a + (epsilon_I - iepsilon_Q)a^dag = epsilon_I(a+a^dag) + iepsilon_Q(a-a^dag). Both operators on the right are Hermitian — they are, up to sqrt(2), the position-like and momentum-like quadratures of the mode.
@@ -312,7 +320,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - Point at the picture: the drive is a vector in the I–Q plane. The amplitude limit is a *circle* in that plane. Hold that thought for the constraints slide.
 - If asked about the sign of Q: it is a convention. Our code writes the drive as epsilon a^dag + h.c. instead of epsilon a + h.c., so there epsilon = u_0 - i u_1. Same operators, same pulse array; only the sign of Q flips, and the amplitude cap depends only on |epsilon|.
 
-## 34. Piecewise-constant pulses and the gradient
+## 35. Piecewise-constant pulses and the gradient
 
 - This is the mechanics inside the GRAPE loop's "simulate" and "gradient" boxes: how a pulse turns into a gate, and why its gradient is cheap.
 - Within one nanosecond the controls are constant, so the Hamiltonian is constant and the evolution over that step is a single matrix exponential. The whole gate is the product of N of them, latest on the left.
@@ -321,7 +329,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The paper lets JAX do this automatically. So do we, with one care point: we take the exponential with `expm`, not by diagonalising H_k, because differentiating an eigendecomposition blows up when eigenvalues are degenerate.
 - Then the optimiser takes the step: Adam in the paper, L-BFGS-B in our code.
 
-## 35. What goes in, and what should come out
+## 36. What goes in, and what should come out
 
 - The optimiser does not work with the full 60x60 propagator. It evolves a handful of states and compares them with targets. App. C says so explicitly: simulating states is cheaper than simulating the propagator.
 - Why six and not just |0_L> and |1_L>: two basis states fix where each one goes but not the relative phase between them. The six cardinal points pin that phase down; together they are what is called a 2-design. Only the physically meaningless global phase is left free.
@@ -330,7 +338,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - One nanosecond is the time resolution of the control hardware, so the simulation uses the same grid the AWG will play.
 - Fairness note from the main text: EsT and Ord pulses are compared at the same maximum active Fock level, the highest n that reaches population above 0.01.
 
-## 36. The cost function: one weighted sum
+## 37. The cost function: one weighted sum
 
 - One number for the optimiser to push down: a weighted sum of separate costs. The weights are tuned by hand (App. C says "manually tuned").
 - Read down the table. C_1 is the only one that looks at the end of the pulse. C_2 and C_3 are *running* costs: they look at the whole trajectory. That is the structural difference from ordinary gate optimisation — a loss can strike at any time, so the middle of the pulse has to be scored too.
@@ -340,14 +348,14 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The last sentence of the block heads off a natural misreading: three conditions, three metrics, three costs does *not* mean one cost per condition. C_2 is one overlap that pushes on tracking and matched dynamics together; Condition 1 is only touched indirectly; C_1 is the gate and C_3 is scaffolding.
 - If asked whether we tried (a): yes. It more than halves Delta_QEC, but makes end-of-pulse leakage and eta_(E_j,psi) worse. The three conditions trade against each other.
 
-## 37. C_1: did the gate happen?
+## 38. C_1: did the gate happen?
 
 - The standard gate cost. Each term is the overlap between where a cardinal state actually ends up and where it should end up; |.|^2 makes it a probability. Average over six, subtract from one.
 - Because all six cardinal states are in the average, a pulse cannot score well by getting |0_L> and |1_L> right with the wrong relative phase.
 - This is the only cost an Ord gate uses. It says nothing about the middle of the pulse, so an Ord pulse is free to wander anywhere mid-gate — exactly the behaviour the "why a gate breaks all of that" slide warned about.
 - The trade in one number, from our own X pulses: Ord reaches F_{target} ≈ 0.99999; EsT stops at about 0.9993, because part of its budget goes into transparency.
 
-## 38. C_2: transparency at every step
+## 39. C_2: transparency at every step
 
 - This is the cost that makes a gate error-transparent, and it is the commuting square written as one overlap per time step.
 - Two routes, as on the commuting-square slide. Route 1: the photon is lost at t=0 and the error state is carried forward by the drive — that is psi_{E_j}(t), evolved on its own. Route 2: no loss until now, then the loss — that is apsi_C(t). Transparency says the two routes give the same state.
@@ -356,7 +364,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The footnote, our deviation: the paper prints a single power of N. With that, F_{ET} is not bounded by 1 — it can reach about sqrt(nbar) — so the cost rewards simply adding photons. Dividing by N^2 makes it a true fidelity between 0 and 1. We kept the printed form as an option and tested it: it is not more transparent.
 - The sum stops at N-1, so the final time is not included; the endpoint is covered by C_1.
 
-## 39. C_3: keep the dynamics spread out
+## 40. C_3: keep the dynamics spread out
 
 - The loophole is real and the optimiser finds it. C_2 is an average over every step. If the gate happens in a short burst and the state sits still for the rest of the pulse, most steps are trivially transparent and score well, while the few steps that do the gate — where a photon loss would actually hurt — barely count. App. C: the regulariser ensures "the optimizer does not simply minimize the pulse dynamics duration to artificially inflate F_{ET}".
 - Why "at the end": a burst early on would leave the code and error states mismatched for the rest of the pulse, and every later step would score badly. Only a late burst keeps the mismatch confined to a few steps. "Nearly" because Kerr still acts on an idle state.
@@ -367,7 +375,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The footnote, our deviation. The printed C_3 has units of frequency squared, so its size depends on the time unit: about 965 in rad per microsecond, about 10^{-3} in rad per nanosecond, for the same pulse. It is also smallest when the drives are switched off — it rewards slowing the whole pulse down, which is not what it is for. Dividing by the mean speed squared removes the units and the bias towards slowing down.
 - Honest statement if pressed: C_3 does not stop a pulse that barely drives at all. C_1 does, because such a pulse does not do the gate.
 
-## 40. Putting it together: two stages
+## 41. Putting it together: two stages
 
 - Why two stages: asking for high fidelity and high transparency at once from a random start tends to get neither. So the paper first builds transparency with a strong C_2 and C_3, then turns C_3 off and C_2 down to finish the gate.
 - Stage 1 numbers from App. C: transparency fidelity up to 0.83, gate fidelity only 0.9–0.99 — not yet a usable gate. Stage 2 lifts the gate fidelity while the transparency moves by about a percent.
@@ -376,7 +384,7 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - The caveat in the block: each run starts from a random pulse and lands in a local optimum, so one EsT–Ord pair could differ by luck. Our comparisons are mostly single-seed so far. Where we checked two seeds, the seed-to-seed change in end-of-gate leakage was about 0.02, far below the EsT–Ord gap in mean leakage (about 0.26 vs 0.74 on X). Say that, and say it is two seeds.
 - We also found that a single stage — stage-1 weights all the way — does not finish the X gate: holding the velocity term on to the end dominates the cost. That is good evidence that the second stage is doing real work.
 
-## 41. Hardware constraints on the pulse
+## 42. Hardware constraints on the pulse
 
 - Keep this brief. These are the rules that make a pulse playable on real hardware and keep the simulation honest.
 - Bandwidth: the AWG cannot produce frequencies above about 50 MHz, so the paper Fourier transforms the pulse and removes everything outside that band. App. C: it keeps the pulses reliable and the simulation close to the experiment.
@@ -386,26 +394,9 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - How, in our code. The optimiser works on a raw vector x; we band-limit it, then multiply by the ramp envelope, then zero any drive that is switched off, and only the result u is physical. The mask and the ramp hold exactly. The band limit holds only to about 0.3% of the energy, because the ramp is applied after it. That order was chosen by measurement: the other order is exactly band-limited but smears the ramp so the ends reach a quarter of full scale.
 - The amplitude cap cannot be done that way. The optimiser's bounds are a box, one interval per number, but |epsilon| <= epsilon_{max} is a circle in the I–Q plane. So it is a penalty, C_4, that switches on only above the cap. Being soft, it lets the pulse sit about 0.2% over the cap on under 1% of the steps.
 
-## 42. Our X gate vs the paper: the three metrics in time
+## 43. Adding an error-space term: the end-of-gate leak
 
-- Same three metrics, same gate, same duration, same linear axes. Top row is the paper's Fig. 1d–f, cut from the PDF; bottom row is our own Figure 2a from `est\_experiments.ipynb`, recomputed from our trained pulses.
-- Read it column by column. Left, QEC violation: both start and end near zero, because both pulses bring the code words back into the code at t=T; Ord peaks mid-pulse in both, EsT stays lower through the middle.
-- Middle, leakage: Ord climbs towards 0.8–1 in both. The EsT curves are at a similar level mid-pulse. The visible difference is the very end: the paper's EsT drops to zero at t=T, ours stays near 0.4.
-- Right, trajectory mismatch for |0_L>: Ord reaches the maximum of 2 in both, EsT stays well below. At the very end the paper's Ord falls back to about 0.2; ours stays near 1.5.
-- Our legend says "Bloch-vector mismatch" and the paper says "trajectory mismatch"; it is the same Eq. 8.
-- The next slide puts numbers on this.
-
-## 43. What agrees, and what does not
-
-- Where the numbers come from. Paper time averages: every curve of Fig. 1d–f digitised from the PDF (`slides/digitise\_paper\_fig1.py`; 400 and 600 dpi agree to 0.004, and it reproduces the notebook's leakage 0.22 / 0.61). Paper peaks and eta(T): read off the figure by eye, good to about 0.05–0.1. Ours: computed from the trained pulses with the eigh propagator.
-- The good news first: the top three rows, each metric averaged over the gate. QEC violation 0.16 / 0.48 against their 0.18 / 0.65, leakage 0.26 / 0.74 against 0.22 / 0.61, trajectory mismatch 0.17 / 1.11 against 0.17 / 0.99. Every pair is within about 25%, and EsT sits well below Ord in both. Same metrics, same gate, same ballpark: the replication is in the right place on average.
-- Peaks: our Ord QEC violation tops out at 1.5 against their 1.9; EsT is about the same height, 0.68 vs 0.6, but ours peaks late, at 0.78 mus, where theirs peaks at 0.40 mus.
-- The real difference is the endpoint, in bold. Their EsT gate finishes with leakage 0.013, essentially transparent. Ours finishes at 0.396. Their Ord pulse also returns to a small trajectory mismatch at t=T (about 0.2); ours ends at 1.55.
-- Why the endpoint matters: QEC runs at t=T. A gate that is transparent on average but leaks at the end hands the recovery an error state in the wrong place.
-
-## 44. Adding an error-space term: the end-of-gate leak
-
-- The question from the last slide: why does our EsT gate still leak at the end? The paper's App. C says its EsT gate "optimizes for fidelity of operation in both code and error space", but the printed cost (Eqs. C1–C8) has no error-space term. So we added one: C_{err}, the gate fidelity on the error words at t=T, with weight 0.3, in stage 1 only (`est\_optimization.ipynb`, section 7).
+- The question from slide \slideref{cmpnum}: why does our EsT gate still leak at the end? The paper's App. C says its EsT gate "optimizes for fidelity of operation in both code and error space", but the printed cost (Eqs. C1–C8) has no error-space term. So we added one: C_{err}, the gate fidelity on the error words at t=T, with weight 0.3, in stage 1 only (`est\_optimization.ipynb`, section 7).
 - Why seed 6. The first try, at seed 0, fixed the end leak but had one sharp Delta_QEC spike, 3.3 at 0.65 mus. So we trained the same pair at 13 seeds with a pick rule fixed before training: closed (F_1 >= 0.999), peak Delta_QEC <= 0.6, and at least as transparent as its own control. Only seed 6 passed. That is the green gate, final (both stages).
 - Blue and red are exactly the pulses of the time-traces slide. Same scorer for all three: eigh propagator at n_c = 20; green matches the notebook's Figure 7c to 10^{-10}.
 - Middle panel: the green leakage ends at 0.09, against 0.40 for our EsT. Mid-gate it is not lower everywhere; the term mainly removes the leak at the end of the gate.
@@ -415,6 +406,16 @@ Bosonic Logical Qubit*, arXiv:2603.15356. Equation numbers are the paper's.
 - What we already ruled out: our C_2 and C_3 differ from the printed equations, so we retrained X with the printed forms at the same weights, at two seeds. L(T) came out 0.40 and 0.39, no change (`est\_experiments.ipynb`, Appendix A).
 - So the leak is a property of the objective, not of the device. Our hypothesis is that the paper's code has an error-space term its printed cost does not show. We cannot check that without their code.
 - Caveats: one gate out of 13 seeds, and three seeds never drove (parked); the paper compares pulses matched in maximum active Fock level, ours are 9, 8 and 9; and the paper's numbers come from digitising or reading a figure.
+
+## 44. Repeated X gates, then one AQEC tail
+
+- This is our own extension, not in the paper, and on a different device: the chip of Shirol et al. (PRX 2026), with an odd kitten code, (\ket1+\ket5)/sqrt(2) and \ket3. The EsT and Ord X gates were retrained on that chip with the same cost as before; the simulation includes photon loss, transmon decay and readout decay.
+- The question: does a transparent gate actually pay off when an error-correction step follows? Here the correction is a 0.8 mus "tail": two pump combs (four-wave mixing, Shirol's passive AQEC tones), each one shaped waveform, trained once after a single gate.
+- The sequence: N gates back to back, then that one tail, reused unchanged. The target after N gates is X^N: X for odd N, identity for even N.
+- Read the blue pair first. At N = 1 the tail adds only 0.3%. By N = 20 it adds 7%: 0.593 against 0.520. The more gates, the more chance a photon was lost during one of them, and an EsT gate leaves that loss in a state the tail can repair.
+- The red pair: Ord gains about 1.5% at N = 20. A loss in the middle of an Ord gate scrambles the logical state, so there is little left to repair.
+- Grey is memory: the code just waiting the same time, with its own trained tail. It stays highest, 0.849 at N = 20, scored with a free decoding that undoes the cavity's Kerr phase. Even with the tail, the gates cost more than they keep.
+- Caveats if asked: one tail length and one seed per gate; the tail repairs losses before it, not during it. Idle without a tail and Shirol's fixed tones are in the notebook, left off here.
 
 ## 45. Our replication: status and open questions
 

@@ -285,7 +285,20 @@ different device and code. Full details in `EST/README.md`.
   more transparent DURING the gate, built in stage 2 (after stage 1 they were level): F_ET 0.815 vs 0.739, mean L
   0.179 vs 0.237, mean eta 0.124 vs 0.322 (control's mid-gate eta peak 1.44 gone). Mean Delta_QEC level (0.226 vs
   0.242) but the run has one spike to 3.3 at 0.65 us. Against §6's 12 control finals (warm-start protocol, a rough
-  noise scale) the run is outside their range on F_ET, mean L, mean eta, L(T), F_err(T). Next: the pair over §6's seeds.
+  noise scale) the run is outside their range on F_ET, mean L, mean eta, L(T), F_err(T).
+  **Over 13 seeds (`EST/err_two_stage_seeds.py`, notebook §7.2–7.3, 2026-10-27):** the same pair at seeds 0 + §6's
+  twelve (`err2st[_ctrl]_seed<s>`, `run --jobs 24`, 3.5 h on the PC; `err_two_stage.run_name/train_args` take a seed,
+  seed 0 bit-identical). Goal: a closed gate without §7's Delta_QEC spike. Pick rule fixed beforehand: run-arm final,
+  F1 >= 0.999, **peak Delta_QEC <= 0.6**, F_ET >= own control; highest F_ET. Tables
+  `tables/est_err2st_X_seeds_{runs,paired,pick,spike_split}.csv` + `_traces.npz`, figures `fig10{b,c}_err2st_*`.
+  **Result: one pick, seed 6's run** (`u_X_est_err_err2st_seed6.npy`): F1 0.9996, peak 0.395 at 0.47 T, F_ET 0.797
+  (ctrl 0.722), L(T) 0.092, Fock <= 9, n_c spread 2e-6; chosen post hoc from 10 driving runs. Paired over 10 seeds,
+  §7's mid-gate gain does NOT generalize (F_ET +0.012 +- 0.017; mean L, eta, Delta_QEC, peak unresolved); the
+  end-of-gate fix does (L(T) 0.21 vs 0.47, tail eta 0.22 vs 0.66, F_err(T) 0.78 vs 0.45). C_err 0.3 parks 3/13 starts
+  (5, 12, 16; already in stage 1). Stage 2 raises the control's peak (+0.51 +- 0.20, 11/13 seeds). Peaks sit at
+  0.45-0.86 T; run/control peaks at one seed are uncorrelated (-0.11). **Spike split (Eq. A11, `spike_split`)**: C5
+  sees only the (a,a) z part, a median 6% of the run-arm peak (13% control); the y part (Im<0_L|n|1_L>,
+  Im<0_L|a|1_L>) is 55%. A term to remove spikes reliably must act on the full Delta_QEC(t), not C5.
 - **`EST/test_grape_jax.py`** — the anchor is the C1 gradient checked against
   `grape_core.fidelity_multi_state`'s analytic adjoint at rtol 1e-6 (sign-flipped: JAX
   returns cost, numpy returns fidelity).

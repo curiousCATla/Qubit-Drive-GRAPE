@@ -269,7 +269,22 @@ photons 0.01–0.03), less than the 2.2 %/us the tail costs. The pump's storage 
 rotation on this code; repairing tails cancel it and are fragile (2 us cap 0.2: pump ±10 % −2 to −7 %, Stark off −43 to
 −47 %). Dropping |f> is safe (3-level held out within 1e-4). Ceilings at n_c 24: ideal instant repair EsT +1.99 %,
 Ord +1.07 %. Next options in notebook §7 (Gertler combs as a memory, §8-style; cap 0.3 forward check).
-Tests: `python validation/test_fwm_tail_ge.py -v` (12 tests, ~10 s).
+**Chip search (2026-11-04/05): no go, stopped by the user after the forward map.** Question: is there a realistic chip
+(chi_ge <= 4, chi_qr <= 5 MHz, |xi_M| <= 0.2; alpha, kappa_r, T1/T2 at Shirol's) where a g-e tail clears +0.3 %?
+`DGRAPE/ge_chip.py` builds a chip from (chi_ge, chi_qr): K and chi'_q scale as (chi_ge/1.12)^2, chi_gf as chi_ge/1.12,
+new cross-Kerr chi_ar = chi_ge chi_qr/(2 alpha), comb-T cap and band scale with chi_ge; `SHIROL` = track-7 constants
+(chi_ar 0), bit for bit. `chip=` (and `gate_chip=`) on `fwm_tail_ge`, `est_gate`, `train_est_gate.py`,
+`train_fwm_tail_ge.py` (`--chi-ge/--chi-qr/--gate-chip`) and `fwm_tail_ge_score.py`; `fwm_tail_ge.score(decode=True)`
+adds a Kerr-decoded F (free theta n + phi n(n-1)/2). Forward map `DGRAPE/fwm_tail_ge_chipmap.py` (7-parameter
+sequential shot, Nelder-Mead, transplant EsT gate, n_c 12; 36 chips x T 0.4-1.4 us, 102 min on 20 jobs) ->
+`tables/fwm_tail_ge_chipmap.csv`. No chip clears the bar: best decoded gain **-0.48 % at (4, 5) MHz, 0.6 us**; repair
+(+0.5-1.1 % over a decoded idle tail) only at chi_ge >= 2 and chi_qr >= 3; Shirol and Gertler (1.31, 2.8) chips repair
+nothing. The tail costs ~2.1 %/us on every chip (cavity T1 cancels), so +0.3 % at 0.6 us needs ~1.6 % repair, 80 % of
+the EsT ideal ceiling. Without free rotation high-chi chips lose 16-52 % (Kerr ~ chi^2 plus pump Stark). Not run:
+Phase-2 GRAPE grid (`DGRAPE/fwm_tail_ge_chip_grid.py`, ready), gate retraining on a chip, notebook
+`FWM_tails_ge_chips.ipynb`. Plan: `~/.claude/plans/be-my-research-partner-luminous-quill.md`.
+Tests: `python validation/test_fwm_tail_ge.py -v` (12 tests, ~10 s), `python validation/test_fwm_tail_ge_chip.py -v`
+(12 tests, ~5 s).
 
 Full physics/math background for track 1 (Hamiltonian, cat-code definition, adjoint gradients,
 frequency-band-limited controls, penalty terms, truncation-convergence protocol, decoherence

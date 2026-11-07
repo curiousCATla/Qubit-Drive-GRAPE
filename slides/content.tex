@@ -472,10 +472,6 @@
     not \emph{which} codeword it left from.
   \end{block}
 
-  \smallskip
-  {\small Corrects \textbf{one} loss between checks. Shown while \textbf{idling}, with this
-  binomial code (Hu 2019) and past break-even with others (Ni, Sivak 2023).}
-
   \vfill
   {\color{tagmid}\scriptsize The paper's recovery: a 1~$\mu$s optimised pulse that dumps the
   error into the transmon, then a reset.}
@@ -742,7 +738,7 @@
   \bigskip
   \small
   \begin{itemize}
-    \item $|\chi| \gg$ every linewidth: photon-number peaks are well resolved.
+    \item $|\chi|/2\pi \approx 3.7$~MHz $\gg$ every linewidth (qubit $\sim$10~kHz, cavity $\sim$1~kHz): photon-number peaks are well resolved.
     \item Kerr terms are tiny (kHz) but not zero. They come back as the reason transparency is
           only ``semi''.
   \end{itemize}
@@ -921,7 +917,10 @@
           \node[anchor=north] at (\x,-0.05) {\lab};
         }
         % photons: kitten 0_L is "0 or 4" (half-filled dots), 1_L is 2
-        \foreach \y in {0.2,0.5,0.8,1.1} \fill[codegreen!45] (0,\y) circle (0.1);
+        \foreach \y in {0.2,0.5,0.8,1.1} {
+          \fill[codegreen] (-0.1,\y) arc (180:360:0.1) -- cycle;
+          \draw[codegreen, line width=0.5pt] (0,\y) circle (0.1);
+        }
         \foreach \y in {0.2,0.5} \fill[codegreen] (1.25,\y) circle (0.1);
         \foreach \y in {0.2,0.5} \fill[ordred] (3.2,\y) circle (0.1);
         \foreach \y in {0.2,0.5,0.8,1.1} \fill[ordred] (4.45,\y) circle (0.1);
@@ -1465,17 +1464,116 @@
             trajectory mismatch: how far apart the code arrow and the error arrow point.
       \item All three zero at every moment is exact transparency, which linear drives cannot
             reach. The EsT gate is the one whose pulse was optimised to keep them small.
-      \item These are the curves on the paper's Fig.~1d--f and on our comparison slides near the
-            end. Formulas for all three, and the conditions behind them, are in the appendix.
+      \item These are the curves on the paper's Fig.~1d--f, compared with ours on the next two
+            slides. Formulas for all three, and the conditions behind them, are in the appendix.
     \end{ntitem}}
 \end{frame}
 
 % ============================================================================
-% The paper's experiment: how a gate is tested, the X, H, T data, the per-gate
-% summary, and the gates protected by AQEC (measured, then simulated).
+% The paper's experiment: our X gate's metrics against the paper's Fig. 1d-f,
+% how a gate is tested, the X, H, T data, the per-gate summary, and the gates
+% protected by AQEC (measured).
 % Figures are cropped by make_paper_crops.py into img/.
 % ============================================================================
 \section[The experiment]{The paper's experiment}
+
+% ------------------------------------------------------------------ results: time traces
+\begin{frame}{Our $X$ gate vs the paper: the three metrics in time}
+  \slidelabel{cmptraces}%
+  \centering
+  \renewcommand{\arraystretch}{1.0}
+  \begin{tabular}{@{}c@{\hspace{0.6em}}c@{}}
+    \rotatebox{90}{\hspace{0.6em}\scriptsize\textbf{Paper}, Fig.~1d--f} &
+      \includegraphics[width=0.78\textwidth]{img/paper_fig1def.png} \\[0.2em]
+    \rotatebox{90}{\hspace{2.2em}\scriptsize\textbf{Ours}, Fig.~2a} &
+      \includegraphics[width=0.93\textwidth]{img/ours_fig2a.png}
+  \end{tabular}
+
+  \smallskip
+  {\color{tagmid}\scriptsize Left to right: $\dqec$, $L$, $\eta$ for $\ket{0_L}$ (ours also
+  shows the six-cardinal mean, faint). $X$ gate, $1\,\mu$s, lossless simulation, linear axes.
+  EsT blue, Ord red.}
+  \note{
+    \begin{ntitem}
+      \item Same three metrics, same gate, same duration, same linear axes. Top row is the
+            paper's Fig.~1d--f, cut from the PDF; bottom row is our own Figure~2a from
+            \texttt{est\_experiments.ipynb}, recomputed from our trained pulses.
+      \item Read it column by column. Left, QEC violation: both start and end near zero,
+            because both pulses bring the code words back into the code at $t=T$; Ord peaks
+            mid-pulse in both, EsT stays lower through the middle.
+      \item Middle, leakage: Ord climbs towards 0.8--1 in both. The EsT curves are at a
+            similar level mid-pulse. The visible difference is the very end: the paper's EsT
+            drops to zero at $t=T$, ours stays near 0.4.
+      \item Right, trajectory mismatch for $\ket{0_L}$: Ord reaches the maximum of 2 in both,
+            EsT stays well below. At the very end the paper's Ord falls back to about 0.2;
+            ours stays near 1.5.
+      \item Our legend says ``Bloch-vector mismatch'' and the paper says ``trajectory
+            mismatch''; it is the same Eq.~8.
+      \item The next slide puts numbers on this.
+    \end{ntitem}}
+\end{frame}
+
+% ------------------------------------------------------------------ results: numbers
+\begin{frame}{What agrees, and what does not}
+  \slidelabel{cmpnum}%
+  \begin{center}
+  \small
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}l l l@{}}
+    \textbf{$X$ gate, EsT / Ord} & \textbf{Paper} & \textbf{Ours} \\
+    \hline
+    $\dqec$, time-averaged      & 0.18 / 0.65     & 0.156 / 0.481 \\
+    $L$, time-averaged          & 0.22 / 0.61     & 0.258 / 0.740 \\
+    $\eta(\ket{0_L})$, time-averaged & 0.17 / 0.99 & 0.169 / 1.11 \\
+    \hline
+    $L(T)$, end of gate         & 0.013 / 0.862   & \textbf{0.396} / 0.824 \\
+    $\dqec$, peak               & $\approx$0.6 / $\approx$1.9 & 0.68 / 1.49 \\
+    $\eta(\ket{0_L})$ at $t=T$  & $\approx$0.05 / $\approx$0.2 & 0.09 / \textbf{1.55} \\
+    \hline
+  \end{tabular}
+  \end{center}
+  {\color{tagmid}\scriptsize Paper time averages and $L(T)$: digitised from Fig.~1d--f.
+  $\approx$: read by eye.}
+
+  \medskip
+  \begin{columns}[T, onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \textbf{\color{codegreen}Agrees}
+      \begin{itemize}
+        \item EsT below Ord through mid-pulse, on all three.
+        \item All three time averages within about 25\% of the paper's.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{\color{ordred}Differs}
+      \begin{itemize}
+        \item The end of the gate: their EsT finishes transparent, ours still leaks.
+        \item Our late $\dqec$ peak (0.78~$\mu$s).
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{
+    \begin{ntitem}
+      \item Where the numbers come from. Paper time averages: every curve of Fig.~1d--f
+            digitised from the PDF (\texttt{slides/digitise\_paper\_fig1.py}; 400 and 600 dpi
+            agree to 0.004, and it reproduces the notebook's leakage 0.22 / 0.61). Paper peaks
+            and $\eta(T)$: read off the figure by eye, good to about 0.05--0.1. Ours: computed
+            from the trained pulses with the eigh propagator.
+      \item The good news first: the top three rows, each metric averaged over the gate.
+            QEC violation 0.16 / 0.48 against their 0.18 / 0.65, leakage 0.26 / 0.74 against
+            0.22 / 0.61, trajectory mismatch 0.17 / 1.11 against 0.17 / 0.99. Every pair is
+            within about 25\%, and EsT sits well below Ord in both. Same metrics, same gate,
+            same ballpark: the replication is in the right place on average.
+      \item Peaks: our Ord QEC violation tops out at 1.5 against their 1.9; EsT is about the
+            same height, 0.68 vs 0.6, but ours peaks late, at 0.78~$\mu$s, where theirs peaks at
+            0.40~$\mu$s.
+      \item The real difference is the endpoint, in bold. Their EsT gate finishes with leakage
+            0.013, essentially transparent. Ours finishes at 0.396. Their Ord pulse also
+            returns to a small trajectory mismatch at $t=T$ (about 0.2); ours ends at 1.55.
+      \item Why the endpoint matters: QEC runs at $t=T$. A gate that is transparent on average
+            but leaks at the end hands the recovery an error state in the wrong place.
+    \end{ntitem}}
+\end{frame}
 
 % ------------------------------------------------------------------ the test sequence
 \begin{frame}{How they test a gate in the lab}
@@ -1670,36 +1768,6 @@
       \item Both gate curves still fall faster than idling with AQEC: errors the scheme does not
             cover (two photons lost, transmon decay or dephasing during the gate, control errors)
             accumulate.
-    \end{ntitem}}
-\end{frame}
-
-% ------------------------------------------------------------------ AQEC simulated (Fig. A6)
-\begin{frame}{With error correction, simulated}
-  \centering
-  \includegraphics[width=0.84\textwidth]{img/paper_figA6.png}
-
-  {\color{tagmid}\scriptsize Roy et al., Fig.~A6. \textbf{Simulation}, with the experiment's pulses
-  and coherence times; no control errors.}
-
-  \smallskip
-  {\small \textbf{Left:} one AQEC after $N$ gates (as in the lab). \textbf{Right:} AQEC after
-  \emph{every} gate. In both, EsT $>$ LE $>$ Ord. LE is optimised for code- and error-space
-  fidelity but \emph{not} for transparency.}
-  \note{
-    \begin{ntitem}
-      \item Say clearly that this one is a simulation, not data. It uses the same pulses and the
-            measured coherence times, but no control errors.
-      \item Left (a, b): the lab sequence, one AQEC step after $N$ gates. Right (c, d): an AQEC
-            step after every gate, which is what you would do in practice.
-      \item The third curve, LE, is a control experiment the paper designed: a pulse optimised to
-            work well in both the code space and the error space, but without the transparency
-            cost. It lands between Ord and EsT.
-      \item So the ordering EsT $>$ LE $>$ Ord says the gain is not just ``the pulse also works
-            in the error space'': making a loss \emph{mid-gate} harmless (transparency) adds on top.
-      \item With correction after every gate, the EsT advantage is larger: 0.72 against 0.61 after
-            10 gates.
-      \item The paper presents this as evidence that the EsT gain holds without control
-            errors, i.e.\ it comes from the pulses themselves.
     \end{ntitem}}
 \end{frame}
 
@@ -2343,104 +2411,6 @@
 
 \section{Results vs the paper}
 
-% ------------------------------------------------------------------ results: time traces
-\begin{frame}{Our $X$ gate vs the paper: the three metrics in time}
-  \slidelabel{cmptraces}%
-  \centering
-  \renewcommand{\arraystretch}{1.0}
-  \begin{tabular}{@{}c@{\hspace{0.6em}}c@{}}
-    \rotatebox{90}{\hspace{0.6em}\scriptsize\textbf{Paper}, Fig.~1d--f} &
-      \includegraphics[width=0.78\textwidth]{img/paper_fig1def.png} \\[0.2em]
-    \rotatebox{90}{\hspace{2.2em}\scriptsize\textbf{Ours}, Fig.~2a} &
-      \includegraphics[width=0.93\textwidth]{img/ours_fig2a.png}
-  \end{tabular}
-
-  \smallskip
-  {\color{tagmid}\scriptsize Left to right: $\dqec$, $L$, $\eta$ for $\ket{0_L}$ (ours also
-  shows the six-cardinal mean, faint). $X$ gate, $1\,\mu$s, lossless simulation, linear axes.
-  EsT blue, Ord red.}
-  \note{
-    \begin{ntitem}
-      \item Same three metrics, same gate, same duration, same linear axes. Top row is the
-            paper's Fig.~1d--f, cut from the PDF; bottom row is our own Figure~2a from
-            \texttt{est\_experiments.ipynb}, recomputed from our trained pulses.
-      \item Read it column by column. Left, QEC violation: both start and end near zero,
-            because both pulses bring the code words back into the code at $t=T$; Ord peaks
-            mid-pulse in both, EsT stays lower through the middle.
-      \item Middle, leakage: Ord climbs towards 0.8--1 in both. The EsT curves are at a
-            similar level mid-pulse. The visible difference is the very end: the paper's EsT
-            drops to zero at $t=T$, ours stays near 0.4.
-      \item Right, trajectory mismatch for $\ket{0_L}$: Ord reaches the maximum of 2 in both,
-            EsT stays well below. At the very end the paper's Ord falls back to about 0.2;
-            ours stays near 1.5.
-      \item Our legend says ``Bloch-vector mismatch'' and the paper says ``trajectory
-            mismatch''; it is the same Eq.~8.
-      \item The next slide puts numbers on this.
-    \end{ntitem}}
-\end{frame}
-
-% ------------------------------------------------------------------ results: numbers
-\begin{frame}{What agrees, and what does not}
-  \slidelabel{cmpnum}%
-  \begin{center}
-  \small
-  \renewcommand{\arraystretch}{1.2}
-  \begin{tabular}{@{}l l l@{}}
-    \textbf{$X$ gate, EsT / Ord} & \textbf{Paper} & \textbf{Ours} \\
-    \hline
-    $\dqec$, time-averaged      & 0.18 / 0.65     & 0.156 / 0.481 \\
-    $L$, time-averaged          & 0.22 / 0.61     & 0.258 / 0.740 \\
-    $\eta(\ket{0_L})$, time-averaged & 0.17 / 0.99 & 0.169 / 1.11 \\
-    \hline
-    $L(T)$, end of gate         & 0.013 / 0.862   & \textbf{0.396} / 0.824 \\
-    $\dqec$, peak               & $\approx$0.6 / $\approx$1.9 & 0.68 / 1.49 \\
-    $\eta(\ket{0_L})$ at $t=T$  & $\approx$0.05 / $\approx$0.2 & 0.09 / \textbf{1.55} \\
-    \hline
-  \end{tabular}
-  \end{center}
-  {\color{tagmid}\scriptsize Paper time averages and $L(T)$: digitised from Fig.~1d--f.
-  $\approx$: read by eye.}
-
-  \medskip
-  \begin{columns}[T, onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \textbf{\color{codegreen}Agrees}
-      \begin{itemize}
-        \item EsT below Ord through mid-pulse, on all three.
-        \item All three time averages within about 25\% of the paper's.
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \textbf{\color{ordred}Differs}
-      \begin{itemize}
-        \item The end of the gate: their EsT finishes transparent, ours still leaks.
-        \item Our late $\dqec$ peak (0.78~$\mu$s).
-      \end{itemize}
-    \end{column}
-  \end{columns}
-  \note{
-    \begin{ntitem}
-      \item Where the numbers come from. Paper time averages: every curve of Fig.~1d--f
-            digitised from the PDF (\texttt{slides/digitise\_paper\_fig1.py}; 400 and 600 dpi
-            agree to 0.004, and it reproduces the notebook's leakage 0.22 / 0.61). Paper peaks
-            and $\eta(T)$: read off the figure by eye, good to about 0.05--0.1. Ours: computed
-            from the trained pulses with the eigh propagator.
-      \item The good news first: the top three rows, each metric averaged over the gate.
-            QEC violation 0.16 / 0.48 against their 0.18 / 0.65, leakage 0.26 / 0.74 against
-            0.22 / 0.61, trajectory mismatch 0.17 / 1.11 against 0.17 / 0.99. Every pair is
-            within about 25\%, and EsT sits well below Ord in both. Same metrics, same gate,
-            same ballpark: the replication is in the right place on average.
-      \item Peaks: our Ord QEC violation tops out at 1.5 against their 1.9; EsT is about the
-            same height, 0.68 vs 0.6, but ours peaks late, at 0.78~$\mu$s, where theirs peaks at
-            0.40~$\mu$s.
-      \item The real difference is the endpoint, in bold. Their EsT gate finishes with leakage
-            0.013, essentially transparent. Ours finishes at 0.396. Their Ord pulse also
-            returns to a small trajectory mismatch at $t=T$ (about 0.2); ours ends at 1.55.
-      \item Why the endpoint matters: QEC runs at $t=T$. A gate that is transparent on average
-            but leaks at the end hands the recovery an error state in the wrong place.
-    \end{ntitem}}
-\end{frame}
-
 % ------------------------------------------------------------------ results: adding an error-space term
 \begin{frame}{Adding an error-space term: the end-of-gate leak}
   \slidelabel{cmpwhy}%
@@ -2470,7 +2440,7 @@
   rule); Fock levels 9 / 8 / 9; paper values digitised or read by eye.}
   \note{
     \begin{ntitem}
-      \item The question from the last slide: why does our EsT gate still leak at the end? The
+      \item The question from slide~\slideref{cmpnum}: why does our EsT gate still leak at the end? The
             paper's App.~C says its EsT gate ``optimizes for fidelity of operation in both code
             and error space'', but the printed cost (Eqs.~C1--C8) has no error-space term. So we
             added one: $C_{\mathrm{err}}$, the gate fidelity on the error words at $t=T$, with weight
@@ -2500,6 +2470,59 @@
       \item Caveats: one gate out of 13 seeds, and three seeds never drove (parked); the paper
             compares pulses matched in maximum active Fock level, ours are 9, 8 and 9; and the
             paper's numbers come from digitising or reading a figure.
+    \end{ntitem}}
+\end{frame}
+
+\section[EsT gate simulation]{EsT gate simulation: repeated gates with an AQEC tail}
+
+% ------------------------------------------------------------------ repeated gates + one tail (FWM_tails Fig. 8a)
+\begin{frame}{Repeated $X$ gates, then one AQEC tail}
+  \slidelabel{fwmrepeat}%
+  \begin{columns}[c, onlytextwidth]
+    \begin{column}{0.58\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{img/ours_fwm_repeat_B1.png}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \small
+      \begin{itemize}
+        \item $N$ $X$ gates, then \textbf{one} 0.8~$\mu$s AQEC tail, trained once after one
+              gate.
+        \item \textbf{EsT gains more with $N$:} 0.59 vs 0.52 at $N = 20$. A loss during an
+              EsT gate can still be repaired.
+        \item \textbf{Ord gains almost nothing} (0.50 vs 0.48).
+        \item Waiting with the same tail is still best (0.85).
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \medskip
+  {\color{tagmid}\scriptsize Ours (\texttt{FWM\_tails.ipynb} Fig.~8a): Shirol et al.'s chip and code, our EsT and
+  Ord $X$ gates (1.1~$\mu$s), open system. AQEC tail: two trained pump combs, not the paper's AQEC
+  pulse. Idle: Kerr-corrected decoding.}
+  \note{
+    \begin{ntitem}
+      \item This is our own extension, not in the paper, and on a different device: the chip of
+            Shirol et al.\ (PRX 2026), with an odd kitten code, $(\ket1+\ket5)/\sqrt2$ and
+            $\ket3$. The EsT and Ord $X$ gates were retrained on that chip with the same cost as
+            before; the simulation includes photon loss, transmon decay and readout decay.
+      \item The question: does a transparent gate actually pay off when an error-correction
+            step follows? Here the correction is a 0.8~$\mu$s ``tail'': two pump combs
+            (four-wave mixing, Shirol's passive AQEC tones), each one shaped waveform, trained
+            once after a single gate.
+      \item The sequence: $N$ gates back to back, then that one tail, reused unchanged. The
+            target after $N$ gates is $X^N$: $X$ for odd $N$, identity for even $N$.
+      \item Read the blue pair first. At $N = 1$ the tail adds only 0.3\%. By $N = 20$ it adds
+            7\%: 0.593 against 0.520. The more gates, the more chance a photon was lost during
+            one of them, and an EsT gate leaves that loss in a state the tail can repair.
+      \item The red pair: Ord gains about 1.5\% at $N = 20$. A loss in the middle of an Ord gate
+            scrambles the logical state, so there is little left to repair.
+      \item Grey is memory: the code just waiting the same time, with its own trained tail.
+            It stays highest, 0.849 at $N = 20$, scored with a free decoding that undoes the
+            cavity's Kerr phase. Even with the tail, the gates cost more than they keep.
+      \item Caveats if asked: one tail length and one seed per gate; the tail repairs losses
+            before it, not during it. Idle without a tail and Shirol's fixed tones are in the
+            notebook, left off here.
     \end{ntitem}}
 \end{frame}
 
