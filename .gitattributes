@@ -1,0 +1,13 @@
+# Line endings: store every text file with LF (Unix) endings in the repo, so the
+# Windows PC and the Mac see identical files. Git still checks out CRLF on Windows
+# if core.autocrlf is true; Python, Jupyter and editors handle either.
+* text=auto eol=lf
+
+# Binary outputs: never touch their bytes, never try to diff or merge them as text.
+*.npy binary
+*.npz binary
+*.pkl binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.svg -diff
