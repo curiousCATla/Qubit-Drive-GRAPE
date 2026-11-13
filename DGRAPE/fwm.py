@@ -1,5 +1,5 @@
 """
-Four-wave-mixing (FWM) pump tones as GRAPE controls on top of DGRAPE (fwm_grape.ipynb).
+Four-wave-mixing (FWM) pump tones as GRAPE controls on top of DGRAPE (notebooks/fwm_grape.ipynb).
 
 Same chip, drift, frame, jump operators and Taylor step map as DGRAPE/model.py and
 DGRAPE/lindblad_np.py. Added: K pump tones k = (comb c, path n), by default the six with n in
@@ -19,7 +19,7 @@ counting of the cosine expansion gives the coefficient E_J phi_a phi_r phi_q^2 =
 with the same overall sign as the comb terms (hence the minus once the comb signs are absorbed into
 beta). `mixing` scales it: 0 = off (training default), 1 = sqrt(chi_ge chi_qr), 2 = the larger
 reading if beta is sqrt(2) smaller than the true pump displacement (the Eq. C9 vs direct-count
-ambiguity of fwm_grape.ipynb §2.3).
+ambiguity of notebooks/fwm_grape.ipynb §2.3).
 
 SUB-STEPS. The carriers turn by ~1.8 rad per 2 ns step, so the generator is NOT constant over a
 step. Each step is cut into S sub-steps; on each one the commutator-free fourth-order Magnus scheme
@@ -65,7 +65,7 @@ def tone_list(paths):
 # function that takes `paths` (or reads fw.tones) defaults to it.
 TONES = tone_list(dev.CORRECTED_FOCK)
 N_TONES = len(TONES)
-# Every repair n-1 -> n up to 8 -> 9 (fwm_grape.ipynb §7): 9 teeth per comb, 18 tones. 9 -> 10 is
+# Every repair n-1 -> n up to 8 -> 9 (notebooks/fwm_grape.ipynb §7): 9 teeth per comb, 18 tones. 9 -> 10 is
 # left out because Fock 10 is DGRAPE's forbidden region (forbid_fock_min).
 FULL_PATHS = tuple(range(1, 10))
 G1 = np.sqrt(dev.alpha_q * dev.chi_ge)          # comb-1 coupling per unit beta (Eq. C9), rad/us
@@ -85,7 +85,7 @@ BETA_TABLE2 = beta_table2(dev.CORRECTED_FOCK)
 CF4_A = ((3 - 2 * np.sqrt(3)) / 12, (3 + 2 * np.sqrt(3)) / 12)     # a1, a2
 GAUSS = (0.5 - np.sqrt(3) / 6, 0.5 + np.sqrt(3) / 6)                 # nodes within a sub-step
 
-# Stage 2 / 3 recipe for the tones (fwm_grape.ipynb §3, decisions of 2026-10-11)
+# Stage 2 / 3 recipe for the tones (notebooks/fwm_grape.ipynb §3, decisions of 2026-10-11)
 BETA_CAP = 0.1               # per tone |beta_k| and per comb |xi_c|
 BETA_BAND = (-2.0, 2.0)      # MHz on each envelope: half the 4.14 MHz tone spacing
 BETA_BAND_FULL = (-1.0, 1.0)  # the same rule for FULL_PATHS, whose teeth are chi_gf = 2.07 MHz apart
@@ -102,7 +102,7 @@ S_BETA = U_BOX / BETA_CAP
 # is still reported at scoring.
 BETA_PENALTIES = {"deriv": 1e-5 * S_BETA ** 2, "amp": 8e-5 * S_BETA ** 2,
                   "comb": 8e-5 * S_BETA ** 2, "forbid": 0.0, "transmon": 0.0}
-S_TRAIN = 2      # CF4 sub-steps in training: within 4e-5 of S=8 at the cap (fwm_grape.ipynb §4.4)
+S_TRAIN = 2      # CF4 sub-steps in training: within 4e-5 of S=8 at the cap (notebooks/fwm_grape.ipynb §4.4)
 
 
 # ---------------------------------------------------------------------------
@@ -337,14 +337,15 @@ def propagate(model, fw, u, beta, dt, S, R0, scheme="cf4", stark=True, store=Fal
     s, m = spec_for(model, fw, u, beta, dt, S, scheme) if spec is None else spec
     R = np.asarray(R0, dtype=complex)
     hist = []
-    for k in range(u.shape[0]):
-        if store:
-            hist.append(R)
-        Hk = _hk(model, u[k])
-        st = _Step(fw, beta[k], k, dt, offs, wts, stark)
-        for e in range(len(wts)):
-            He = st.H(fw, Hk, e)
-            R = lnp.taylor_action(_gen(model, He)[0], R, h / s, s, m)
+    with np.errstate(**_QUIET):                          # Accelerate's spurious matmul warnings (results finite)
+        for k in range(u.shape[0]):
+            if store:
+                hist.append(R)
+            Hk = _hk(model, u[k])
+            st = _Step(fw, beta[k], k, dt, offs, wts, stark)
+            for e in range(len(wts)):
+                He = st.H(fw, Hk, e)
+                R = lnp.taylor_action(_gen(model, He)[0], R, h / s, s, m)
     return (R, hist) if store else (R, (s, m))
 
 
@@ -714,17 +715,18 @@ class Stage2Objective:
 # ---------------------------------------------------------------------------
 
 def model_with_channels(n_c, n_r=2, keep=None, include_higher_order=True, dephasing=False,
-                        heating=False):
+                        heating=False, noise="dgrape"):
     """A DGRAPE Model whose jump operators are only those named in `keep` (names from
     DGRAPE.model.collapse_ops: 'a', 'r', 's_ge', 's_ef', ...); keep=None keeps them all. It filters
-    collapse_ops for the duration of one constructor call, then restores it."""
+    collapse_ops for the duration of one constructor call, then restores it. noise="shirol" uses
+    Shirol's full set (DGRAPE.model.shirol_collapse_ops; dephasing/heating are then ignored)."""
     import DGRAPE.model as dmodel
     if keep is None:
-        return Model(n_c, n_r, include_higher_order, True, dephasing, heating)
+        return Model(n_c, n_r, include_higher_order, True, dephasing, heating, noise=noise)
     original = dmodel.collapse_ops
     dmodel.collapse_ops = lambda *a, **k: [(nm, c) for nm, c in original(*a, **k) if nm in keep]
     try:
-        return Model(n_c, n_r, include_higher_order, True, dephasing, heating)
+        return Model(n_c, n_r, include_higher_order, True, dephasing, heating, noise=noise)
     finally:
         dmodel.collapse_ops = original
 

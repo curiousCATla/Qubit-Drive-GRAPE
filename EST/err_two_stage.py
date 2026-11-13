@@ -1,5 +1,5 @@
 """
-C_err in stage 1 only, X, seed 0: est_optimization.ipynb section 7.
+C_err in stage 1 only, X, seed 0: notebooks/est_optimization.ipynb section 7.
 
     python EST/err_two_stage.py run          # train both runs side by side (~2 h)
     python EST/err_two_stage.py status
@@ -13,7 +13,7 @@ switched off for stage 2, which is what closes the gate:
                       stage 2                                 = (1, 0.1, 0, 1, 0,   0, 0)
     control  plain est, stage 1 (1, 0.7, 7, 1), stage 2 (1, 0.1, 0, 1)
 
-Both: cold start at seed 0 (the seed of est_experiments.ipynb Figure 2a), eigh
+Both: cold start at seed 0 (the seed of notebooks/est_experiments.ipynb Figure 2a), eigh
 pipeline, n_c 20, 2000 iterations per stage, one BLAS thread each, on one machine.
 The control repeats est_experiments Appendix B's `est_appB_ctrl_seed0` command;
 `summarize` reports how closely it reproduces that pulse.

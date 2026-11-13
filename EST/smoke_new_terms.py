@@ -217,7 +217,7 @@ def score_x(x, gate=GATE):
         "eta0_mean": float(r["eta_0L"].mean()),
         "eta0_tail": float(r["eta_0L"][tail].mean()),
         # Eq. 8 is state-dependent; eta_0L is one cardinal, eta_avg the mean over
-        # all six. est_optimization.ipynb section 2 reports the six-cardinal mean.
+        # all six. notebooks/est_optimization.ipynb section 2 reports the six-cardinal mean.
         "eta_avg_mean": float(r["eta_avg"].mean()),
         "eta_avg_tail": float(r["eta_avg"][tail].mean()),
         "max_active_fock": int(r["max_active_fock"]),

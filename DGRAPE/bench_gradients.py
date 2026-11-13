@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Efficiency of the three exact gradient paths of DGRAPE (dissipation_grape.ipynb §9):
+Efficiency of the three exact gradient paths of DGRAPE (notebooks/dissipation_grape.ipynb §9):
 
     np_W     lindblad_np.fidelity_and_grad            hand-derived adjoint, W-matrix form
     np_aug   lindblad_np.fidelity_and_grad_augmented  hand-derived adjoint, augmented generator

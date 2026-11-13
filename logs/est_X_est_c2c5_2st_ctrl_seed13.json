@@ -1,0 +1,91 @@
+{
+  "gate": "X",
+  "variant": "est",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 13,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "n_stages": 2,
+  "init": {
+    "path": "C:\\Users\\iando\\iCloudDrive\\Documents\\GitHub\\Qubit-Drive-GRAPE\\pulses\\est\\x_X_est_c2c5_sp1000_ctrl_seed13.npy",
+    "kind": "preimage",
+    "max_abs_preimage": 60.0
+  },
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": 0.2682564071982925,
+      "nit": 1000,
+      "nfev": 1086,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 8438.88307094574,
+      "terms": {
+        "20": {
+          "c1": 0.032238269690372356,
+          "c2": 0.23410430953781847,
+          "c3": 0.010302003381650346,
+          "c4": 3.109715989485684e-05
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0
+      ],
+      "cost": 0.02029128643488832,
+      "nit": 2000,
+      "nfev": 2207,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 16910.144880771637,
+      "terms": {
+        "20": {
+          "c1": 0.0005012453833712627,
+          "c2": 0.19786558411626154,
+          "c3": 0.13770334734240616,
+          "c4": 3.4826398908993372e-06
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.145891889890763,
+    "max_eps_transmon_rad_per_us": 25.1503166896005,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.004113386066355346,
+      "transmon": 0.0004982606196325818
+    },
+    "endpoint_rel_to_mid": [
+      0.018351238595520195,
+      0.018045315376522934
+    ]
+  },
+  "maxiter_stage1": 1000
+}

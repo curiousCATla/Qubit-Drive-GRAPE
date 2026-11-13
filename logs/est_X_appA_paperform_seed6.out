@@ -1,0 +1,30 @@
+
+=== X / est_paperform / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]  cost form {'c2_norm_power': 1, 'c2_include_endpoint': False, 'c3_normalize': False, 'c3_dt': 1.0}
+    start  c1=0.85415  c2=0.18439  c3=0.00066  c4=0.00000   [F1=0.14585  F_ET=0.81561]
+    end    c1=0.02161  c2=-0.28416  c3=0.00147  c4=0.00006   [F1=0.97839  F_ET=1.28416]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2151 cost=-1.669934e-01 (1597.1s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_paperform_appA_seed6_stage1.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_paperform_appA_seed6_stage1.npy
+
+=== X / est_paperform / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]  cost form {'c2_norm_power': 1, 'c2_include_endpoint': False, 'c3_normalize': False, 'c3_dt': 1.0}
+    start  c1=0.02161  c2=-0.28416  c3=0.00147  c4=0.00006   [F1=0.97839  F_ET=1.28416]
+    end    c1=0.00224  c2=-0.23007  c3=0.00283  c4=0.00000   [F1=0.99776  F_ET=1.23007]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=2000 nfev=2167 cost=-2.076732e-02 (1603.8s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_paperform_appA_seed6_stage2.npy
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_paperform_appA_seed6_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 25.144594298605462
+  max_eps_transmon_rad_per_us: 25.145842132728937
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.0007181019861433075, 'transmon': 0.0011057356336283168}
+  endpoint_rel_to_mid: [0.012898216770213529, 0.01248167978193496]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_paperform_appA_seed6.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/x_X_est_paperform_appA_seed6.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_X_est_paperform_appA_seed6.json

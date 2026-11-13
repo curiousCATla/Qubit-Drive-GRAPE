@@ -1,0 +1,17 @@
+mode=ofat  configs=15  seeds=[42]  protocol=single_phase  maxiter=1500
+trained truncs [22, 24, 26]  |  held-out [16, 18, 20, 28, 30, 32, 34, 36, 38, 40]
+shard 2 of 3: 5 items (15 of 15 need training, split evenly across shards)
+[1/5] gate=X seed=42 deriv=3e-06_boundary=2e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.997871 min=0.994110 spread=4.239e-03 occ99=61% of own mask (tra; 40.0 MHz) peak=21.5
+[2/5] gate=X seed=42 deriv=0.0001_boundary=2e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.987221 min=0.986211 spread=1.139e-03 occ99=36% of own mask (tra; 23.6 MHz) peak=16.6
+[3/5] gate=X seed=42 deriv=1e-05_boundary=6e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.995825 min=0.992003 spread=4.446e-03 occ99=54% of own mask (tra; 35.5 MHz) peak=19.8
+[4/5] gate=X seed=42 deriv=1e-05_boundary=2e-05_amp=8e-05_disc=0.5_ampmax=12
+    [trained] F_held=0.996878 min=0.992103 spread=5.434e-03 occ99=61% of own mask (tra; 40.0 MHz) peak=16.2
+[5/5] gate=X seed=42 deriv=1e-05_boundary=2e-05_amp=8e-05_disc=0.5_ampmax=28
+    [trained] F_held=0.996243 min=0.987193 spread=1.044e-02 occ99=51% of own mask (tra; 33.6 MHz) peak=18.9
+
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/tables/penalty_sweep_X_ofat_shard2of3.csv
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/results/penalty_sweep_X_ofat_shard2of3.json
+Total wall time: 106.2 min

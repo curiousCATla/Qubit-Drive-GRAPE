@@ -1,6 +1,6 @@
 """
 Joint tuning of the C2 weight (w2) and the C5 weight (w5) on the X gate,
-est_optimization.ipynb section 5 ("Phase 1": a 1000-iteration scan).
+notebooks/est_optimization.ipynb section 5 ("Phase 1": a 1000-iteration scan).
 
     python EST/tune_c2_c5.py run --jobs 16     # train everything missing, in parallel
     python EST/tune_c2_c5.py status            # how far the campaign has got

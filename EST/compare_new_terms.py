@@ -52,7 +52,7 @@ Train with:
           --tag sp2000_seed4_win &
     done; wait
 
-Outputs (the figures are drawn in est_optimization.ipynb section 2)
+Outputs (the figures are drawn in notebooks/est_optimization.ipynb section 2)
     tables/est_newterms_X_seed4_sp_win.csv         one row per run
     tables/est_newterms_X_seed4_sp_win_traces.npz  per-time traces, keys "<run>/<name>"
 
@@ -173,7 +173,7 @@ def score(u, x, gate=GATE):
         "dnbar_abs_mean": float(np.abs(rn).mean()),
         "dnbar_abs_tail": float(np.abs(rn[tail]).mean()),
         "eta0_mean": float(r["eta_0L"].mean()), "eta0_tail": float(r["eta_0L"][tail].mean()),
-        # Six-cardinal mean of Eq. 8, the quantity est_optimization.ipynb section 2
+        # Six-cardinal mean of Eq. 8, the quantity notebooks/est_optimization.ipynb section 2
         # reports; eta_0L is the single-state reading the paper's Fig. 1f plots.
         "eta_avg_mean": float(r["eta_avg"].mean()),
         "eta_avg_tail": float(r["eta_avg"][tail].mean()),

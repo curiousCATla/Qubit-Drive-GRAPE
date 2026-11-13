@@ -1,14 +1,19 @@
 """
-Repeated X gates with FWM tails (FWM_tails.ipynb §9). Forward only.
+Repeated X gates with FWM tails (notebooks/FWM_tails.ipynb §9). Forward only.
 
 Two protocols, both in the open system with the decay set (or any `keep`), on the three process inputs
 E_00, E_11, E_01 at n_c (24: the closed-trained gates need it) and n_r readout levels:
 
     after_n_gates   N gates back to back, then ONE tail: rows for every N with and without the tail
     pairs           N (gate + tail) pairs: one row after every pair
+    every_k         (B3) a tail after every k-th gate, N gates in all: after every gate a row as is ("bare") and a
+                    row that ends with a tail ("tail": the scheduled one when k divides N, else a closing tail put
+                    on a copy, the chain itself unchanged). k = 1 is `pairs`; k >= N_max is `after_n_gates`.
 
 The target after N X gates is X^N (X for odd N, I for even N); an idle "gate" (a zero pulse) targets I.
-`teeth_memory` is the reference for `pairs`: no gates, Shirol's Table II teeth held on for N periods.
+`teeth_memory` is the reference for `pairs`: no gates, Shirol's Table II teeth held on for N periods, each tooth
+moved by its mean pump Stark shift (stark_tuned=True, fwm_tail.teeth_stark_shifts; False = the bare carriers used
+until 2026-11-09).
 
 FRAME HAND-OFF. A gate runs in the DGRAPE frame; a tail runs in the frame that also rotates |f> at
 Delta_ref (DGRAPE/fwm_tail.py docstring): rho' = V' rho V, V = exp(i Delta_ref t P_f), t counted from the
@@ -157,9 +162,52 @@ def pairs(pulse, eta, N_max, n_c=24, n_r=2, gate="X", keep=None, include_higher_
     return rows
 
 
+def top_population(R, n_c, n_r, n_top=4):
+    """Storage population at Fock >= n_c - n_top, averaged over |0_L>, |1_L>: a truncation check."""
+    n = np.real(np.diag(operators(n_c, n_r)["n_a"]))
+    top = n >= n_c - n_top - 0.5
+    return float(np.mean([np.real(np.diag(R[b]))[top].sum() for b in (0, 1)]))
+
+
+def every_k(pulse, eta, k, N_max, n_c=24, n_r=2, gate="X", keep=None, include_higher_order=True, dephasing=False,
+            heating=False, closing_tail=True):
+    """B3: N_max gates with the tail eta after every k-th one. Rows {k, N, end, closing, n_tails, time_us, target,
+    F_pro, ..., P_top}, after every gate:
+
+        end="bare"  the state as is (n_tails = tails so far)
+        end="tail"  the state ending with a tail: the scheduled one when k divides N (closing False), else one
+                    closing tail on a copy (closing True; not when closing_tail=False). The chain goes on from the
+                    state without it.
+
+    time_us counts the gates and the tails the scored state has had."""
+    if k < 1:
+        raise ValueError(f"k must be >= 1, not {k}")
+    eta = np.asarray(eta, dtype=complex).reshape(-1, 2)
+    gm, tm = _models(n_c, n_r, keep, include_higher_order, dephasing, heating)
+    T_g, T_t = pulse.shape[0] * DT, eta.shape[0] * DT
+    R, rows, n_tails = inputs(n_c, n_r), [], 0
+
+    def add(R_end, N, end, closing, nt, tgt):
+        rows.append({"k": k, "N": N, "end": end, "closing": closing, "n_tails": nt, "time_us": N * T_g + nt * T_t,
+                     "target": tgt, **score_state(R_end, n_c, n_r, tgt), "P_top": top_population(R_end, n_c, n_r)})
+
+    for N in range(1, N_max + 1):
+        R = gate_step(gm, pulse, R)
+        tgt = target_of(N, gate)
+        add(R, N, "bare", False, n_tails, tgt)
+        if N % k == 0:
+            R = tail_step(tm, eta, R)
+            n_tails += 1
+            add(R, N, "tail", False, n_tails, tgt)
+        elif closing_tail:
+            add(tail_step(tm, eta, R), N, "tail", True, n_tails + 1, tgt)
+    return rows
+
+
 def teeth_memory(N_max, period_us, n_c=24, n_r=2, keep=None, include_higher_order=True, dephasing=False,
-                 heating=False, with_kerr_decode=False):
-    """Idle + AQEC: no gates, Shirol's Table II teeth (raw, as notebook Table 2) held on for N periods of
+                 heating=False, with_kerr_decode=False, stark_tuned=True):
+    """Idle + AQEC: no gates, Shirol's Table II teeth (raw strengths, as notebook Table 2; with stark_tuned each
+    tooth moved by its mean pump Stark shift, +-204 kHz, fwm_tail.teeth_stark_shifts) held on for N periods of
     period_us, one continuous waveform from t = 0 in the tail frame. Rows {N, decode, time_us, target I,
     F_pro, ...} after every period (no frame hand-off needed: nothing but the teeth acts, and the score is
     frame free). with_kerr_decode: also score each after the Kerr-corrected decoding for the whole time
@@ -167,7 +215,8 @@ def teeth_memory(N_max, period_us, n_c=24, n_r=2, keep=None, include_higher_orde
     tm = ft.tail_model(n_c, n_r, keep=keep, include_higher_order=include_higher_order, dephasing=dephasing,
                        heating=heating)
     K = ft.n_steps(period_us)
-    eta = ft.eta_from_teeth(fwm.beta_table2(ft.REPAIR_PATHS), K * N_max, DT, n_c)
+    eta = ft.eta_from_teeth(fwm.beta_table2(ft.REPAIR_PATHS), K * N_max, DT, n_c,
+                            include_higher_order=include_higher_order, stark_tuned=stark_tuned)
     R, rows = inputs(n_c, n_r), []
     for N in range(1, N_max + 1):
         R, _ = ft.propagate(tm, eta[(N - 1) * K:N * K], R, DT)

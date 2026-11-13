@@ -1,0 +1,73 @@
+{
+  "gate": "X",
+  "variant": "est_err",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 8,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 1000,
+  "n_stages": 1,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0,
+        0.5,
+        0.0,
+        0.0
+      ],
+      "cost": 0.37523645536761085,
+      "nit": 1000,
+      "nfev": 1076,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 1077.742145061493,
+      "terms": {
+        "20": {
+          "c1": 0.035089083673702226,
+          "c2": 0.36016420946230165,
+          "c3": 0.009449096552678655,
+          "c4": 4.2627615288716614e-05,
+          "cerr": 0.0436922431725163,
+          "c5": 0.0014643525220935849,
+          "c6": 11053.574944886725
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 23.87605730351393,
+    "max_eps_transmon_rad_per_us": 25.206577763807555,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0024200010268236303,
+      "transmon": 0.00446474918302802
+    },
+    "endpoint_rel_to_mid": [
+      0.01960537414317601,
+      0.01894445962852092
+    ]
+  },
+  "base_variant": "est",
+  "w_err": 0.5,
+  "w_dn": 0.0,
+  "w_smooth": 0.0
+}

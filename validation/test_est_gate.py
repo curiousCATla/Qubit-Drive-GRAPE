@@ -3,7 +3,7 @@
 test_est_gate.py
 
 Checks for DGRAPE/est_gate.py, an EsT X gate on the Shirol chip trained in the closed system with the
-cost of EST/grape_eigh.py (FWM_tails.ipynb §3).
+cost of EST/grape_eigh.py (notebooks/FWM_tails.ipynb §3).
 
   * recipe     -- the weight schedule is EST/train_est.py's (est, ord); the drive limits are
                   DGRAPE/recipe.py's (d2's); tiers follow EST's rule

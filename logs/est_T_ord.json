@@ -1,0 +1,84 @@
+{
+  "gate": "T",
+  "variant": "ord",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 600,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 0,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "cost": 3.711453366861406e-11,
+      "nit": 16,
+      "nfev": 21,
+      "message": "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL",
+      "seconds": 33.27155900001526,
+      "terms": {
+        "20": {
+          "c1": 3.711451516489698e-11,
+          "c2": 0.39002210850799207,
+          "c3": 0.1535951284155254,
+          "c4": 0.0
+        }
+      },
+      "max_abs_preimage": 59.98324718234464
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "cost": 3.711453366861406e-11,
+      "nit": 0,
+      "nfev": 1,
+      "message": "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL",
+      "seconds": 2.0782570838928223,
+      "terms": {
+        "20": {
+          "c1": 3.711451516489698e-11,
+          "c2": 0.39002210850799207,
+          "c3": 0.1535951284155254,
+          "c4": 0.0
+        }
+      },
+      "max_abs_preimage": 59.98324718234464
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 0.0,
+    "max_eps_transmon_rad_per_us": 24.995102162973776,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0,
+      "transmon": 0.00268955555689395
+    },
+    "endpoint_rel_to_mid": [
+      0.0016196669158073176,
+      0.0022490700750313316
+    ]
+  }
+}

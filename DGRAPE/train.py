@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 L-BFGS-B driver for open-system GRAPE on the Shirol chip -- the run logic of
-core/optimizer.optimize_multi_state_pulse (experiments.ipynb §1) around the Lindblad
+core/optimizer.optimize_multi_state_pulse (notebooks/grape_experiments.ipynb §1) around the Lindblad
 objective of DGRAPE/objective.py. Tested by 5-iteration smoke runs
 (validation/test_dgrape.py); NOT yet used to train any gate.
 
-Defaults are the experiments.ipynb / main.py production recipe (DGRAPE/recipe.py): bands
+Defaults are the notebooks/grape_experiments.ipynb / main.py production recipe (DGRAPE/recipe.py): bands
 +-27 / +-33 MHz, 48 ns ramp, lambda_deriv 1e-5, lambda_amp 8e-5 on |I+iQ| > 25 rad/us,
 lambda_disc 0.5, hard_amp_limit 25, smooth seeded cold start. They were tuned on the Heeres
-chip; dissipation_grape.ipynb §13 lists what is still to validate here. Gate duration and dt
+chip; notebooks/dissipation_grape.ipynb §13 lists what is still to validate here. Gate duration and dt
 stay REQUIRED: they depend on this chip. The truncation list defaults to [12, 14, 16] (not the
 Heeres [22, 24, 26]), evaluated as --n-jobs 3 parallel jobs, and the DGRAPE-only forbidden-state
 penalty (lambda_forbid 1e-3 on storage Fock >= 10) is on; the transmon-excitation penalty

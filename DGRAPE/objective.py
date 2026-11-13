@@ -5,7 +5,7 @@ interchangeable fidelity-gradient backends:
     backend="np"   DGRAPE/lindblad_np.py  -- exact hand-derived adjoint (W form)
     backend="jax"  DGRAPE/lindblad_jax.py -- reverse-mode autodiff of the same polynomial
 
-The cost mirrors core/optimizer.optimize_multi_state_pulse (experiments.ipynb §1, "Cost
+The cost mirrors core/optimizer.optimize_multi_state_pulse (notebooks/grape_experiments.ipynb §1, "Cost
 function construction"), with the closed-system F_coh replaced by the Lindblad process
 fidelity F_pro:
 
@@ -29,7 +29,7 @@ stand-in for the dephasing and heating that training leaves out. Both occupation
 extra costate in the backward pass, with the source diag(forbid*P_F + transmon*P_T)
 (lindblad_np.fidelity_and_grad, occ_weights).
 
-Every default comes from DGRAPE/recipe.py (the experiments.ipynb / main.py production
+Every default comes from DGRAPE/recipe.py (the notebooks/grape_experiments.ipynb / main.py production
 recipe; n_c=None means its trunc_list [12, 14, 16], which is NOT the Heeres list). Pass None to
 disable a band pair or the ramp (ramp_ns=0 also disables), and `penalties={...}` to override
 weights. Only the fidelity and C_i are backend-specific: the penalties, Eq. 24 and the chain

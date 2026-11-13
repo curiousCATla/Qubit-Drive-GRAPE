@@ -9,12 +9,12 @@ Writes only into slides/img/ (never into figures/):
   paper_fig1def.png  Roy et al. Fig. 1d, 1e, 1f, cropped from page 2 of the paper
                      PDF in sources/ and laid out in one row in d-e-f order, so it
                      lines up panel for panel with ours.
-  ours_fig2a.png     figures/est/fig1def_est_vs_ord_linear.png (est_experiments.ipynb
+  ours_fig2a.png     figures/est/fig1def_est_vs_ord_linear.png (notebooks/est_experiments.ipynb
                      Figure 2a, made by EST/diagnostics.py) with its title strip
                      trimmed. Regenerate the source with `python3 EST/diagnostics.py`.
   ours_err_pick.png  the same three panels for three X gates: slide 42's EsT (blue) and
                      Ord (red), and the EsT gate with C_err in stage 1 only that the pick
-                     rule of est_optimization.ipynb section 7.2 chose: seed 6, final
+                     rule of notebooks/est_optimization.ipynb section 7.2 chose: seed 6, final
                      two-stage gate (green; the blue curve of Figure 7c). Scored here with
                      EST/diagnostics.analyze at n_c = 20, the scorer of both slide 42 and
                      section 7.2, and checked against section 7.2's traces.

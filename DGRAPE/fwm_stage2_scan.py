@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 2 landscape scan and loss-timing diagnostic (fwm_grape.ipynb §1.3 and §6.2). Forward only.
+Stage 2 landscape scan and loss-timing diagnostic (notebooks/fwm_grape.ipynb §1.3 and §6.2). Forward only.
 
 1. LOSS TIMING. With the d2 gate and no tones, switch storage photon loss on only for
    [t0, T_g] (two-segment propagation, n_c = 16, n_r = 1). cost(t0) = F(no loss) - F(loss from t0)
@@ -14,7 +14,7 @@ Stage 2 landscape scan and loss-timing diagnostic (fwm_grape.ipynb §1.3 and §6
    and on (mixing = 1).
 
    --paths picks the tone set (default 1 3 5: the six Stage 2 tones, band +-2 MHz;
-   --paths 1 2 3 4 5 6 7 8 9: the full comb of fwm_grape.ipynb §7, 18 tones, band +-1 MHz). For a
+   --paths 1 2 3 4 5 6 7 8 9: the full comb of notebooks/fwm_grape.ipynb §7, 18 tones, band +-1 MHz). For a
    set with odd-start teeth (n even, repair n-1 -> n from an odd n-1) the scan also tries the
    sequential starts with only the even-start teeth on ("_evenstart"): the odd-start teeth pump
    the odd code words themselves out of the code.

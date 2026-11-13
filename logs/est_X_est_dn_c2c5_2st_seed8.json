@@ -1,0 +1,112 @@
+{
+  "gate": "X",
+  "variant": "est_dn",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 8,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "n_stages": 2,
+  "init": {
+    "path": "C:\\Users\\iando\\iCloudDrive\\Documents\\GitHub\\Qubit-Drive-GRAPE\\pulses\\est\\x_X_est_dn_c2c5_sp1000_seed8_w2_0.8_w5_3.5.npy",
+    "kind": "preimage",
+    "max_abs_preimage": 60.0
+  },
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.8,
+        7.0,
+        1.0,
+        0.0,
+        3.5,
+        0.0
+      ],
+      "cost": 0.3378884393912466,
+      "nit": 1000,
+      "nfev": 1069,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 8666.44340467453,
+      "terms": {
+        "20": {
+          "c1": 0.06215576574784454,
+          "c2": 0.26016859545630566,
+          "c3": 0.008405163407188351,
+          "c4": 1.651337186732124e-05,
+          "cerr": 0.7593560833737014,
+          "c5": 0.0024986114446204966,
+          "c6": 14253.61488572748,
+          "cleak": 0.2465967885518624
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0,
+        0.0,
+        0.4,
+        0.0
+      ],
+      "cost": 0.030576749874745835,
+      "nit": 2000,
+      "nfev": 2156,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 17062.98878312111,
+      "terms": {
+        "20": {
+          "c1": 0.0004978457417591509,
+          "c2": 0.29609076755962305,
+          "c3": 0.15289183295380118,
+          "c4": 1.8881418124149979e-06,
+          "cerr": 0.4285920267803439,
+          "c5": 0.0011698480880299087,
+          "c6": 13820.393671623013,
+          "cleak": 0.25508743919763704
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.154486113889483,
+    "max_eps_transmon_rad_per_us": 25.150017432253808,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.00482170120515637,
+      "transmon": 0.0021546077733706273
+    },
+    "endpoint_rel_to_mid": [
+      0.019312088166915226,
+      0.019212065281784634
+    ]
+  },
+  "base_variant": "est",
+  "w_err": 0.0,
+  "w_dn": 3.5,
+  "w_smooth": 0.0,
+  "w2_override": 0.8,
+  "w2_s2_override": 0.1,
+  "w_dn_s2": 0.4,
+  "maxiter_stage1": 1000
+}

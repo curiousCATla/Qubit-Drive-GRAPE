@@ -1,5 +1,5 @@
 """
-Two-stage training at the section 5 lead cell, est_optimization.ipynb section 6
+Two-stage training at the section 5 lead cell, notebooks/est_optimization.ipynb section 6
 ("Phase 2").
 
     python EST/c2c5_two_stage.py run --jobs 23     # train everything missing, in parallel

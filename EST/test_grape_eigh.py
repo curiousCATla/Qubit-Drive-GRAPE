@@ -636,7 +636,7 @@ class ExtraTermsFiniteDifferenceTest(unittest.TestCase):
         C2 = C_L + C_mis exactly, per cardinal 1 - F_ET = L + (1 - L)(1 - f), with
         f the overlap of the projected, renormalized error state with the
         normalized image a|psi_C>/||a|psi_C>||, which lies in E(t). This is the
-        formulation claim of est_optimization.ipynb section 1.2.
+        formulation claim of notebooks/est_optimization.ipynb section 1.2.
         """
         from EST import diagnostics
         code, err, A = self._random_trajectory(seed=41)
@@ -736,7 +736,7 @@ class ExtraTermsCrossBackendTest(unittest.TestCase):
 class PaperFormTest(unittest.TestCase):
     """
     The App. C cost form as printed (grape_eigh.PAPER_COST_FORM) on the eigh
-    pipeline, for est_experiments.ipynb Appendix A. It changes C2 (one power of
+    pipeline, for notebooks/est_experiments.ipynb Appendix A. It changes C2 (one power of
     N_norm, t = T left out) and C3 (raw variance, v in rad/ns), so both
     injections get their own checks: values and gradient against JAX autodiff
     through grape_jax's existing paper-form option, and central differences on
@@ -886,7 +886,7 @@ class StageWeightScheduleTest(unittest.TestCase):
                          s2 + (0.3, 0.0, 0.0))
 
     def test_weight_variant_est_wB(self):
-        # est_experiments.ipynb Appendix B: only w2 differs from `est`.
+        # notebooks/est_experiments.ipynb Appendix B: only w2 differs from `est`.
         self.assertEqual(self.sw("est_wB"), [(1.0, 1.0, 7.0, 1.0), (1.0, 0.2, 0.0, 1.0)])
         self.assertEqual(self.sw("est_wB", n_stages=1), [(1.0, 1.0, 7.0, 1.0)])
 
@@ -965,7 +965,7 @@ class StageWeightScheduleTest(unittest.TestCase):
             self.assertEqual(self.sw(v, n_stages=1, **kw), self.sw(v, **kw)[:1])
 
     def test_w2_override_replaces_c2_weight_of_single_phase(self):
-        """--w2 (est_optimization.ipynb s5): only w2 moves, single phase only."""
+        """--w2 (notebooks/est_optimization.ipynb s5): only w2 moves, single phase only."""
         self.assertEqual(self.sw("est_dn", w_dn=3.0, w2=0.9, n_stages=1),
                          [(1.0, 0.9, 7.0, 1.0, 0.0, 3.0, 0.0)])
         self.assertEqual(self.sw("est", w2=0.6, n_stages=1), [(1.0, 0.6, 7.0, 1.0)])
@@ -983,7 +983,7 @@ class StageWeightScheduleTest(unittest.TestCase):
             self.sw("est_c3s2", w2=0.9, n_stages=1)
 
     def test_per_stage_overrides(self):
-        """--w2 with --w2-s2 / --w-dn-s2 (est_optimization.ipynb s6): each stage its own."""
+        """--w2 with --w2-s2 / --w-dn-s2 (notebooks/est_optimization.ipynb s6): each stage its own."""
         self.assertEqual(
             self.sw("est_dn", w_dn=3.5, w2=0.8, w2_s2=0.1, w_dn_s2=0.4),
             [(1.0, 0.8, 7.0, 1.0, 0.0, 3.5, 0.0), (1.0, 0.1, 0.0, 1.0, 0.0, 0.4, 0.0)])
@@ -1002,7 +1002,7 @@ class StageWeightScheduleTest(unittest.TestCase):
             self.sw("est_dn", w_dn_s2=0.4)
 
     def test_w_err_s2_override(self):
-        """--w-err-s2 (est_optimization.ipynb s7): C_err in stage 1 only."""
+        """--w-err-s2 (notebooks/est_optimization.ipynb s7): C_err in stage 1 only."""
         self.assertEqual(
             self.sw("est_err", w_err=0.3, w_err_s2=0.0),
             [(1.0, 0.7, 7.0, 1.0, 0.3, 0.0, 0.0), (1.0, 0.1, 0.0, 1.0, 0.0, 0.0, 0.0)])

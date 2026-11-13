@@ -1,0 +1,15 @@
+[Parallel(n_jobs=16)]: Using backend LokyBackend with 16 concurrent workers.
+[Parallel(n_jobs=16)]: Done   6 out of  25 | elapsed: 80.3min remaining: 254.4min
+[Parallel(n_jobs=16)]: Done  12 out of  25 | elapsed: 96.4min remaining: 104.5min
+[Parallel(n_jobs=16)]: Done  18 out of  25 | elapsed: 141.6min remaining: 55.0min
+[Parallel(n_jobs=16)]: Done  25 out of  25 | elapsed: 235.8min finished
+-> tables\fwm_tail_repeat_B1.csv
+-> tables\fwm_tail_repeat_B2.csv
+protocol       B1                             B2                                                                               
+label    EsT-good EsT-mid    Ord   idle EsT-good EsT-good + idle EsT-mid EsT-mid + idle    Ord Ord + idle idle + Table II teeth
+N                                                                                                                              
+1          0.9703  0.9700 0.9585 0.9813   0.9703          0.9465  0.9700         0.9476 0.9585     0.9435                0.9375
+2          0.9533  0.9521 0.9246 0.9703   0.9476          0.8965  0.9465         0.8976 0.9178     0.8911                0.8503
+5          0.8954  0.8886 0.8331 0.8631   0.8842          0.7375  0.8804         0.7671 0.8102     0.7496                0.5162
+10         0.7864  0.7723 0.6994 0.5449   0.7917          0.5071  0.7811         0.5861 0.6667     0.5727                0.1487
+20         0.5932  0.5620 0.4969 0.1749   0.6425          0.2666  0.6183         0.3436 0.4684     0.3392                0.2244

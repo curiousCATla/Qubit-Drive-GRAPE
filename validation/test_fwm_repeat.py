@@ -2,14 +2,18 @@
 """
 test_fwm_repeat.py
 
-Checks for DGRAPE/fwm_repeat.py, repeated X gates with FWM tails (FWM_tails.ipynb §9).
+Checks for DGRAPE/fwm_repeat.py, repeated X gates with FWM tails (notebooks/FWM_tails.ipynb §9).
 
   * one gate       -- N = 1 of after_n_gates (with and without the tail) and of pairs equals fwm_tail.score
                       for the same gate and tail (the gate there runs at n_r = 1 and is embedded)
   * frame          -- a zero tail on a random state with |f> content, handed back to the DGRAPE frame,
                       equals the DGRAPE-frame idle of the same length; so does gate + zero tail + gate
   * pairs          -- pairs with a zero eta equals after_n_gates of the gate followed by its idle, step by step
-  * teeth          -- teeth_memory over N periods equals one propagation of the whole waveform
+  * teeth          -- teeth_memory over N periods equals one propagation of the whole waveform (Stark-tuned by
+                      default, bare with stark_tuned=False); the tuned carriers sit on the Stark-shifted lines
+                      (+-204 kHz at Table II) and stark_tuned=False is the old bare waveform
+  * every k        -- every_k at k = 1 equals pairs; at k > N_max it equals after_n_gates; k = 2 equals the chain
+                      built by hand (scheduled and closing tails); the closing tail leaves the chain unchanged
   * targets        -- X^N alternates X, I; an idle "gate" targets I
   * kerr decode    -- closed waits decoded with kerr_decode score 1; on the code space kerr_decode is a cavity
                       frame shift by 2.5 K times a logical Z by 2 K t; the plain rows do not change
@@ -104,11 +108,40 @@ class Pairs(unittest.TestCase):
 
 class Teeth(unittest.TestCase):
     def test_segments(self):
-        rows = rp.teeth_memory(3, 0.04, n_c=NC)
         tm = ft.tail_model(NC, 2)
-        eta = ft.eta_from_teeth(fwm.beta_table2(ft.REPAIR_PATHS), 3 * ft.n_steps(0.04), DT, NC)
-        R, _ = ft.propagate(tm, eta, rp.inputs(NC))
-        self.assertAlmostEqual(rows[-1]["F_pro"], rp.score_state(R, NC, 2, "I")["F_pro"], delta=1e-11)
+        beta = fwm.beta_table2(ft.REPAIR_PATHS)
+        for tuned in (True, False):
+            rows = rp.teeth_memory(3, 0.04, n_c=NC, **({} if tuned else {"stark_tuned": False}))
+            eta = ft.eta_from_teeth(beta, 3 * ft.n_steps(0.04), DT, NC, stark_tuned=tuned)
+            R, _ = ft.propagate(tm, eta, rp.inputs(NC))
+            self.assertAlmostEqual(rows[-1]["F_pro"], rp.score_state(R, NC, 2, "I")["F_pro"], delta=1e-11)
+
+    def test_bare_is_unchanged(self):
+        beta = fwm.beta_table2(ft.REPAIR_PATHS)
+        off = ft.tooth_offsets(NC)
+        t = (np.arange(50) + 0.5) * DT
+        K = len(off["paths"])
+        ref = np.stack([(beta[:K] * np.exp(1j * off["comb1"][None] * t[:, None])).sum(1),
+                        (beta[K:] * np.exp(1j * off["comb2"][None] * t[:, None])).sum(1)], axis=1)
+        np.testing.assert_array_equal(ft.eta_from_teeth(beta, 50, DT, NC), ref)
+        np.testing.assert_array_equal(ft.eta_from_teeth(beta, 50, DT, NC, stark_tuned=False), ref)
+
+    def test_tuned_carriers_on_the_shifted_lines(self):
+        """Tuned carrier = -(E'_t - E'_s), E' = diag(H_d) - x S, x = sum |beta|^2: the line with the pumps on."""
+        from DGRAPE.model import F, G, Model, index
+        beta = fwm.beta_table2(ft.REPAIR_PATHS)
+        fw0 = fwm.fwm_terms(Model(NC, 2), paths=ft.REPAIR_PATHS)
+        x = np.sum(beta ** 2)
+        Ed = np.real(np.diag(Model(NC, 2).H_d)) - x * fw0.S_diag
+        d = ft.teeth_stark_shifts(beta, NC)
+        for k, (c, n) in enumerate(fw0.tones):
+            s, t = ((index(n - 1, G, 0, NC, 2), index(n, F, 0, NC, 2)) if c == 1
+                    else (index(n, F, 0, NC, 2), index(n, G, 1, NC, 2)))
+            self.assertAlmostEqual(fw0.Delta[k] + d[k], -(Ed[t] - Ed[s]), delta=1e-9)
+        khz = d / (2 * np.pi) * 1e3
+        K = len(fw0.paths)
+        np.testing.assert_allclose(khz[:K], 204.4, atol=1.0)        # comb 1 up, comb 2 down, ~ -4 alpha x
+        np.testing.assert_allclose(khz[K:], -203.5, atol=1.0)
 
 
 class KerrDecode(unittest.TestCase):
@@ -146,6 +179,49 @@ class KerrDecode(unittest.TestCase):
         self.assertIs(rp.kerr_decode(R, NC, 2, 0.0), R)
         with self.assertRaises(ValueError):
             rp.after_n_gates(u, eta, 1, n_c=NC, gate="X", with_kerr_decode=True)
+
+
+class EveryK(unittest.TestCase):
+    U, ETA = _rand_pulse(30, 3.0, 11), _rand_eta(20, 0.05, 12)
+
+    def _by(self, rows, end):
+        return {r["N"]: r for r in rows if r["end"] == end}
+
+    def test_k1_is_pairs(self):
+        rows = self._by(rp.every_k(self.U, self.ETA, 1, 3, n_c=NC), "tail")
+        for r in rp.pairs(self.U, self.ETA, 3, n_c=NC):
+            self.assertAlmostEqual(rows[r["N"]]["F_pro"], r["F_pro"], delta=1e-11)
+            self.assertAlmostEqual(rows[r["N"]]["time_us"], r["time_us"], delta=1e-12)
+
+    def test_large_k_is_after_n_gates(self):
+        rows = rp.every_k(self.U, self.ETA, 5, 3, n_c=NC)
+        ref = rp.after_n_gates(self.U, self.ETA, 3, n_c=NC)
+        for end, tail in (("bare", "none"), ("tail", "tail")):
+            a, b = self._by(rows, end), {r["N"]: r for r in ref if r["tail"] == tail}
+            for N in (1, 2, 3):
+                self.assertAlmostEqual(a[N]["F_pro"], b[N]["F_pro"], delta=1e-11)
+                self.assertAlmostEqual(a[N]["time_us"], b[N]["time_us"], delta=1e-12)
+
+    def test_k2_by_hand(self):
+        gm, tm = rp._models(NC, 2, None, True, False, False)
+        g = lambda R: rp.gate_step(gm, self.U, R)          # noqa: E731
+        t = lambda R: rp.tail_step(tm, self.ETA, R)        # noqa: E731
+        R2 = t(g(g(rp.inputs(NC))))
+        R3 = g(R2)
+        rows = self._by(rp.every_k(self.U, self.ETA, 2, 4, n_c=NC), "tail")
+        self.assertAlmostEqual(rows[3]["F_pro"], rp.score_state(t(R3), NC, 2, "X")["F_pro"], delta=1e-11)
+        self.assertTrue(rows[3]["closing"])
+        self.assertAlmostEqual(rows[4]["F_pro"], rp.score_state(t(g(R3)), NC, 2, "I")["F_pro"], delta=1e-11)
+        self.assertFalse(rows[4]["closing"])
+        self.assertEqual([rows[N]["n_tails"] for N in (1, 2, 3, 4)], [1, 1, 2, 2])
+
+    def test_closing_tail_leaves_chain(self):
+        a = rp.every_k(self.U, self.ETA, 3, 4, n_c=NC)
+        b = rp.every_k(self.U, self.ETA, 3, 4, n_c=NC, closing_tail=False)
+        self.assertEqual([r["F_pro"] for r in a if r["end"] == "bare"], [r["F_pro"] for r in b if r["end"] == "bare"])
+        self.assertEqual(sorted(r["N"] for r in b if r["end"] == "tail"), [3])
+        with self.assertRaises(ValueError):
+            rp.every_k(self.U, self.ETA, 0, 2, n_c=NC)
 
 
 class Targets(unittest.TestCase):

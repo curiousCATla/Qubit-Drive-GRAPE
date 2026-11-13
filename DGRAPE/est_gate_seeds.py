@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed selection for a more transparent EsT gate on the Shirol chip: est_gate_selection.ipynb.
+Seed selection for a more transparent EsT gate on the Shirol chip: notebooks/est_gate_selection.ipynb.
 
     python DGRAPE/est_gate_seeds.py run --wave 1 --jobs 25   # train every missing seed of the wave
     python DGRAPE/est_gate_seeds.py status
@@ -8,8 +8,8 @@ Seed selection for a more transparent EsT gate on the Shirol chip: est_gate_sele
     python DGRAPE/est_gate_seeds.py open_score --top 3       # open-system score of the top candidates
     python DGRAPE/est_gate_seeds.py run --gate H --wave 1    # the same for the H gate (notebook §7)
 
-WHAT IS TRAINED. DGRAPE/est_gate.py's variant est_err: the EsT gate of FWM_tails.ipynb §3 (closed system,
-n_r = 1, n_c 20, 1.1 us, d2's drive limits and smooth start), with est_optimization.ipynb §7's cost, i.e.
+WHAT IS TRAINED. DGRAPE/est_gate.py's variant est_err: the EsT gate of notebooks/FWM_tails.ipynb §3 (closed system,
+n_r = 1, n_c 20, 1.1 us, d2's drive limits and smooth start), with notebooks/est_optimization.ipynb §7's cost, i.e.
 C_err (C1's form on the error cardinals at t = T) added in stage 1 only:
     stage 1 (w1, w2, w3, w4, w_err, w5, w6) = (1, 0.7, 7, 1, 0.3, 0, 0)
     stage 2                                 = (1, 0.1, 0, 1, 0,   0, 0)
@@ -31,7 +31,7 @@ than the current gate" means a lower score than X_est_closed's.
 WAVES: wave 1 = seeds 0-24; wave 2 = seeds 25-49 only if wave 1 gives fewer than 3 candidates. Wave 1 gave 3, but
 wave 2 was run anyway at the user's request (2026-10-29); the rule and the ranking are unchanged and cover all 50.
 
-H (est_gate_selection.ipynb §7, user, 2026-11-01). The same cost, seeds, limits and bars, for the H gate. Both
+H (notebooks/est_gate_selection.ipynb §7, user, 2026-11-01). The same cost, seeds, limits and bars, for the H gate. Both
 waves are run (no stop rule). Candidates are ranked by peak_score = (peak Delta_QEC + peak L + peak eta) / 3,
 lowest first ("looking for small peaks"); the mean score is reported too. No reference gate, so no beats_current.
 Result: 0 candidates of 50 (28 parked, 1 wall, 21 gates); every gate fails the L and eta bars, eta rising to ~0.9 at
@@ -350,7 +350,7 @@ def summarize(jobs=8, gate=GATE, variant=VARIANT, duration=DURATION):
 
 
 def open_score(top=3, gate=GATE, variant=VARIANT, duration=DURATION, extra_seeds=()):
-    """Open-system score (FWM_tails.ipynb §3.2's quantities) of the top candidates and the current gate, plus the
+    """Open-system score (notebooks/FWM_tails.ipynb §3.2's quantities) of the top candidates and the current gate, plus the
     runs of extra_seeds (rank NaN unless they are candidates), for comparison."""
     import pandas as pd
     from DGRAPE import fwm_tail as ft

@@ -15,3 +15,5 @@ sources/
 # Profiler dumps
 *.prof
 p.out
+/EST-paper-data
+/wigner

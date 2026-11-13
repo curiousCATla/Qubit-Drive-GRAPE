@@ -1,0 +1,81 @@
+N,protocol,time_us,F_pro,F_empty,n_r_end,P_e_end,P_f_end,trace,gate_pulse,n_c,n_r,tau1_us,tau2_us,channels
+1,(gate + ideal AQEC) pairs,3.3,0.9630742781833719,0.9630742781833719,0.0,0.0,0.0,1.0000000000000009,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+1,"(gate + ideal AQEC, strict) pairs",3.3,0.9609058735973461,0.9609058735973461,0.0,0.0,0.0,0.9933012301695295,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+1,(gate + no readout window) pairs,2.1,0.9894174472779952,0.9894174472779952,0.0,0.0,0.0,1.000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+1,(gate + instant) pairs,1.1,0.9900597590844025,0.9900597590844025,0.0,0.0,0.0,1.0000000000000016,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+2,(gate + ideal AQEC) pairs,6.6,0.9494694246684904,0.9494694246684904,0.0,0.0,0.0,1.0000000000000027,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+2,"(gate + ideal AQEC, strict) pairs",6.6,0.9437685987591764,0.9437685987591764,0.0,0.0,0.0,0.981651921339149,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+2,(gate + no readout window) pairs,4.2,0.9805938687678929,0.9805938687678929,0.0,0.0,0.0,1.0000000000000067,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+2,(gate + instant) pairs,2.2,0.9818961170950659,0.9818961170950659,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+3,(gate + ideal AQEC) pairs,9.899999999999999,0.9365926801590887,0.9365926801590887,0.0,0.0,0.0,1.000000000000003,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+3,"(gate + ideal AQEC, strict) pairs",9.899999999999999,0.9266493095886181,0.9266493095886181,0.0,0.0,0.0,0.9685696996765656,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+3,(gate + no readout window) pairs,6.300000000000001,0.9717375605555914,0.9717375605555914,0.0,0.0,0.0,1.0000000000000084,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+3,(gate + instant) pairs,3.3000000000000003,0.9736697662188996,0.9736697662188996,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+4,(gate + ideal AQEC) pairs,13.2,0.9242308270925119,0.9242308270925119,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+4,"(gate + ideal AQEC, strict) pairs",13.2,0.9099776392907815,0.9099776392907815,0.0,0.0,0.0,0.9554797334361826,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+4,(gate + no readout window) pairs,8.4,0.9631731408418935,0.9631731408418935,0.0,0.0,0.0,1.0000000000000098,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+4,(gate + instant) pairs,4.4,0.9657252071135551,0.9657252071135551,0.0,0.0,0.0,1.0000000000000009,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+5,(gate + ideal AQEC) pairs,16.5,0.9120634611289267,0.9120634611289267,0.0,0.0,0.0,1.0000000000000022,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+5,"(gate + ideal AQEC, strict) pairs",16.5,0.8935330759381992,0.8935330759381992,0.0,0.0,0.0,0.9425250030573509,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+5,(gate + no readout window) pairs,10.5,0.9546630122616652,0.9546630122616652,0.0,0.0,0.0,1.0000000000000109,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+5,(gate + instant) pairs,5.5,0.9578188196757241,0.9578188196757241,0.0,0.0,0.0,1.0000000000000009,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+6,(gate + ideal AQEC) pairs,19.799999999999997,0.9001969050762735,0.9001969050762735,0.0,0.0,0.0,0.9999999999999991,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+6,"(gate + ideal AQEC, strict) pairs",19.799999999999997,0.8774679238320604,0.8774679238320604,0.0,0.0,0.0,0.9297206880215555,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+6,(gate + no readout window) pairs,12.600000000000001,0.9463309241931418,0.9463309241931418,0.0,0.0,0.0,1.0000000000000107,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+6,(gate + instant) pairs,6.6000000000000005,0.9500786516096105,0.9500786516096105,0.0,0.0,0.0,1.0000000000000007,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+7,(gate + ideal AQEC) pairs,23.099999999999998,0.888498152362046,0.888498152362046,0.0,0.0,0.0,0.9999999999999942,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+7,"(gate + ideal AQEC, strict) pairs",23.099999999999998,0.8616366687582708,0.8616366687582708,0.0,0.0,0.0,0.9170935274501432,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+7,(gate + no readout window) pairs,14.700000000000001,0.9380472972616277,0.9380472972616277,0.0,0.0,0.0,1.0000000000000093,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+7,(gate + instant) pairs,7.700000000000001,0.9423706025105408,0.9423706025105408,0.0,0.0,0.0,1.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+8,(gate + ideal AQEC) pairs,26.4,0.877066987238759,0.877066987238759,0.0,0.0,0.0,0.9999999999999918,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+8,"(gate + ideal AQEC, strict) pairs",26.4,0.8461619774977818,0.8461619774977818,0.0,0.0,0.0,0.9046309783536151,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+8,(gate + no readout window) pairs,16.8,0.9299248785032598,0.9299248785032598,0.0,0.0,0.0,1.000000000000006,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+8,(gate + instant) pairs,8.8,0.934812093073699,0.934812093073699,0.0,0.0,0.0,0.9999999999999996,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+9,(gate + ideal AQEC) pairs,29.7,0.8657927031672072,0.8657927031672072,0.0,0.0,0.0,0.9999999999999887,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+9,"(gate + ideal AQEC, strict) pairs",29.7,0.8309135807382466,0.8309135807382466,0.0,0.0,0.0,0.8923427494257432,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+9,(gate + no readout window) pairs,18.900000000000002,0.921846013148898,0.921846013148898,0.0,0.0,0.0,1.0000000000000064,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+9,(gate + instant) pairs,9.9,0.9272805674800679,0.9272805674800679,0.0,0.0,0.0,1.0000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+10,(gate + ideal AQEC) pairs,33.0,0.8547713157495709,0.8547713157495709,0.0,0.0,0.0,0.9999999999999832,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+10,"(gate + ideal AQEC, strict) pairs",33.0,0.8160055924039714,0.8160055924039714,0.0,0.0,0.0,0.8802168569182098,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+10,(gate + no readout window) pairs,21.0,0.9139199129791552,0.9139199129791552,0.0,0.0,0.0,1.0000000000000053,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+10,(gate + instant) pairs,11.0,0.9198896407892395,0.9198896407892395,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+11,(gate + ideal AQEC) pairs,36.3,0.8438996983281056,0.8438996983281056,0.0,0.0,0.0,0.9999999999999845,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+11,"(gate + ideal AQEC, strict) pairs",36.3,0.8013161548277576,0.8013161548277576,0.0,0.0,0.0,0.8682593970734991,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+11,(gate + no readout window) pairs,23.1,0.9060354072900606,0.9060354072900606,0.0,0.0,0.0,1.000000000000002,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+11,(gate + instant) pairs,12.100000000000001,0.9125243035834676,0.9125243035834676,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+12,(gate + ideal AQEC) pairs,39.599999999999994,0.8332708930532005,0.8332708930532005,0.0,0.0,0.0,0.9999999999999862,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+12,"(gate + ideal AQEC, strict) pairs",39.599999999999994,0.7869542078371732,0.7869542078371732,0.0,0.0,0.0,0.8564602936723732,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+12,(gate + no readout window) pairs,25.200000000000003,0.8982992465751638,0.8982992465751638,0.0,0.0,0.0,1.0000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+12,(gate + instant) pairs,13.200000000000001,0.9052958338339576,0.9052958338339576,0.0,0.0,0.0,1.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+13,(gate + ideal AQEC) pairs,42.9,0.8227854652639607,0.8227854652639607,0.0,0.0,0.0,0.999999999999988,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+13,"(gate + ideal AQEC, strict) pairs",42.9,0.7728024971045278,0.7728024971045278,0.0,0.0,0.0,0.8448250875439103,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+13,(gate + no readout window) pairs,27.3,0.8906029309571667,0.8906029309571667,0.0,0.0,0.0,0.9999999999999973,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+13,(gate + instant) pairs,14.3,0.8980915933764455,0.8980915933764455,0.0,0.0,0.0,1.0000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+14,(gate + ideal AQEC) pairs,46.199999999999996,0.8125337174997951,0.8125337174997951,0.0,0.0,0.0,0.9999999999999893,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+14,"(gate + ideal AQEC, strict) pairs",46.199999999999996,0.7589661132556362,0.7589661132556362,0.0,0.0,0.0,0.8333442091961578,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+14,(gate + no readout window) pairs,29.400000000000002,0.8830511718371055,0.8830511718371055,0.0,0.0,0.0,0.9999999999999922,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+14,(gate + instant) pairs,15.400000000000002,0.8910211938581085,0.8910211938581085,0.0,0.0,0.0,1.0000000000000002,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+15,(gate + ideal AQEC) pairs,49.5,0.8024196876595094,0.8024196876595094,0.0,0.0,0.0,0.9999999999999903,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+15,"(gate + ideal AQEC, strict) pairs",49.5,0.745332115255127,0.745332115255127,0.0,0.0,0.0,0.8220228965065837,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+15,(gate + no readout window) pairs,31.5,0.8755380054212873,0.8755380054212873,0.0,0.0,0.0,0.9999999999999889,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+15,(gate + instant) pairs,16.5,0.8839744067958905,0.8839744067958905,0.0,0.0,0.0,1.0000000000000013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+16,(gate + ideal AQEC) pairs,52.8,0.7925306717516036,0.7925306717516036,0.0,0.0,0.0,0.9999999999999915,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+16,"(gate + ideal AQEC, strict) pairs",52.8,0.7320016401590212,0.7320016401590212,0.0,0.0,0.0,0.8108518611154013,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+16,(gate + no readout window) pairs,33.6,0.8681656040326441,0.8681656040326441,0.0,0.0,0.0,0.9999999999999849,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+16,(gate + instant) pairs,17.6,0.8770581060934495,0.8770581060934495,0.0,0.0,0.0,1.0000000000000002,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+17,(gate + ideal AQEC) pairs,56.099999999999994,0.7827740750546623,0.7827740750546623,0.0,0.0,0.0,0.999999999999996,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+17,"(gate + ideal AQEC, strict) pairs",56.099999999999994,0.7188659732542559,0.7188659732542559,0.0,0.0,0.0,0.7998360667656068,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+17,(gate + no readout window) pairs,35.7,0.8608305878783418,0.8608305878783418,0.0,0.0,0.0,0.9999999999999828,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+17,(gate + instant) pairs,18.700000000000003,0.8701647112509722,0.8701647112509722,0.0,0.0,0.0,0.9999999999999993,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+18,(gate + ideal AQEC) pairs,59.4,0.7732343435440304,0.7732343435440304,0.0,0.0,0.0,0.9999999999999979,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+18,"(gate + ideal AQEC, strict) pairs",59.4,0.7060224889426705,0.7060224889426705,0.0,0.0,0.0,0.7889665502655308,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+18,(gate + no readout window) pairs,37.800000000000004,0.8536328223871525,0.8536328223871525,0.0,0.0,0.0,0.9999999999999796,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+18,(gate + instant) pairs,19.8,0.8633987393791374,0.8633987393791374,0.0,0.0,0.0,1.0000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+19,(gate + ideal AQEC) pairs,62.699999999999996,0.7638220110145839,0.7638220110145839,0.0,0.0,0.0,1.0000000000000027,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+19,"(gate + ideal AQEC, strict) pairs",62.699999999999996,0.6933664708707441,0.6933664708707441,0.0,0.0,0.0,0.7782480411672363,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+19,(gate + no readout window) pairs,39.9,0.8464712772659881,0.8464712772659881,0.0,0.0,0.0,0.9999999999999767,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+19,(gate + instant) pairs,20.900000000000002,0.8566548579288347,0.8566548579288347,0.0,0.0,0.0,0.9999999999999993,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+20,(gate + ideal AQEC) pairs,66.0,0.7546188016534663,0.7546188016534663,0.0,0.0,0.0,1.0000000000000049,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+20,"(gate + ideal AQEC, strict) pairs",66.0,0.6809917313348375,0.6809917313348375,0.0,0.0,0.0,0.7676719036285409,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+20,(gate + no readout window) pairs,42.0,0.8394436809689239,0.8394436809689239,0.0,0.0,0.0,0.9999999999999787,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay
+20,(gate + instant) pairs,22.0,0.8500355741079595,0.8500355741079595,0.0,0.0,0.0,0.9999999999999983,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2,decay

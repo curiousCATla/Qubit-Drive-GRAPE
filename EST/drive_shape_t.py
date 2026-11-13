@@ -31,7 +31,7 @@ Selection rule, fixed before any C6 run finished. The LARGEST w6 that
 Outputs
     tables/est_drive_T_seed1_sp.csv          one row per run
     tables/est_drive_T_seed1_sp_traces.npz   per-time traces, keys "<run>/<name>"
-The figures are drawn in est_optimization.ipynb section 3.
+The figures are drawn in notebooks/est_optimization.ipynb section 3.
 """
 
 import argparse

@@ -4,7 +4,7 @@ train_pedersen_warm.py -- retrain ONE operation with the Pedersen-fidelity
 objective, warm-started from that operation's already-trained coherent pulse
 instead of from a cold random start.
 
-Motivation (experiments.ipynb Section 12.2): the cold-start Pedersen run for Y
+Motivation (notebooks/grape_experiments.ipynb Section 12.2): the cold-start Pedersen run for Y
 converged to F_pedersen = 1/3. Its logical block came out purely DIAGONAL,
 M = diag(0.829+0.559i, 0.972+0.231i), while the ideal U_Y is purely
 off-diagonal -- so Tr(U_Y+ M) = 0 exactly, by structure, every term in the

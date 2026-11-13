@@ -20,7 +20,7 @@ eigh + analytic-adjoint pipeline (EST/grape_eigh.py).
 
 `--stages 1` drops stage 2 and holds stage 1's weights (w2=0.7, w3=7) for the
 whole run, so the reported objective is the one that was optimized. That is the
-protocol of every study in est_optimization.ipynb (X: section 2, T: section 3).
+protocol of every study in notebooks/est_optimization.ipynb (X: section 2, T: section 3).
 It is opt-in: the default is still two stages, and the frozen two-stage
 STAGE2_VARIANTS study (EST/stage2_t.py) needs it.
 
@@ -75,10 +75,10 @@ EXT_VARIANTS = {
     "est_err_dn": ("err", "dn"),
     "est_all": ("err", "dn", "smooth"),
     # C6 alone. Built for the single-stage T drive-shape study
-    # (EST/drive_shape_t.py, est_optimization.ipynb section 3). Needs an explicit
+    # (EST/drive_shape_t.py, notebooks/est_optimization.ipynb section 3). Needs an explicit
     # --w-smooth: a silently defaulted smoothness weight is refused.
     "est_sm": ("smooth",),
-    # C_L alone (est_optimization.ipynb section 2). Needs --w-leak. Only variants
+    # C_L alone (notebooks/est_optimization.ipynb section 2). Needs --w-leak. Only variants
     # that use "leak" get an 8-tuple; every other variant keeps its 7-tuple and
     # sidecar, so their runs are unchanged.
     "est_lk": ("leak",),
@@ -91,7 +91,7 @@ DEFAULT_W_SMOOTH = 5e-6   # half the cat-code production lambda_deriv = 1e-5
 # the plain `est` stage 1, so at the same --seed it is the same run as `est`.
 #   c3     keep w3 at its stage-1 value in stage 2, instead of dropping it to 0
 #   smooth add the C6 smoothness penalty in stage 2, at --w-smooth (required)
-# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py; frozen, no longer in est_optimization.ipynb).
+# Built for the T-gate end-of-pulse drive study (EST/stage2_t.py; frozen, no longer in notebooks/est_optimization.ipynb).
 STAGE2_VARIANTS = {
     "est_c3s2": ("c3",),
     "est_d2": ("smooth",),
@@ -101,7 +101,7 @@ STAGE2_VARIANTS = {
 # Eigh-only variants that change the COST FORM and nothing else: the `est`
 # weight schedule, with the cost terms in another form (grape_eigh.PAPER_COST_FORM:
 # C2 over N_norm without t = T, raw C3 in rad/ns). Built for the fair
-# printed-vs-repo comparison of est_experiments.ipynb Appendix A, where the two
+# printed-vs-repo comparison of notebooks/est_experiments.ipynb Appendix A, where the two
 # runs must differ in form only. Unlike train_est.py's `paper` variant, the
 # weights are NOT changed to (1, 0.6, 6).
 FORM_VARIANTS = {
@@ -109,7 +109,7 @@ FORM_VARIANTS = {
 }
 
 # Eigh-only variants that change the WEIGHTS of the `est` schedule and nothing
-# else: same cost form, no extra terms. Built for est_experiments.ipynb
+# else: same cost form, no extra terms. Built for notebooks/est_experiments.ipynb
 # Appendix B, where the run must differ from its `est` control in the weights only.
 WEIGHT_VARIANTS = {
     # w2 0.7 -> 1 in stage 1, 0.1 -> 0.2 in stage 2
@@ -162,7 +162,7 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
     touch stage 2 only and need an explicit w_smooth when they add C6, so a
     silently-defaulted smoothness weight cannot happen there.
 
-    `n_stages=1` truncates to the SINGLE PHASE used by est_optimization.ipynb
+    `n_stages=1` truncates to the SINGLE PHASE used by notebooks/est_optimization.ipynb
     (every study): stage 1's tuple held for the whole run, so the objective that is
     reported is the objective that was optimized. Stage 2 (w2 -> 0.1, w3 -> 0)
     is what CLOSES the gate, so a single phase may leave F1 short -- that is a
@@ -170,16 +170,16 @@ def stage_weights(variant, w_amp=1.0, w_err=None, w_dn=None, w_smooth=None,
     are defined by what they change in stage 2, so under one stage they would
     silently degenerate into plain `est`.
 
-    `w2` replaces the C2 weight of the single phase (est_optimization.ipynb
+    `w2` replaces the C2 weight of the single phase (notebooks/est_optimization.ipynb
     section 5, EST/tune_c2_c5.py). It is refused with n_stages=2, where it would
     be ambiguous which stage it means. None leaves every tuple unchanged.
 
-    Per-stage overrides (est_optimization.ipynb section 6, EST/c2c5_two_stage.py):
+    Per-stage overrides (notebooks/est_optimization.ipynb section 6, EST/c2c5_two_stage.py):
     `w2_s2` replaces the C2 weight of stage 2 and `w_dn_s2` the C5 weight (w5)
     of stage 2. Either one needs n_stages=2, and with either one set, `w2`
     means the STAGE-1 C2 weight, so nothing is ambiguous. `w_dn_s2` needs a
     variant that uses "dn". `w_err_s2` likewise replaces the C_err weight (w_err)
-    of stage 2 (est_optimization.ipynb section 7: C_err in stage 1 only) and needs
+    of stage 2 (notebooks/est_optimization.ipynb section 7: C_err in stage 1 only) and needs
     a variant that uses "err". None for all three leaves the schedule unchanged.
     """
     if n_stages not in (1, 2):
@@ -362,7 +362,7 @@ def train(gate="X", variant="est", n_t=N_T, dt=DT, trunc_list=TRAIN_TRUNC,
         "trunc_list": list(trunc_list), "w_amp": w_amp, "seed": seed,
         "amp0": amp0, "hard_bound": hard_bound, "maxiter": maxiter,
         # 2 = the historical two-stage schedule; 1 = single phase at stage 1's
-        # weights (every est_optimization.ipynb study). Read this before comparing
+        # weights (every notebooks/est_optimization.ipynb study). Read this before comparing
         # two logs: their objectives differ.
         "n_stages": len(schedule),
         "init": warm,
@@ -483,7 +483,7 @@ def main():
     p.add_argument("--stages", type=int, default=2, choices=(1, 2),
                    help="1 runs a SINGLE phase at stage 1's weights "
                         "(w2=0.7, w3=7 held throughout), which is what "
-                        "every est_optimization.ipynb study uses; 2 (default) is "
+                        "every notebooks/est_optimization.ipynb study uses; 2 (default) is "
                         "the historical two-stage schedule. Stage 2 is what "
                         "closes the gate, so check F1 on a --stages 1 run.")
     p.add_argument("--no-save", action="store_true")

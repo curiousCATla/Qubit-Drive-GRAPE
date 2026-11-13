@@ -1,0 +1,6 @@
+continuing deriv=1e-05_boundary=2e-05_amp=8e-05_disc=0.5 for 750 iters ...
+  F_held 0.996243 -> 0.996819 (+5.77e-04) | W99 51.0% -> 42.7% of own mask (-8.3%, binding tra->tra) | W99 33.64 -> 28.18 MHz (-5.45) | BW 8.756 -> 8.137 (-0.619 MHz) | reconverged=False
+continuing deriv=1e-06_boundary=2e-05_amp=8e-05_disc=0.5 for 750 iters ...
+  F_held 0.998716 -> 0.998669 (-4.70e-05) | W99 60.6% -> 63.4% of own mask (+2.8%, binding tra->tra) | W99 40.00 -> 41.82 MHz (+1.82) | BW 14.810 -> 13.603 (-1.207 MHz) | reconverged=False
+
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/tables/penalty_convergence_check.csv

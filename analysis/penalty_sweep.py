@@ -98,7 +98,7 @@ from main import GATE_FACTORIES, report_pedersen_gate_fidelity
 # Fixed experimental conditions -- everything that is NOT swept
 # ============================================================
 #
-# A MIRROR of main.py / experiments.ipynb's OPTIMIZATION_RECIPE again, including
+# A MIRROR of main.py / notebooks/grape_experiments.ipynb's OPTIMIZATION_RECIPE again, including
 # the amplitude knobs. The sweep used to sit deliberately at
 # amp_max = hard_amp_limit = 40 with the optimizer's default per-QUADRATURE
 # amplitude penalty, one regime behind production, because changing FIXED
@@ -118,7 +118,7 @@ from main import GATE_FACTORIES, report_pedersen_gate_fidelity
 # Two consequences of u_max=25 that the rest of this module's prose assumes:
 #   * The BOX BINDS. At hard_amp_limit=40 it essentially never did; at 25 it
 #     does on amplitude-hungry runs (see the root CLAUDE.md, and GATE_SEEDS in
-#     experiments.ipynb, which exists for exactly this reason). Expect
+#     notebooks/grape_experiments.ipynb, which exists for exactly this reason). Expect
 #     `max_abs_preimage` / `preimage_at_bound_frac` to be far more populated
 #     than in the u_max=40 tables. That is the regime, not a regression.
 #   * The CAP and the `peak_amp` COLUMN finally measure the same quantity --
@@ -305,7 +305,7 @@ OFAT_MULTIPLIERS = (0.0, 0.1, 0.3, 1.0, 3.0, 10.0)
 #           and can differ from it only by reduction-order nondeterminism. Two
 #           independent replicates of the incumbent recipe per seed, 20 null cells
 #           at n=10. This is the sole instrument behind the noise floor in
-#           penalty_optimization.ipynb section 6.2.
+#           notebooks/penalty_optimization.ipynb section 6.2.
 #
 # Note the last column: `lambda_amp` remains a NO-OP at the incumbent recipe, so
 # retiring it as an axis in favour of the threshold still holds at u_max=25.
@@ -352,7 +352,7 @@ AMP_MAX_VALUES = (8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 22.0, 26.0, 30.0)
 # unresolved, not settled either way.
 #
 # WHAT CHANGES AT u_max = 25: the box those correlations are measured against has
-# HALVED, and at 25 it genuinely binds (root CLAUDE.md; it is why experiments.ipynb
+# HALVED, and at 25 it genuinely binds (root CLAUDE.md; it is why notebooks/grape_experiments.ipynb
 # carries a per-gate GATE_SEEDS). Seven rows of 170 pinned the 40 box; expect
 # materially more here, and expect `preimage_at_bound_frac` to be the column that
 # says so. A pinned row is a row where the BOX chose the pulse, so its fidelity is
@@ -937,7 +937,7 @@ def _preimage_stats(info, hard_amp_limit):
     AT FIXED["hard_amp_limit"] = 25 THESE COLUMNS ARE NO LONGER RARE. The 40 box
     this detector was built against was pinned by 7 rows of 170; the production
     box is 25 and it genuinely binds (root CLAUDE.md), which is why
-    experiments.ipynb pins a seed per gate. Expect a substantial fraction of rows
+    notebooks/grape_experiments.ipynb pins a seed per gate. Expect a substantial fraction of rows
     to report a non-zero `preimage_at_bound_frac`. Read it the same way regardless
     of how common it is: a pinned row is one the box chose, so its fidelity is not
     comparable to the rest of its ladder. Clipped-but-healthy (held-out fidelity

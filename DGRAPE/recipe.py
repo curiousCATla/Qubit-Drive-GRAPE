@@ -1,7 +1,7 @@
 """
 Default training recipe for open-system GRAPE (DGRAPE/objective.py, DGRAPE/train.py).
 
-Copied from the closed-system production recipe: experiments.ipynb `OPTIMIZATION_RECIPE`
+Copied from the closed-system production recipe: notebooks/grape_experiments.ipynb `OPTIMIZATION_RECIPE`
 and the `main.py` CLI defaults (validation/test_dgrape.py pins RECIPE to
 `main.build_arg_parser()` so the two cannot silently drift).
 
@@ -14,12 +14,12 @@ and the `main.py` CLI defaults (validation/test_dgrape.py pins RECIPE to
     u = ramp(bandlimit(x)),  |x| <= hard_amp_limit elementwise         (Supp. Eq. 22, core/ramp.py)
 
 THESE NUMBERS WERE TUNED ON THE HEERES CHIP (core/grape_core.py), not on Shirol's. They are
-defaults to validate on this device (dissipation_grape.ipynb §8 and §13), not results. In
+defaults to validate on this device (notebooks/dissipation_grape.ipynb §8 and §13), not results. In
 particular the 25 rad/us cap is the Heeres-recipe drive limit; Shirol et al. publish none.
 
 TRUNCATIONS. `trunc_list = [12, 14, 16]` is NOT the Heeres recipe (main.py trains on
 [22, 24, 26], sized for a code reaching Fock ~20) and is deliberately not pinned to it. The code
-reaches only Fock 5 (MIN_N_C = 7), but the first trained X pulse (dissipation_grape.ipynb §10)
+reaches only Fock 5 (MIN_N_C = 7), but the first trained X pulse (notebooks/dissipation_grape.ipynb §10)
 climbed to Fock 10+ on the earlier guess [10, 12] and lost 2.1 % at the converged n_c >= 16, so
 [10, 12] is falsified. The Lindblad cost grows as d^3 = (6 n_c)^3; the three truncations are
 evaluated in parallel (`n_jobs`, joblib, as main.py). Score a trained pulse on a held-out n_c
@@ -38,7 +38,7 @@ TRANSMON EXCITATION (DGRAPE-specific, OFF by default). The same time sum with P_
 on the transmon. The fidelity already charges the exact T1 price of an excited transmon, about
 dt / T1_ge per unit population per step; summed over the two code inputs that is lambda_transmon
 = dt / (2 T1_ge) = 2e-5 at dt = 2 ns. A positive weight charges extra, as a stand-in for the
-dephasing and heating that training leaves out (dissipation_grape.ipynb §12 uses 1e-4, 5x the T1
+dephasing and heating that training leaves out (notebooks/dissipation_grape.ipynb §12 uses 1e-4, 5x the T1
 price). Like forbid it is a raw sum over steps: rescale it if N or dt changes a lot.
 
 Deliberately ABSENT: gate duration and dt, which depend on this chip (chi_ge/2pi = 1.12 MHz,

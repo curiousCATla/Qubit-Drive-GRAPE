@@ -1,0 +1,107 @@
+mode=ofat  configs=20  seeds=[42, 43, 44, 45, 46, 47, 48, 49, 50, 51]  protocol=single_phase  maxiter=1500
+trained truncs [22, 24, 26]  |  held-out [16, 18, 20, 28, 30, 32, 34, 36, 38, 40]
+shard 3 of 4: 50 items (200 of 200 need training, split evenly across shards)
+[1/50] gate=X seed=45 deriv=0_amp=8e-05_disc=0.5
+    [trained] F_held=0.999802 min=0.999024 spread=8.822e-04 occ99=79% of own mask (cav; 44.5 MHz) peak=25.0 maxx=24.7/25
+[2/50] gate=X seed=49 deriv=0_amp=8e-05_disc=0.5
+    [trained] F_held=0.999257 min=0.994264 spread=5.647e-03 occ99=79% of own mask (cav; 45.5 MHz) peak=25.0 maxx=25.0/25
+[3/50] gate=X seed=43 deriv=1e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.999289 min=0.996086 spread=3.639e-03 occ99=56% of own mask (tra; 37.3 MHz) peak=23.3 maxx=22.9/25
+[4/50] gate=X seed=47 deriv=1e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.999591 min=0.999092 spread=5.575e-04 occ99=59% of own mask (tra; 39.1 MHz) peak=25.0 maxx=25.0/25  ** AT BOUND **
+[5/50] gate=X seed=51 deriv=1e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.999161 min=0.996429 spread=3.086e-03 occ99=56% of own mask (tra; 37.3 MHz) peak=16.9 maxx=22.3/25
+[6/50] gate=X seed=45 deriv=3e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.998967 min=0.997005 spread=2.224e-03 occ99=51% of own mask (tra; 33.6 MHz) peak=21.2 maxx=23.9/25
+[7/50] gate=X seed=49 deriv=3e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.997556 min=0.986760 spread=1.248e-02 occ99=50% of own mask (tra; 32.7 MHz) peak=25.0 maxx=25.0/25  ** AT BOUND **
+[8/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.997748 min=0.991914 spread=6.628e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=22.1 maxx=23.6/25
+[9/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.998133 min=0.996070 spread=2.322e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=17.7 maxx=23.6/25
+[10/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.997831 min=0.995486 spread=2.661e-03 occ99=50% of own mask (tra; 32.7 MHz) peak=19.4 maxx=25.0/25  ** AT BOUND **
+[11/50] gate=X seed=45 deriv=3e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.996771 min=0.995730 spread=1.236e-03 occ99=39% of own mask (tra; 25.5 MHz) peak=18.0 maxx=22.6/25
+[12/50] gate=X seed=49 deriv=3e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.993292 min=0.988031 spread=6.170e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=20.8 maxx=25.0/25  ** AT BOUND **
+[13/50] gate=X seed=43 deriv=0.0001_amp=8e-05_disc=0.5
+    [trained] F_held=0.993564 min=0.992361 spread=1.395e-03 occ99=33% of own mask (tra; 21.8 MHz) peak=14.8 maxx=21.2/25
+[14/50] gate=X seed=47 deriv=0.0001_amp=8e-05_disc=0.5
+    [trained] F_held=0.991031 min=0.990114 spread=1.234e-03 occ99=39% of own mask (tra; 25.5 MHz) peak=13.0 maxx=12.9/25
+[15/50] gate=X seed=51 deriv=0.0001_amp=8e-05_disc=0.5
+    [trained] F_held=0.986611 min=0.985124 spread=1.676e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=11.7 maxx=15.9/25
+[16/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=8
+    [trained] F_held=0.986091 min=0.983235 spread=3.249e-03 occ99=65% of own mask (tra; 42.7 MHz) peak=8.3 maxx=23.1/25
+[17/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=8
+    [trained] F_held=0.994521 min=0.993516 spread=1.124e-03 occ99=62% of own mask (tra; 40.9 MHz) peak=8.3 maxx=25.0/25  ** AT BOUND **
+[18/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=10
+    [trained] F_held=0.995349 min=0.991936 spread=3.826e-03 occ99=59% of own mask (tra; 39.1 MHz) peak=10.1 maxx=25.0/25  ** AT BOUND **
+[19/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=10
+    [trained] F_held=0.996804 min=0.995720 spread=1.228e-03 occ99=55% of own mask (tra; 36.4 MHz) peak=10.1 maxx=22.0/25
+[20/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=10
+    [trained] F_held=0.997214 min=0.994743 spread=2.883e-03 occ99=51% of own mask (tra; 33.6 MHz) peak=10.1 maxx=25.0/25  ** AT BOUND **
+[21/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=12
+    [trained] F_held=0.995541 min=0.989646 spread=6.620e-03 occ99=55% of own mask (tra; 36.4 MHz) peak=12.1 maxx=25.0/25
+[22/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=12
+    [trained] F_held=0.996225 min=0.992465 spread=4.282e-03 occ99=54% of own mask (tra; 35.5 MHz) peak=12.1 maxx=21.6/25
+[23/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=14
+    [trained] F_held=0.997515 min=0.995265 spread=2.542e-03 occ99=52% of own mask (tra; 34.5 MHz) peak=14.1 maxx=23.9/25
+[24/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=14
+    [trained] F_held=0.998087 min=0.996146 spread=2.197e-03 occ99=43% of own mask (tra; 28.2 MHz) peak=14.0 maxx=24.5/25
+[25/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=14
+    [trained] F_held=0.997738 min=0.993868 spread=4.470e-03 occ99=48% of own mask (tra; 31.8 MHz) peak=14.1 maxx=23.8/25
+[26/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=16
+    [trained] F_held=0.997338 min=0.995812 spread=1.702e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=16.1 maxx=24.9/25
+[27/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=16
+    [trained] F_held=0.997246 min=0.993366 spread=4.416e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=16.1 maxx=25.0/25  ** AT BOUND **
+[28/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=18
+    [trained] F_held=0.998043 min=0.994270 spread=4.240e-03 occ99=51% of own mask (tra; 33.6 MHz) peak=17.8 maxx=24.1/25
+[29/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=18
+    [trained] F_held=0.998301 min=0.996855 spread=1.646e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=17.2 maxx=19.2/25
+[30/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=18
+    [trained] F_held=0.997844 min=0.995577 spread=2.564e-03 occ99=50% of own mask (tra; 32.7 MHz) peak=18.0 maxx=25.0/25  ** AT BOUND **
+[31/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=22
+    [trained] F_held=0.997323 min=0.995145 spread=2.453e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=22.0 maxx=25.0/25  ** AT BOUND **
+[32/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=22
+    [trained] F_held=0.995551 min=0.980583 spread=1.728e-02 occ99=41% of own mask (tra; 27.3 MHz) peak=21.8 maxx=25.0/25  ** AT BOUND **
+[33/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=26
+    [trained] F_held=0.997748 min=0.991914 spread=6.628e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=22.1 maxx=23.6/25
+[34/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=26
+    [trained] F_held=0.998133 min=0.996070 spread=2.322e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=17.7 maxx=23.6/25
+[35/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=26
+    [trained] F_held=0.997831 min=0.995486 spread=2.661e-03 occ99=50% of own mask (tra; 32.7 MHz) peak=19.4 maxx=25.0/25  ** AT BOUND **
+[36/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=30
+    [trained] F_held=0.997320 min=0.994980 spread=2.641e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=23.0 maxx=25.0/25  ** AT BOUND **
+[37/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=30
+    [trained] F_held=0.995630 min=0.981260 spread=1.658e-02 occ99=40% of own mask (tra; 26.4 MHz) peak=22.3 maxx=25.0/25  ** AT BOUND **
+[38/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ramp=30
+    [trained] F_held=0.995715 min=0.994369 spread=1.537e-03 occ99=48% of own mask (tra; 31.8 MHz) peak=25.1 maxx=20.3/25
+[39/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ramp=30
+    [trained] F_held=0.998121 min=0.997314 spread=9.036e-04 occ99=45% of own mask (tra; 30.0 MHz) peak=23.8 maxx=23.7/25
+[40/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ramp=30
+    [trained] F_held=0.997954 min=0.996860 spread=1.243e-03 occ99=45% of own mask (tra; 30.0 MHz) peak=24.6 maxx=23.2/25
+[41/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ramp=40
+    [trained] F_held=0.998205 min=0.996714 spread=1.690e-03 occ99=44% of own mask (tra; 29.1 MHz) peak=23.4 maxx=25.0/25  ** AT BOUND **
+[42/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ramp=40
+    [trained] F_held=0.998821 min=0.998280 spread=6.164e-04 occ99=41% of own mask (tra; 27.3 MHz) peak=19.9 maxx=18.1/25
+[43/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ramp=50
+    [trained] F_held=0.997152 min=0.994678 spread=2.856e-03 occ99=44% of own mask (tra; 29.1 MHz) peak=21.0 maxx=24.9/25
+[44/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ramp=50
+    [trained] F_held=0.898906 min=0.850044 spread=1.120e-01 occ99=62% of own mask (cav; 38.2 MHz) peak=25.1 maxx=25.0/25  ** AT BOUND **
+[45/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ramp=50
+    [trained] F_held=0.997454 min=0.994413 spread=3.484e-03 occ99=50% of own mask (tra; 32.7 MHz) peak=19.7 maxx=25.0/25  ** AT BOUND **
+[46/50] gate=X seed=45 deriv=1e-05_amp=8e-05_disc=0.5_ramp=60
+    [trained] F_held=0.998364 min=0.998309 spread=6.400e-05 occ99=44% of own mask (cav; 28.2 MHz) peak=20.5 maxx=25.0/25
+[47/50] gate=X seed=49 deriv=1e-05_amp=8e-05_disc=0.5_ramp=60
+    [trained] F_held=0.997346 min=0.996375 spread=1.098e-03 occ99=44% of own mask (tra; 29.1 MHz) peak=22.0 maxx=25.0/25  ** AT BOUND **
+[48/50] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ramp=70
+    [trained] F_held=0.998315 min=0.995556 spread=3.098e-03 occ99=44% of own mask (tra; 29.1 MHz) peak=22.3 maxx=21.9/25
+[49/50] gate=X seed=47 deriv=1e-05_amp=8e-05_disc=0.5_ramp=70
+    [trained] F_held=0.993729 min=0.964788 spread=3.324e-02 occ99=52% of own mask (tra; 34.5 MHz) peak=23.2 maxx=25.0/25  ** AT BOUND **
+[50/50] gate=X seed=51 deriv=1e-05_amp=8e-05_disc=0.5_ramp=70
+    [trained] F_held=0.997844 min=0.996058 spread=2.019e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=19.4 maxx=25.0/25  ** AT BOUND **
+
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/tables/penalty_sweep_X_ofat_amp25_shard3of4.csv
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/results/penalty_sweep_X_ofat_amp25_shard3of4.json
+Total wall time: 1508.6 min

@@ -1,0 +1,31 @@
+mode=ofat  configs=17  seeds=[42, 43, 44]  protocol=single_phase  maxiter=1500
+trained truncs [22, 24, 26]  |  held-out [16, 18, 20, 28, 30, 32, 34, 36, 38, 40]
+shard 3 of 4: 12 items (51 of 51 need training, split evenly across shards)
+[1/12] gate=X seed=42 deriv=1e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.998883 min=0.994311 spread=5.182e-03 occ99=56% of own mask (tra; 37.3 MHz) peak=18.8 maxx=38.4/40
+[2/12] gate=X seed=43 deriv=3e-06_amp=8e-05_disc=0.5
+    [trained] F_held=0.998893 min=0.995370 spread=4.017e-03 occ99=50% of own mask (tra; 32.7 MHz) peak=20.4 maxx=32.6/40
+[3/12] gate=X seed=44 deriv=1e-05_amp=8e-05_disc=0.5
+    [trained] F_held=0.997089 min=0.993044 spread=4.598e-03 occ99=43% of own mask (tra; 28.2 MHz) peak=19.2 maxx=19.2/40
+[4/12] gate=X seed=42 deriv=0.0001_amp=8e-05_disc=0.5
+    [trained] F_held=0.990904 min=0.990892 spread=5.811e-05 occ99=39% of own mask (cav; 25.5 MHz) peak=16.3 maxx=26.3/40
+[5/12] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=10
+    [trained] F_held=0.996912 min=0.993873 spread=3.444e-03 occ99=62% of own mask (tra; 40.9 MHz) peak=14.2 maxx=36.1/40
+[6/12] gate=X seed=44 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=14
+    [trained] F_held=0.997031 min=0.993506 spread=3.996e-03 occ99=45% of own mask (tra; 30.0 MHz) peak=16.9 maxx=14.1/40
+[7/12] gate=X seed=42 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=22
+    [trained] F_held=0.997819 min=0.994583 spread=3.634e-03 occ99=51% of own mask (tra; 33.6 MHz) peak=19.8 maxx=32.3/40
+[8/12] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=26
+    [trained] F_held=0.997748 min=0.991914 spread=6.628e-03 occ99=47% of own mask (tra; 30.9 MHz) peak=22.1 maxx=23.6/40
+[9/12] gate=X seed=44 deriv=1e-05_amp=8e-05_disc=0.5_ampmax=30
+    [trained] F_held=0.997089 min=0.993044 spread=4.598e-03 occ99=43% of own mask (tra; 28.2 MHz) peak=19.2 maxx=19.2/40
+[10/12] gate=X seed=42 deriv=1e-05_amp=8e-05_disc=0.5_ramp=40
+    [trained] F_held=0.998157 min=0.998023 spread=1.749e-04 occ99=47% of own mask (tra; 30.9 MHz) peak=19.6 maxx=23.7/40
+[11/12] gate=X seed=43 deriv=1e-05_amp=8e-05_disc=0.5_ramp=50
+    [trained] F_held=0.997155 min=0.994676 spread=2.859e-03 occ99=44% of own mask (tra; 29.1 MHz) peak=20.8 maxx=32.3/40
+[12/12] gate=X seed=44 deriv=1e-05_amp=8e-05_disc=0.5_ramp=60
+    [trained] F_held=0.996540 min=0.989288 spread=8.380e-03 occ99=41% of own mask (tra; 27.3 MHz) peak=16.4 maxx=22.3/40
+
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/tables/penalty_sweep_X_ofat_ramp_shard3of4.csv
+Wrote /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/results/penalty_sweep_X_ofat_ramp_shard3of4.json
+Total wall time: 316.4 min

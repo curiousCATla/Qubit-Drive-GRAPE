@@ -1,0 +1,16 @@
+case,channels,F_pro
+gate alone,decay,0.9670594096925793
+gate alone,DGRAPE all_ch,0.9573326335039707
+gate alone,Shirol full set,0.9599282078558464
+gate + idle 0.8 us,decay,0.94653288298463
+gate + idle 0.8 us,DGRAPE all_ch,0.9349606268021484
+gate + idle 0.8 us,Shirol full set,0.9381871357316609
+gate + QEC teeth 0.8 us,decay,0.944905615545756
+gate + QEC teeth 0.8 us,DGRAPE all_ch,0.9333058800141095
+gate + QEC teeth 0.8 us,Shirol full set,0.936529010703809
+gate + decay tail (t2),decay,0.9702722778949927
+gate + decay tail (t2),DGRAPE all_ch,0.9576028339632314
+gate + decay tail (t2),Shirol full set,0.9603635025519658
+gate + decay tail (z),decay,0.9702416898652617
+gate + decay tail (z),DGRAPE all_ch,0.9575635467282222
+gate + decay tail (z),Shirol full set,0.9603255321588862

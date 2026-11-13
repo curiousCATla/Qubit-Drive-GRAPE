@@ -1,0 +1,105 @@
+{
+  "gate": "X",
+  "variant": "est_err",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 6,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "n_stages": 2,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0,
+        0.3,
+        0.0,
+        0.0
+      ],
+      "cost": 0.2972860842551619,
+      "nit": 2000,
+      "nfev": 2171,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 6405.949983596802,
+      "terms": {
+        "20": {
+          "c1": 0.023322589243765957,
+          "c2": 0.25267796784031915,
+          "c3": 0.011013486833029051,
+          "c4": 0.0001623658087777159,
+          "cerr": 0.06610714627730496,
+          "c5": 0.00038502899844117147,
+          "c6": 13817.61634775139,
+          "cleak": 0.23766202211129192
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "cost": 0.020659004278874363,
+      "nit": 2000,
+      "nfev": 2177,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 6031.662334442139,
+      "terms": {
+        "20": {
+          "c1": 0.00036681424594775525,
+          "c2": 0.20289832645400674,
+          "c3": 0.1427159784818505,
+          "c4": 2.357387525931579e-06,
+          "cerr": 0.1011182329407797,
+          "c5": 0.0007553177762115334,
+          "c6": 10817.63861525011,
+          "cleak": 0.19141973207740134
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.138487277183845,
+    "max_eps_transmon_rad_per_us": 25.145078470435088,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0008065783400537988,
+      "transmon": 0.0013283975794530797
+    },
+    "endpoint_rel_to_mid": [
+      0.017487541196283013,
+      0.01661504430252468
+    ]
+  },
+  "base_variant": "est",
+  "w_err": 0.3,
+  "w_dn": 0.0,
+  "w_smooth": 0.0,
+  "w_err_s2": 0.0
+}

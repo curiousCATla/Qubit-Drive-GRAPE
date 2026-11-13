@@ -1,0 +1,88 @@
+{
+  "gate": "X",
+  "variant": "est",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 0,
+  "amp0": 20.0,
+  "hard_bound": 120.0,
+  "maxiter": 1000,
+  "init": {
+    "path": "/Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est.npy",
+    "roundtrip_err": 1.7763568394002505e-14,
+    "max_abs_preimage": 81.0350970290096
+  },
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": 0.2623619797827499,
+      "nit": 1000,
+      "nfev": 1071,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 2649.3389806747437,
+      "terms": {
+        "20": {
+          "c1": 0.03434319057206908,
+          "c2": 0.2532925135606342,
+          "c3": 0.007236575861056312,
+          "c4": 5.799869084277672e-05
+        }
+      },
+      "max_abs_preimage": 120.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0
+      ],
+      "cost": 0.027406768706056992,
+      "nit": 1000,
+      "nfev": 1103,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 2796.2197740077972,
+      "terms": {
+        "20": {
+          "c1": 0.0009627831841961254,
+          "c2": 0.26437639248033584,
+          "c3": 0.12033032966445996,
+          "c4": 6.346273827335649e-06
+        }
+      },
+      "max_abs_preimage": 120.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.146132075360327,
+    "max_eps_transmon_rad_per_us": 25.178601860614183,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.006963559938705089,
+      "transmon": 0.002487930425072718
+    },
+    "endpoint_rel_to_mid": [
+      0.03963454472599657,
+      0.040602922389561764
+    ]
+  }
+}

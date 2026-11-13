@@ -13,7 +13,7 @@ It is the EsT analogue of `analysis/penalty_sweep.py`: a thin orchestration
 layer over the existing trainer, with the same per-item cache + `--shard I/K`
 / `--merge` split so seeds can run as concurrent processes.
 
-The screening idea is section 11 of `penalty_optimization.ipynb`
+The screening idea is section 11 of `notebooks/penalty_optimization.ipynb`
 ("does a cheap screen preserve the ranking?"): a partial run already settles the
 top of the ranking, so it is cheap to sample many starts and commit to the
 winner. The selection is optimistic by construction -- see SELECTION_BIAS_NOTE

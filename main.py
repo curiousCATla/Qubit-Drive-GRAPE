@@ -3,7 +3,7 @@
 main.py
 
 Standalone CLI entry point for the GRAPE logical-gate optimization campaign
-(the non-validation half of experiments.ipynb): pick a gate, optimize its
+(the non-validation half of notebooks/grape_experiments.ipynb): pick a gate, optimize its
 control pulse, save it, and optionally produce diagnostic plots and a
 decoherence-limited fidelity comparison.
 

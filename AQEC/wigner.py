@@ -1,5 +1,5 @@
 """
-Wigner function of a Fock-basis density matrix, for PRX Fig. 2(d) (aqec_experiments.ipynb §10.5).
+Wigner function of a Fock-basis density matrix, for PRX Fig. 2(d) (notebooks/aqec_experiments.ipynb §10.5).
 
 Closed form (Cahill & Glauber), exact for any finite n_c -- no displacement operator, so
 no truncation error from displacing a truncated state:

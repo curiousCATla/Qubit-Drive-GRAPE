@@ -1,0 +1,112 @@
+{
+  "gate": "H",
+  "seed": 3,
+  "maxiter": 500,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "nit_stage1": 500,
+  "nit_stage2": 500,
+  "seconds": 781.2335669994354,
+  "wall_seconds": 783.4590830802917,
+  "u_path": "pulses/est/u_H_est_seed3.npy",
+  "x_path": "pulses/est/x_H_est_seed3.npy",
+  "F1_trained": 0.9993004770286823,
+  "F_ET_trained": 0.7723393254181993,
+  "C3_trained": 0.11118581646632769,
+  "F_heldout_mean": 0.9993006195091514,
+  "F_heldout_spread": 6.866214063983023e-07,
+  "heldout_converged": true,
+  "trunc_scan": {
+    "16": 0.999301164230622,
+    "18": 0.9993004776092156,
+    "20": 0.9993004770286823,
+    "22": 0.9993004848818474,
+    "24": 0.9993004854052421,
+    "28": 0.9993004854188303
+  },
+  "info": {
+    "gate": "H",
+    "variant": "est",
+    "n_t": 3,
+    "dt": 0.001,
+    "N": 1000,
+    "trunc_list": [
+      20
+    ],
+    "w_amp": 1.0,
+    "seed": 3,
+    "amp0": 20.0,
+    "hard_bound": 60.0,
+    "maxiter": 500,
+    "init": null,
+    "band_mhz": [
+      -50.0,
+      50.0
+    ],
+    "ramp_ns": 48.0,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "pipeline": "eigh_adjoint",
+    "stages": [
+      {
+        "stage": 1,
+        "weights": [
+          1.0,
+          0.7,
+          7.0,
+          1.0
+        ],
+        "cost": 0.22583280743198123,
+        "nit": 500,
+        "nfev": 534,
+        "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+        "seconds": 387.97854495048523,
+        "terms": {
+          "20": {
+            "c1": 0.04367219116899346,
+            "c2": 0.18873192753923518,
+            "c3": 0.007148991886238693,
+            "c4": 5.323781852277645e-06
+          }
+        },
+        "max_abs_preimage": 60.0
+      },
+      {
+        "stage": 2,
+        "weights": [
+          1.0,
+          0.1,
+          0.0,
+          1.0
+        ],
+        "cost": 0.02346704661196937,
+        "nit": 500,
+        "nfev": 555,
+        "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+        "seconds": 393.2550220489502,
+        "terms": {
+          "20": {
+            "c1": 0.0006995229713145923,
+            "c2": 0.22766067458180073,
+            "c3": 0.11118581646632769,
+            "c4": 1.456182474703137e-06
+          }
+        },
+        "max_abs_preimage": 59.99945403779105
+      }
+    ],
+    "constraints": {
+      "max_eps_cavity_rad_per_us": 25.127582181146497,
+      "max_eps_transmon_rad_per_us": 25.168155637736334,
+      "eps_max_rad_per_us": 25.132741228718345,
+      "amplitude_cap_satisfied": true,
+      "out_of_band_fraction": {
+        "cavity": 0.005348892162245562,
+        "transmon": 0.00038019719462760963
+      },
+      "endpoint_rel_to_mid": [
+        0.021187791065025025,
+        0.02137760793793498
+      ]
+    }
+  }
+}

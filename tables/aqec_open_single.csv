@@ -1,0 +1,49 @@
+label,duration_us,channels,protocol,F_pro,n_c
+aqec_open_T10_w,1.0,decay,real AQEC (as is),0.9342687434096798,24
+aqec_open_T10_w,1.0,decay,real AQEC (leftover transmon reset first),0.9338693560938807,24
+aqec_open_T10_w,1.0,decay,"real AQEC, no readout window",0.9593531528926091,24
+aqec_open_T10_w,1.0,decay,"real AQEC, closed system (gate and step)",0.9987805879804614,24
+aqec_open_T10_w,1.0,decay,"ideal AQEC, same length",0.9630742781833719,24
+aqec_open_T10_w,1.0,decay,"idle, same length, Kerr undone",0.921464978141095,24
+aqec_open_T15_w,1.5,decay,real AQEC (as is),0.935077190688392,24
+aqec_open_T15_w,1.5,decay,real AQEC (leftover transmon reset first),0.9337921853771198,24
+aqec_open_T15_w,1.5,decay,"real AQEC, no readout window",0.9605036011220283,24
+aqec_open_T15_w,1.5,decay,"real AQEC, closed system (gate and step)",0.9993281885226784,24
+aqec_open_T15_w,1.5,decay,"ideal AQEC, same length",0.9624734072179191,24
+aqec_open_T15_w,1.5,decay,"idle, same length, Kerr undone",0.9114401986724046,24
+aqec_open_T20_s42,2.0,decay,real AQEC (as is),0.9238083961528605,24
+aqec_open_T20_s42,2.0,decay,real AQEC (leftover transmon reset first),0.9232787015965136,24
+aqec_open_T20_s42,2.0,decay,"real AQEC, no readout window",0.948611711245291,24
+aqec_open_T20_s42,2.0,decay,"real AQEC, closed system (gate and step)",0.9987281969493298,24
+aqec_open_T20_s42,2.0,decay,"ideal AQEC, same length",0.9617620222634271,24
+aqec_open_T20_s42,2.0,decay,"idle, same length, Kerr undone",0.9015366100229636,24
+aqec_open_T20_w,2.0,decay,real AQEC (as is),0.923358495300332,24
+aqec_open_T20_w,2.0,decay,real AQEC (leftover transmon reset first),0.9219221681963194,24
+aqec_open_T20_w,2.0,decay,"real AQEC, no readout window",0.9485991306073469,24
+aqec_open_T20_w,2.0,decay,"real AQEC, closed system (gate and step)",0.9994256183281163,24
+aqec_open_T20_w,2.0,decay,"ideal AQEC, same length",0.9617620222634271,24
+aqec_open_T20_w,2.0,decay,"idle, same length, Kerr undone",0.9015366100229636,24
+aqec_open_T10_w,1.0,all,real AQEC (as is),0.9150408046327676,24
+aqec_open_T10_w,1.0,all,real AQEC (leftover transmon reset first),0.9155661288413232,24
+aqec_open_T10_w,1.0,all,"real AQEC, no readout window",0.9425700527806177,24
+aqec_open_T10_w,1.0,all,"real AQEC, closed system (gate and step)",0.9987805879804614,24
+aqec_open_T10_w,1.0,all,"ideal AQEC, same length",0.9502918510722781,24
+aqec_open_T10_w,1.0,all,"idle, same length, Kerr undone",0.9067143174703077,24
+aqec_open_T15_w,1.5,all,real AQEC (as is),0.9092611251954115,24
+aqec_open_T15_w,1.5,all,real AQEC (leftover transmon reset first),0.9090467606475376,24
+aqec_open_T15_w,1.5,all,"real AQEC, no readout window",0.9368820890733456,24
+aqec_open_T15_w,1.5,all,"real AQEC, closed system (gate and step)",0.9993281885226784,24
+aqec_open_T15_w,1.5,all,"ideal AQEC, same length",0.9484124922743706,24
+aqec_open_T15_w,1.5,all,"idle, same length, Kerr undone",0.895634066535167,24
+aqec_open_T20_s42,2.0,all,real AQEC (as is),0.9026218892002612,24
+aqec_open_T20_s42,2.0,all,real AQEC (leftover transmon reset first),0.9029695346343176,24
+aqec_open_T20_s42,2.0,all,"real AQEC, no readout window",0.9297528166407223,24
+aqec_open_T20_s42,2.0,all,"real AQEC, closed system (gate and step)",0.9987281969493298,24
+aqec_open_T20_s42,2.0,all,"ideal AQEC, same length",0.9464365102608863,24
+aqec_open_T20_s42,2.0,all,"idle, same length, Kerr undone",0.8847052756056829,24
+aqec_open_T20_w,2.0,all,real AQEC (as is),0.8948048675681548,24
+aqec_open_T20_w,2.0,all,real AQEC (leftover transmon reset first),0.894428137570383,24
+aqec_open_T20_w,2.0,all,"real AQEC, no readout window",0.922050722944539,24
+aqec_open_T20_w,2.0,all,"real AQEC, closed system (gate and step)",0.9994256183281163,24
+aqec_open_T20_w,2.0,all,"ideal AQEC, same length",0.9464365102608863,24
+aqec_open_T20_w,2.0,all,"idle, same length, Kerr undone",0.8847052756056829,24

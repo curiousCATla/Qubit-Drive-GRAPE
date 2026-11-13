@@ -1,0 +1,11 @@
+channels,stage,time_us,F_pro,P_code,P_error,P_e,P_f,gate_pulse,n_c,n_r,tau1_us,tau2_us
+decay,after the gate,1.1,0.9670594096925791,0.9701116226224473,0.024325931741887123,0.006698734638597178,3.5191872693314825e-08,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,step 0: leftover transmon excitation reset,1.1,0.968107473856817,0.9701116226224473,0.024325931741887123,0.0,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,"step 1: 1 us lossy idle, drift phase undone",2.1,0.9470556851875307,0.9495944809216236,0.04474515953499417,0.0,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,step 2a: ideal map (scored with an instant reset),2.1,0.9894174472779952,0.9943396404566178,-1.2429475725968955e-19,0.04474515953499417,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,step 2b: 1.2 us readout window + reset,3.3,0.9630742781833719,0.968526170523121,0.025444406623245243,0.0,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,after the gate,1.1,0.9573326335039702,0.9623569863279919,0.02837790119642189,0.010386270646040415,2.714596317756716e-05,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,step 0: leftover transmon excitation reset,1.1,0.9592097232277523,0.9623569863279919,0.02837790119642189,0.0,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,"step 1: 1 us lossy idle, drift phase undone",2.1,0.9357779077807516,0.9397321051096899,0.04858382806757201,0.0003423850854686328,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,step 2a: ideal map (scored with an instant reset),2.1,0.9794283685015361,0.9880577837555832,4.626144678471853e-20,0.0485691429812323,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,step 2b: 1.2 us readout window + reset,3.3,0.9502918510722781,0.9595207524084832,0.025394678746981047,0.0,0.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The training grid of FWM_tails_ge.ipynb §4 (decisions of 2026-11-03): gates EsT, Ord x tail 1, 2, 3 us x
+The training grid of notebooks/FWM_tails_ge.ipynb §4 (decisions of 2026-11-03): gates EsT, Ord x tail 1, 2, 3 us x
 mixing cap 0.1, 0.2 x starts gertler, zero (zero with noise 0.05 of each cap, seed 1) = 24 runs of
 DGRAPE/train_fwm_tail_ge.py, 600 iterations, at most --parallel at a time (longest first), each with
 3 joblib jobs and OPENBLAS_NUM_THREADS=1. Logs and outputs in --outdir (default ~/fwm_runs/tailge).

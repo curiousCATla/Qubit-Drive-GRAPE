@@ -112,13 +112,13 @@ different device and code. Full details in `EST/README.md`.
   `est_err_dn`, `est_all`, `est_lk` (`--w-err`, `--w-dn`, `--w-smooth`, `--w-leak`, same weight
   in every stage; only `est_lk` builds 8-tuples and writes `w_leak` to its sidecar).
   **`WEIGHT_VARIANTS`** change only the `est` weights: `est_wB` = (1,1,7)/(1,0.2,0) (w2 raised in
-  both stages), `est_experiments.ipynb` Appendix B, X seed 0, tag `seed0`, against a control trained
+  both stages), `notebooks/est_experiments.ipynb` Appendix B, X seed 0, tag `seed0`, against a control trained
   alongside it (`est_appB_ctrl_seed0`). Result: more transparent after stage 1, but stage 2 gives it
   back and the gate stays open (F1 0.9956 vs 0.9990); L(T) 0.55 vs 0.34. **Cross-machine caveat**:
   the same `est` seed-0 command on the Windows PC (OpenBLAS) gives a different pulse from the Mac's
   `est_appA_seed0` (max|du| 47 rad/us), so compare only runs trained on one machine.
   `EST/smoke_new_terms.py` / `EST/compare_new_terms.py` are the scan and the ablation. **Both now
-  run SINGLE PHASE** (`N_STAGES = 1`) for `est_optimization.ipynb` §2 (X) — see the single-phase entry
+  run SINGLE PHASE** (`N_STAGES = 1`) for `notebooks/est_optimization.ipynb` §2 (X) — see the single-phase entry
   at the end of this bullet for the live configuration and results. **The rest of this paragraph,
   down to that entry, is the FROZEN TWO-STAGE record** (git 4243344): its tables, tags and numbers
   are still on disk and still correct for what they are, but no code path produces them any more.
@@ -126,7 +126,7 @@ different device and code. Full details in `EST/README.md`.
   {0.01, 0.1, 0.3, 0.5, 1, 3} (extended below 0.3 after the first six-seed scan) and w5 {1, 3, 6, 10, 15, 30}, into `tables/est_newterms_smoke_X_6seeds.csv`;
   its selection rule (`apply_rule`) needs the gate on every seed and compares seed means.
   Each cell scores BOTH readings of Eq. 8: `eta_avg_mean`/`eta_avg_tail` (mean over the six
-  cardinals -- what `est_optimization.ipynb` §2 plots throughout) and `eta0_mean`/`eta0_tail`
+  cardinals -- what `notebooks/est_optimization.ipynb` §2 plots throughout) and `eta0_mean`/`eta0_tail`
   (|0_L> alone, the paper's Fig. 1f state). `apply_rule`'s conditions read F_err_T / c5 /
   delta_qec_mean / F_ET only, so adding the columns left the picks unchanged (w_err 0.1
   pre-registered, 0.01 revised; w5 10). The two readings are NOT interchangeable: on the
@@ -134,7 +134,7 @@ different device and code. Full details in `EST/README.md`.
   eta0 reports 0.3 as the one improvement.
   Seed 6 reuses the original single-seed scan's untagged `*_smoke500_w<w>` files, whose table
   `est_newterms_smoke_X_seed6.csv` is frozen — new cells are tagged `smoke500_seed<s>_w<w>`.
-  Measured (six seeds, 500 it/stage, `est_optimization.ipynb` Figure 1a): 6/72 runs **park** at
+  Measured (six seeds, 500 it/stage, `notebooks/est_optimization.ipynb` Figure 1a): 6/72 runs **park** at
   F1=1/3 although all six controls reach the gate, so exclude parked seeds before averaging (a
   parked pulse reads F_ET ~0.997, L(T) ~0). On gate-reaching seeds C_err needs w_err >= 0.1:
   L(T) 0.65 -> 0.55 at 0.01, 0.061 at 0.1, 0.013-0.022 at 0.3-3. Its F_ET cost is **not
@@ -155,7 +155,7 @@ different device and code. Full details in `EST/README.md`.
   Keeping w3=7 in stage 2 (`est_c3s2`, `est_c3s2_d2`) does **not** give a gate (F1 ~0.98 at
   maxiter; 7*C3 dominates stage 2) and front-loads the drive instead. C3 flattens state
   *speed*, not the waveform.
-  **`est_optimization.ipynb` is single-stage throughout** (2026-10 rework: §1 shared Methods,
+  **`notebooks/est_optimization.ipynb` is single-stage throughout** (2026-10 rework: §1 shared Methods,
   §2 X results, §3 T results, §4 conclusions). **T study (§3): `EST/drive_shape_t.py`** with
   the variant **`est_sm`** (C6 alone, every stage; `--w-smooth` REQUIRED, `EXT_REQUIRE_W_SMOOTH`).
   Seed 1, 2000 it, w6 {5e-6, 2e-5, 1e-4}, tags `sp2000_seed1_w<w>`; tables
@@ -230,7 +230,7 @@ different device and code. Full details in `EST/README.md`.
   0.9438), mean L 0.242 -> 0.169, F_ET 0.742 -> 0.822, mean eta 0.244 -> 0.167, mean Delta_QEC
   0.188 -> 0.147; no mid-gate bump (L <= 0.34 before 0.8 T, where est_err peaks at 0.65) but L(T)
   0.568, F_err(T) 0.227: C_L and C_err fix opposite ends. `est_err_lk` (both) is not run.
-- **`--w2` / `EST/tune_c2_c5.py` (`est_optimization.ipynb` §5, "Phase 1")** — `--w2` on
+- **`--w2` / `EST/tune_c2_c5.py` (`notebooks/est_optimization.ipynb` §5, "Phase 1")** — `--w2` on
   `train_est_eigh.py` replaces the C2 weight of the single phase; it **raises** with `--stages 2`
   (which stage would be ambiguous), `None` is bit-identical, the sidecar gets `w2_override` only when
   set (`StageWeightScheduleTest.test_w2_override_*`). The campaign: X, `est_dn`, 1000 it, single
@@ -249,7 +249,7 @@ different device and code. Full details in `EST/README.md`.
   0.6 -> 1.0, mean F1 -0.011 per +0.1); w5 in 2-4 has no visible effect on the score. Run-to-run F1
   noise (same seed and w2, different w5) is ~0.009, about the 0.01 bar. Post hoc only: w2 = 0.8,
   w5 = 3 / 3.5 gives score 0.93 / 0.91 at mean dF1 -0.004. The bar change is the user's call.
-- **Per-stage overrides / `EST/c2c5_two_stage.py` (`est_optimization.ipynb` §6, "Phase 2")** —
+- **Per-stage overrides / `EST/c2c5_two_stage.py` (`notebooks/est_optimization.ipynb` §6, "Phase 2")** —
   `--w2-s2` (stage-2 C2 weight), `--w-dn-s2` (stage-2 C5 weight, dn variants only) and
   `--maxiter-s1` (stage-1 iterations; `--maxiter` is then stage 2) on `train_est_eigh.py`, all
   `--stages 2` only. With `--w2-s2` or `--w-dn-s2` set, `--w2` means the STAGE-1 C2 weight; without
@@ -271,7 +271,7 @@ different device and code. Full details in `EST/README.md`.
   0.9991 (not resolved) but only 6/12 tuned gates close (>= 0.999) against 10/12 controls. At the
   end of stage 1 the tuned arm already led only on Delta_QEC, so §5's L/eta lead was noise.
   Tuned seed 6 reaches Fock 14 (n_c 16 reads 0.004 low; 20-28 agree to 1e-5).
-- **`--w-err-s2` / `EST/err_two_stage.py` (`est_optimization.ipynb` §7)** — `--w-err-s2` replaces the C_err weight
+- **`--w-err-s2` / `EST/err_two_stage.py` (`notebooks/est_optimization.ipynb` §7)** — `--w-err-s2` replaces the C_err weight
   of stage 2 (err variants only, `--stages 2` only; `None` bit-identical; sidecar key `w_err_s2` only when set;
   `StageWeightScheduleTest.test_w_err_s2_override`). The run (user's choice, 2026-10-26): X, seed 0 (est_experiments
   Figure 2a's), cold start, `est_err --w-err 0.3 --w-err-s2 0 --maxiter 2000`, i.e. (1,0.7,7,1,0.3,0,0) then
@@ -344,7 +344,7 @@ different device and code. Full details in `EST/README.md`.
   **`est` weights** (1,0.7,7)/(1,0.1,0), so a paper-vs-repo pair differs in cost form only;
   only form variants write `cost_form` to the sidecar. `PaperFormTest` in
   `EST/test_grape_eigh.py` checks it against JAX autodiff and finite differences.
-  Measured, the FAIR comparison (`est_experiments.ipynb` Appendix A, rewritten 2026-10-12): X,
+  Measured, the FAIR comparison (`notebooks/est_experiments.ipynb` Appendix A, rewritten 2026-10-12): X,
   eigh, `est` vs `est_paperform` at equal weights, seeds 0 and 6, 2000 it/stage, tags
   `appA_seed{0,6}`, tables `tables/est_appA_X_*.csv`. The repo-form reruns reproduce
   `u_X_est_eigh` / `u_X_est_best2000` exactly (training here is deterministic). Verdict rule:

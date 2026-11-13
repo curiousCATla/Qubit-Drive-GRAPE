@@ -1,5 +1,5 @@
 """
-FWM tails with Gertler-style combs (FWM_tails_ge.ipynb). An X gate (EsT or Ord, both trained closed,
+FWM tails with Gertler-style combs (notebooks/FWM_tails_ge.ipynb). An X gate (EsT or Ord, both trained closed,
 DGRAPE/est_gate.py) runs as trained, then a TAIL of two combs acts on its mixed output with the cavity
 drive off, scored against the ideal X at the end of the tail. Same chip (AQEC/device.py), code, jump
 operators and Taylor step map as DGRAPE/model.py, DGRAPE/lindblad_np.py and DGRAPE/fwm.py; none of
@@ -69,7 +69,7 @@ from DGRAPE.model import _QUIET, E, G, Model, _flat_sandwich, index, monomial, o
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PULSE_DIR = os.path.join(REPO_ROOT, "pulses", "dgrape")
 
-# Recipe (FWM_tails_ge.ipynb, decisions of 2026-11-03)
+# Recipe (notebooks/FWM_tails_ge.ipynb, decisions of 2026-11-03)
 DT = 0.002                       # us
 TAIL_US_GRID = (1.0, 2.0, 3.0)   # trained tail lengths
 CAP_M_GRID = (0.1, 0.2)          # trained mixing-comb caps
@@ -87,7 +87,7 @@ GERTLER_LAMBDA_OVER_OMEGA = 27.0 / 88.0     # Gertler's measured lambda : Omega
 PENALTIES = {"amp": 8e-5, "deriv": 1e-5}    # in pre-image units (fwm_tail.TAIL_PENALTIES / S^2)
 GATES = {"EsT": os.path.join(PULSE_DIR, "u_X_est_err_closed_s24.npy"),
          "Ord": os.path.join(PULSE_DIR, "u_X_ord_closed.npy")}
-# The best Shirol-comb tail per gate (FWM_tails.ipynb §6, held out at n_c 28): reference lines only.
+# The best Shirol-comb tail per gate (notebooks/FWM_tails.ipynb §6, held out at n_c 28): reference lines only.
 SHIROL_BEST = {"EsT": {"tail_us": 0.8, "gain": 0.0032}, "Ord": {"tail_us": 1.0, "gain": -0.0058}}
 
 
@@ -567,7 +567,7 @@ class TailGEObjective:
 def frame_tracked_fidelity(R, T, w, n_c, n_r=2, levels=2, n_grid=721):
     """(F, theta): F_pro after the best FREE cavity-frame rotation exp(i theta n_a) of the outputs (a
     frame update, as an experiment tracks the deterministic Stark and Kerr rotation of the storage;
-    FWM_tails.ipynb §8's Kerr decoding is the same idea). A grid over [-pi, pi), refined by a bounded
+    notebooks/FWM_tails.ipynb §8's Kerr decoding is the same idea). A grid over [-pi, pi), refined by a bounded
     1-D search. Training never uses it: decision of 2026-11-03, report it next to F_pro."""
     from scipy.optimize import minimize_scalar
     n = np.real(np.diag(ge_operators(n_c, n_r, levels)["n_a"]))

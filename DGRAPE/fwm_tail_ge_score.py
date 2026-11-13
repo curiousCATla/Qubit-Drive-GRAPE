@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Held-out scoring of trained Gertler-style tails (FWM_tails_ge.ipynb §5-§6). Forward only.
+Held-out scoring of trained Gertler-style tails (notebooks/FWM_tails_ge.ipynb §5-§6). Forward only.
 
 Each tail (b4_<tag>.npy, with <tag>.json for its gate, length and cap) is scored with fwm_tail_ge.score
 under the training condition and under conditions it was not trained on:

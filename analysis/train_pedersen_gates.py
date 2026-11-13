@@ -6,12 +6,12 @@ fidelity objective (numpy adjoint, no JAX) in place of the production
 2-state coherent objective, and compare against a freshly-trained coherent
 baseline under the identical recipe/budget.
 
-Background: experiments.ipynb Section 12 only benchmarked the COST of a
+Background: notebooks/grape_experiments.ipynb Section 12 only benchmarked the COST of a
 single Pedersen-fidelity gradient call (numpy adjoint: ~1.01x the current
 training objective's own cost) on the already-trained u_X_main.npy pulse --
 it never actually trained anything. This script does the real thing: for
 each operation, run core.optimizer.optimize_multi_state_pulse() twice under
-the exact experiments.ipynb OPTIMIZATION_RECIPE (trunc_list=[22,24,26],
+the exact notebooks/grape_experiments.ipynb OPTIMIZATION_RECIPE (trunc_list=[22,24,26],
 penalties, bands, hard_amp_limit, n_jobs=3, cold start, maxiter=1500 =
 PRODUCTION_MAXITER) -- once with coherent_fidelity_multi_state (a FRESH
 baseline, timed the same way, since no historical timing exists anywhere for
@@ -123,7 +123,7 @@ CROSS_GATES = ["enc", "dec"]
 
 N_STEPS = 550
 
-# Exactly experiments.ipynb's OPTIMIZATION_RECIPE (cell a17d42af) +
+# Exactly notebooks/grape_experiments.ipynb's OPTIMIZATION_RECIPE (cell a17d42af) +
 # PRODUCTION_MAXITER (the value Section 5's own code uses when
 # RUN_OPTIMIZATION=True, not a rough estimate).
 OPTIMIZATION_RECIPE = dict(
@@ -145,7 +145,7 @@ TRAINED_TRUNC = (22, 24, 26)
 
 # ============================================================
 # Pedersen fidelity objective -- per-operation probe states, gate-specific
-# reduction. Generalizes experiments.ipynb cell 4cb95b5c's
+# reduction. Generalizes notebooks/grape_experiments.ipynb cell 4cb95b5c's
 # pedersen_fidelity_and_grad_numpy (X-only, want_grad=True only, module-scope
 # globals) to any operation and to optimize_multi_state_pulse's real
 # fidelity_fn contract:

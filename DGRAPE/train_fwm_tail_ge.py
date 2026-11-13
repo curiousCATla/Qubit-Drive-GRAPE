@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Training of Gertler-style FWM tails (FWM_tails_ge.ipynb §4): an X gate (EsT or Ord, --gate) runs as
+Training of Gertler-style FWM tails (notebooks/FWM_tails_ge.ipynb §4): an X gate (EsT or Ord, --gate) runs as
 trained, then a tail of the transmon comb eps_T(t) and the mixing comb xi_M(t) (DGRAPE/fwm_tail_ge.py)
 is optimized by L-BFGS-B on its pre-image x (N, 4), scored against the ideal X at the end of the tail.
 

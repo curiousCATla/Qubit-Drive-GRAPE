@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Held-out scoring of trained FWM tails (FWM_tails.ipynb §7 step 6 and §8). Forward only.
+Held-out scoring of trained FWM tails (notebooks/FWM_tails.ipynb §7 step 6 and §8). Forward only.
 
 Each tail (eta_<tag>.npy, with <tag>.json for its gate, gate_n_c and length) is scored with
 fwm_tail.score under the training condition and under conditions it was not trained on:
@@ -13,6 +13,8 @@ fwm_tail.score under the training condition and under conditions it was not trai
     stark_off    reliance on the Stark model     mix1, mix2   pump-mixing a'r' term on
     closed, loss_only, no_loss                   channel split: no jumps / photon loss only / all
                                                  but photon loss (in the gate and the tail)
+    shirol, shirol_nc_a, shirol_nc_b             Shirol's full channel set (AQEC Table 5, gate and tail), at
+                                                 n_c 16 (cut) and at the two held-out truncations
 
 Runs with a "target" in their json (train_fwm_tail.py --target, e.g. I after the idle pulse) are scored
 against that gate. Every gain is against references scored in the SAME condition: "alone" (the gate, no tail) and
@@ -62,6 +64,9 @@ CONDITIONS = {
     "closed": {"keep": set()},
     "loss_only": {"keep": {"a"}},
     "no_loss": {"keep": DECAY - {"a"}},
+    "shirol": {"noise": "shirol"},                    # Shirol's full set (DGRAPE.model.shirol_collapse_ops)
+    "shirol_nc_a": None,                              # the same at the held-out truncations, no cut
+    "shirol_nc_b": None,
 }
 
 
@@ -74,16 +79,19 @@ def gate_name(gate_pulse):
         return "d2"
     base = os.path.basename(gate_pulse)
     return {"u_X_est_closed.npy": "EsT", "u_X_ord_closed.npy": "Ord",
-            "u_X_est_err_closed_s24.npy": "EsT-good", "u_idle_X_duration.npy": "idle"}.get(base, base)
+            "u_X_est_err_closed_s24.npy": "EsT-good", "u_idle_X_duration.npy": "idle",
+            "u_H_est_err_closed_T2_s17.npy": "EsT-H"}.get(base, base)
 
 
 def condition_kwargs(cond, gate_pulse, gate_n_c, target="X"):
     """ft.score keyword arguments (minus eta) for one condition."""
     kw = {"n_c": N_C_TRAIN, "n_r": 2, "gate_n_c": gate_n_c, "gate": target,
           "pulse": None if gate_pulse == "d2" else np.load(os.path.join(REPO_ROOT, gate_pulse))}
-    if cond in ("nc_a", "nc_b"):
-        kw["n_c"] = HELD_OUT_NC[gate_kind(gate_pulse)][0 if cond == "nc_a" else 1]
+    if cond in ("nc_a", "nc_b", "shirol_nc_a", "shirol_nc_b"):
+        kw["n_c"] = HELD_OUT_NC[gate_kind(gate_pulse)][0 if cond.endswith("nc_a") else 1]
         kw["gate_n_c"] = None
+        if cond.startswith("shirol"):
+            kw["noise"] = "shirol"
     else:
         kw.update(CONDITIONS[cond])
     return kw

@@ -6,7 +6,7 @@ AQEC/master_equation.py (which fixes n_r = 2; here n_r is a parameter so the rea
 embedding can be checked against n_r = 1).
 
 FRAME. Rotate at the LINEAR mode frequencies omega_a, omega_q, omega_r only. This is
-frame (ii) of aqec_experiments.ipynb §8.2 except that the anharmonicity stays in the
+frame (ii) of notebooks/aqec_experiments.ipynb §8.2 except that the anharmonicity stays in the
 Hamiltonian, because the transmon drive is referenced to omega_q (so |f> sits at -alpha):
 
     H_d = -alpha |f><f| - chi_ge |e><e| n_a - chi_gf |f><f| n_a - chi_qr |e><e| n_r
@@ -25,7 +25,8 @@ The readout is never driven.
 DISSIPATORS. Default = decay only, AQEC Table 5's 'yes' rows:
     sqrt(kappa_a) a,  sqrt(kappa_r) r,  sqrt(1/T1_ge) |g><e|,  sqrt(1/T1_ef) |e><f|
 Opt-in: pure dephasing (transmon from T2*_ge and T2*_gf, storage from T2a) and thermal
-heating (transmon g->e, storage a'), rates from Table I.
+heating (transmon g->e, storage a'), rates from Table I. noise="shirol" (Model, collapse_ops)
+instead uses Shirol's full set, AQEC Table 5 (shirol_collapse_ops).
 """
 
 import numpy as np
@@ -135,8 +136,11 @@ def rates():
     }
 
 
-def collapse_ops(n_c, n_r=2, decay=True, dephasing=False, heating=False, scale=1.0):
+def collapse_ops(n_c, n_r=2, decay=True, dephasing=False, heating=False, scale=1.0, noise="dgrape"):
     """List of (name, L_k) jump operators, rates included.
+
+    noise="shirol" ignores decay/dephasing/heating and returns Shirol's full set instead
+    (shirol_collapse_ops: AQEC Table 5, every channel on). The default "dgrape" is the list below.
 
     decay      -- sqrt(kappa_a) a, sqrt(kappa_r) r, sqrt(gamma_ge)|g><e|, sqrt(gamma_ef)|e><f|
                   (identical to AQEC.master_equation.collapse_operators(n_c, 'split',
@@ -148,6 +152,10 @@ def collapse_ops(n_c, n_r=2, decay=True, dephasing=False, heating=False, scale=1
     heating    -- sqrt(up_q)|e><g|, sqrt(up_a) a'
     scale      -- multiplies every RATE (scale=0 gives the closed system, for tests)
     """
+    if noise == "shirol":
+        return shirol_collapse_ops(n_c, n_r, scale)
+    if noise != "dgrape":
+        raise ValueError(f"noise must be 'dgrape' or 'shirol', not {noise!r}")
     ops = operators(n_c, n_r)
     R = rates()
     out = []
@@ -163,6 +171,37 @@ def collapse_ops(n_c, n_r=2, decay=True, dephasing=False, heating=False, scale=1
     if heating:
         out += [("up_q", np.sqrt(R["up_q"]) * ops["s_ge"].conj().T),
                 ("up_a", np.sqrt(R["up_a"]) * ops["a"].conj().T)]
+    out = [(name, np.sqrt(scale) * c) for name, c in out]
+    return [(name, c) for name, c in out if np.any(c)]
+
+
+def shirol_collapse_ops(n_c, n_r=2, scale=1.0, drive_heating=True):
+    """Shirol's full channel set, AQEC.master_equation.collapse_operators(n_c) (Table 5, every row),
+    built on this module's operators so that n_r is free (the gate runs at n_r = 1):
+
+        decay       sqrt(kappa_a) a, sqrt(kappa_r) r, sqrt(1/T1_ge)|g><e|, sqrt(1/T1_ef)|e><f|
+        heating     sqrt(up_ge)|e><g|, sqrt(up_ef)|f><e| at one up/down ratio r (thermal, plus the
+                    drive-induced 0.42 ms^-1 of App. D when drive_heating), and sqrt(up_a) a'
+        dephasing   sqrt(2 phi_ge)|e><e|, sqrt(2 phi_gf)|f><f|, sqrt(2 phi_a) n_a, with phi_a the
+                    RESIDUAL 1/T2a - kappa_a/2 - r_thermal/T1_ge (0.23 ms^-1): the thermal g->e jumps
+                    above already dephase the storage through chi, so nothing is counted twice.
+
+    Rates from AQEC.master_equation.jump_rates(). Every operator is monomial. |f><e| only gains a
+    global phase in this frame (and in DGRAPE/fwm_tail.py's |f>-rotating frame), so the Lindbladian
+    stays exact. scale multiplies every rate."""
+    from AQEC.master_equation import jump_rates
+    ops = operators(n_c, n_r)
+    R = jump_rates(dev.kappa_a, drive_heating=drive_heating)
+    out = [("a", np.sqrt(dev.kappa_a) * ops["a"]),
+           ("r", np.sqrt(dev.kappa_r) * ops["r"]),
+           ("s_ge", np.sqrt(R["gamma_ge"]) * ops["s_ge"]),
+           ("s_ef", np.sqrt(R["gamma_ef"]) * ops["s_ef"]),
+           ("up_ge", np.sqrt(R["up_ge"]) * ops["s_ge"].conj().T),
+           ("up_ef", np.sqrt(R["up_ef"]) * ops["s_ef"].conj().T),
+           ("up_a", np.sqrt(R["up_a"]) * ops["a"].conj().T),
+           ("phi_e", np.sqrt(2 * R["phi_ge"]) * ops["Pe"]),
+           ("phi_f", np.sqrt(2 * R["phi_gf"]) * ops["Pf"]),
+           ("phi_a", np.sqrt(2 * R["phi_a"]) * ops["n_a"])]
     out = [(name, np.sqrt(scale) * c) for name, c in out]
     return [(name, c) for name, c in out if np.any(c)]
 
@@ -233,12 +272,15 @@ class Model:
     """
 
     def __init__(self, n_c, n_r=2, include_higher_order=False, decay=True,
-                 dephasing=False, heating=False, rate_scale=1.0):
-        self.n_c, self.n_r = n_c, n_r
+                 dephasing=False, heating=False, rate_scale=1.0, noise="dgrape"):
+        self.n_c, self.n_r, self.noise = n_c, n_r, noise
         self.d = dim(n_c, n_r)
         self.H_d = drift_hamiltonian(n_c, n_r, include_higher_order)
         self.Hc = control_hamiltonians(n_c, n_r)
-        self.c_ops = collapse_ops(n_c, n_r, decay, dephasing, heating, rate_scale)
+        if noise == "dgrape":      # the original call, so fwm.model_with_channels' filter sees it unchanged
+            self.c_ops = collapse_ops(n_c, n_r, decay, dephasing, heating, rate_scale)
+        else:
+            self.c_ops = collapse_ops(n_c, n_r, decay, dephasing, heating, rate_scale, noise=noise)
         hd = np.real(np.diag(self.H_d))
         self.shift = 0.5 * (hd.max() + hd.min())
         self.H_d_shifted = self.H_d - self.shift * np.eye(self.d)

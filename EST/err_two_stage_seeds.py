@@ -1,5 +1,5 @@
 """
-Section 7's C_err-in-stage-1-only pair over 13 seeds, X: est_optimization.ipynb section 7.2.
+Section 7's C_err-in-stage-1-only pair over 13 seeds, X: notebooks/est_optimization.ipynb section 7.2.
 
     python EST/err_two_stage_seeds.py run --jobs 24   # train everything missing, in parallel
     python EST/err_two_stage_seeds.py status

@@ -3,7 +3,7 @@
 test_fwm_tail.py
 
 Checks for DGRAPE/fwm_tail.py, an FWM tail after the d2 X gate with one waveform per comb
-(FWM_tails.ipynb).
+(notebooks/FWM_tails.ipynb).
 
   * idle           -- with eta = 0 the tail equals lnp.propagate's idle evolution in the DGRAPE frame
                       (same F_pro, traced and empty; same transmon-g block)
@@ -22,6 +22,14 @@ Checks for DGRAPE/fwm_tail.py, an FWM tail after the d2 X gate with one waveform
   * readout        -- n_r = 2 equals n_r = 3 with modest tones
   * cut            -- gate_n_c = n_c is the default bit for bit; a gate run at a larger n_c and cut
                       (tail_input) scores within the trace lost of the uncut gate + tail
+  * n gates        -- train_fwm_tail's --n-gates m: the tail input is m gates back to back (equal to m
+                      fwm_repeat gate steps at n_r = 2), the default target is X^m, m = 1 is unchanged
+  * code words     -- code_word_scores (a tail with no gate in front): no tail gives code 1, error 0; the
+                      50/50 mixed input scores the average of the two (linearity); the closed 0.8 us EsT
+                      tail reproduces tables/fwm_tail_H_code.csv (notebook Table 16)
+  * shirol noise   -- noise="shirol" (Shirol's full set) has AQEC.master_equation.collapse_operators'
+                      dissipator; keep filters it; the default is unchanged bit for bit; the |f> frame
+                      stays exact; TailObjective(noise="shirol") gradient = central differences
 
 Run:
     python3 validation/test_fwm_tail.py [-v]       (about ten seconds)
@@ -246,6 +254,139 @@ class Cut(unittest.TestCase):
         F_cut = ft.score(eta, n_c=small, gate_n_c=big)["F_pro"]
         F_full = ft.score(eta, n_c=big)["F_pro"]
         self.assertLess(abs(F_cut - F_full), lost + 1e-5)
+
+
+class NGates(unittest.TestCase):
+    def test_tail_input_after_m_gates(self):
+        import tempfile
+        from DGRAPE import fwm_repeat as rp
+        from DGRAPE import train_fwm_tail as tr
+        u = 0.4 * ft.d2_pulse()[:120]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "u.npy")
+            np.save(path, u)
+            mk = lambda m: tr.make_objective(0.2, NC, 1, ft.READOUT, ft.ETA_BAND, ft.ETA_CAP, 0.0,  # noqa: E731
+                                             gate_pulse=path, target=tr.default_target(m), n_gates=m)
+            o1, o2 = mk(1), mk(2)
+        try:
+            self.assertTrue(np.array_equal(o1.R0, ft.tail_input(u, NC, 2)))
+            gm = rp.gate_model(NC, 2)
+            ref = rp.gate_step(gm, u, rp.gate_step(gm, u, rp.inputs(NC)))
+            self.assertLess(np.abs(o2.R0 - ref).max(), 1e-12)
+            self.assertEqual((o1.gate, o2.gate), ("X", "I"))
+        finally:
+            o1.close()
+            o2.close()
+        self.assertEqual([tr.default_target(m) for m in (1, 2, 3, 8)], ["X", "I", "X", "I"])
+        with self.assertRaises(ValueError):
+            tr.make_objective(0.2, NC, 1, ft.READOUT, ft.ETA_BAND, ft.ETA_CAP, 0.0, gate_pulse=None, n_gates=2)
+
+    def test_deriv_scale(self):
+        """--deriv-scale multiplies only the derivative weight; the default leaves TAIL_PENALTIES as they are."""
+        from DGRAPE import train_fwm_tail as tr
+        mk = lambda s: tr.make_objective(0.2, NC, 1, ft.READOUT, ft.ETA_BAND, ft.ETA_CAP, 0.0,  # noqa: E731
+                                         deriv_scale=s)
+        o1, o2 = mk(1.0), mk(0.1)
+        try:
+            self.assertEqual(o1.pen, ft.TAIL_PENALTIES)
+            self.assertAlmostEqual(o2.pen["deriv"], 0.1 * ft.TAIL_PENALTIES["deriv"], places=15)
+            self.assertEqual({k: v for k, v in o2.pen.items() if k != "deriv"},
+                             {k: v for k, v in ft.TAIL_PENALTIES.items() if k != "deriv"})
+            x = ft.eta_preimage(0.05 * np.exp(1j * np.linspace(0, 6, o1.N))[:, None] * np.ones((1, 2)))
+            c1, _, t1 = o1.evaluate(x)
+            c2, _, t2 = o2.evaluate(x)
+            self.assertAlmostEqual(t2["deriv"], 0.1 * t1["deriv"], delta=1e-15 + 1e-12 * t1["deriv"])
+            self.assertAlmostEqual(c1 - c2, 0.9 * t1["deriv"], delta=1e-12)
+        finally:
+            o1.close()
+            o2.close()
+
+
+class CodeWords(unittest.TestCase):
+    def test_no_tail(self):
+        r = {x["input"]: x for x in ft.code_word_scores(np.zeros((0, 2), dtype=complex), NC)}
+        self.assertAlmostEqual(r["code words"]["F_vs_I"], 1.0, delta=1e-14)
+        self.assertAlmostEqual(r["one-loss error words"]["F_vs_I"], 0.0, delta=1e-14)
+
+    def test_mixture_is_the_average(self):
+        eta = _rand_eta(30, 0.03, 7)
+        inp = ft.code_word_inputs(NC)
+        (Ec, pc), (Ee, pe) = inp["code words"], inp["one-loss error words"]
+        self.assertAlmostEqual(pe, 3.0, delta=1e-12)
+        mix = {"mix": (0.5 * Ec / pc + 0.5 * Ee / pe, 1.0)}
+        for keep in (frozenset(), None):
+            r = {x["input"]: x["F_vs_I"] for x in ft.code_word_scores(eta, NC, keep=keep)}
+            F_mix = ft.code_word_scores(eta, NC, keep=keep, inputs=mix)[0]["F_vs_I"]
+            self.assertAlmostEqual(F_mix, 0.5 * (r["code words"] + r["one-loss error words"]), delta=1e-12)
+
+    def test_table_14(self):
+        path = os.path.join(REPO_ROOT, "tables", "fwm_tail_H_code.csv")
+        eta_path = os.path.join(REPO_ROOT, "pulses", "dgrape", "eta_X_tail_estg_T08_t2.npy")
+        if not (os.path.exists(path) and os.path.exists(eta_path)):
+            self.skipTest("table or tail not on this machine")
+        import pandas as pd
+        ref = pd.read_csv(path).query("tail == 'X tail'").set_index("input")
+        for r in ft.code_word_scores(np.load(eta_path), 16):
+            self.assertAlmostEqual(r["F_vs_I"], ref.F_vs_I[r["input"]], delta=1e-10)
+
+
+class ShirolNoise(unittest.TestCase):
+    """noise="shirol" (DGRAPE.model.shirol_collapse_ops, notebooks/tail_experiments.ipynb)."""
+
+    def test_equals_aqec_table5(self):
+        # Same dissipator as AQEC.master_equation.collapse_operators(n_c) (every channel, the default).
+        from AQEC import master_equation as me
+        m = Model(NC, 2, include_higher_order=True, noise="shirol")
+        aq = me.collapse_operators(NC)
+        rng = np.random.default_rng(5)
+        A = rng.normal(size=(m.d, m.d)) + 1j * rng.normal(size=(m.d, m.d))
+        rho = A @ A.conj().T
+        rho /= np.trace(rho)
+        s_dg = sum(c @ rho @ c.conj().T for _, c in m.c_ops)
+        s_aq = sum(c @ rho @ c.conj().T for c in aq)
+        self.assertLess(np.abs(s_dg - s_aq).max(), 1e-12)
+        self.assertLess(np.abs(np.diag(m.Gdiag) - sum(c.conj().T @ c for c in aq)).max(), 1e-12)
+        self.assertEqual(len(m.c_ops), 10)
+
+    def test_keep_filters_and_default_unchanged(self):
+        m = fwm.model_with_channels(NC, 2, keep={"a", "up_ef"}, noise="shirol")
+        self.assertEqual([nm for nm, _ in m.c_ops], ["a", "up_ef"])
+        m0, m1 = Model(NC, 2, True), Model(NC, 2, True, noise="dgrape")
+        self.assertEqual([nm for nm, _ in m0.c_ops], ["a", "r", "s_ge", "s_ef"])
+        self.assertTrue(all(np.array_equal(a[1], b[1]) for a, b in zip(m0.c_ops, m1.c_ops)))
+        eta = _rand_eta(20, 0.03, 7)
+        self.assertEqual(ft.score(eta, n_c=NC)["F_pro"], ft.score(eta, n_c=NC, noise="dgrape")["F_pro"])
+        self.assertLess(ft.score(eta, n_c=NC, noise="shirol")["F_pro"], ft.score(eta, n_c=NC)["F_pro"])
+
+    def test_frame_exact(self):
+        # As Frame.test_equals_dgrape_frame, with Shirol's channels (|f><e| heating gains only a phase).
+        N = 30
+        eta = _rand_eta(N, 0.06, 0)
+        R0 = ft.d2_output(NC, 2, noise="shirol")
+        tm = ft.tail_model(NC, 2, mixing=1.0, noise="shirol")
+        R_f, _ = ft.propagate(tm, eta, R0)
+        m0 = Model(NC, 2, include_higher_order=True, noise="shirol")
+        fw0 = fwm.fwm_terms(m0, 1.0, paths=(ft.N_REF,))
+        fw0.Delta = np.array([tm.delta_ref, -tm.delta_ref])
+        pf = np.real(np.diag(operators(NC, 2)["Pf"]))
+        ph = np.exp(1j * tm.delta_ref * N * DT * pf)
+        R_f_dg = ph[:, None] * R_f * ph[None, :].conj()
+        R_d, _ = fwm.propagate(m0, fw0, np.zeros((N, 4)), eta, DT, 8, R0)
+        self.assertLess(np.abs(R_d - R_f_dg).max(), 1e-6)
+
+    def test_objective_fd(self):
+        n_c, N = 7, 30
+        kw = dict(tail_us=N * DT, n_c=n_c, band=(-30.0, 30.0), ramp_ns=8.0, n_jobs=1)
+        x = 0.05 * ft.S_ETA * np.random.default_rng(4).normal(size=(N, 4))
+        o = ft.TailObjective(noise="shirol", **kw)
+        c, gx, terms = o.evaluate(x)
+        self.assertLess(terms["F_pro"], ft.TailObjective(**kw).evaluate(x)[2]["F_pro"])
+        for j in np.random.default_rng(6).choice(N * 4, 5, replace=False):
+            h = 1e-3
+            e = np.zeros(N * 4)
+            e[j] = h
+            fd = (o.cost(x.ravel() + e) - o.cost(x.ravel() - e)) / (2 * h)
+            self.assertLess(abs(fd - gx[j]), 1e-6 * max(1.0, abs(gx).max()))
 
 
 if __name__ == "__main__":

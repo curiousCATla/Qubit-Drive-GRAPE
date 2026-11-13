@@ -1,6 +1,6 @@
 """
 Lindblad master equation for PReSPA -- Shirol, van Geldern, Xi & Wang, PRX 16, 021042
-(2026) -- in the two rotating frames of aqec_experiments.ipynb §8.2.
+(2026) -- in the two rotating frames of notebooks/aqec_experiments.ipynb §8.2.
 
     d rho/dt = -i[H, rho] + sum_k D[L_k] rho
 

@@ -1,0 +1,28 @@
+warm start from pulses/est/u_X_est.npy: roundtrip err 1.78e-14, max|x0| = 81.04 (bound 120.0)
+
+=== X / est / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]
+    start  c1=0.00080  c2=0.32134  c3=0.11263  c4=0.00001   [F1=0.99920  F_ET=0.67866]
+    end    c1=0.03434  c2=0.25329  c3=0.00724  c4=0.00006   [F1=0.96566  F_ET=0.74671]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=1000 nfev=1071 cost=2.623620e-01 (2649.3s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_warm_stage1.npy
+
+=== X / est / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=1000 dt=1.0 ns  trunc_list=[20]
+    start  c1=0.03434  c2=0.25329  c3=0.00724  c4=0.00006   [F1=0.96566  F_ET=0.74671]
+    end    c1=0.00096  c2=0.26438  c3=0.12033  c4=0.00001   [F1=0.99904  F_ET=0.73562]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=1000 nfev=1103 cost=2.740677e-02 (2796.2s)
+    -> /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_warm_stage2.npy
+
+--- constraints on the saved pulse ---
+  max_eps_cavity_rad_per_us: 25.146132075360327
+  max_eps_transmon_rad_per_us: 25.178601860614183
+  eps_max_rad_per_us: 25.132741228718345
+  amplitude_cap_satisfied: True
+  out_of_band_fraction: {'cavity': 0.006963559938705089, 'transmon': 0.002487930425072718}
+  endpoint_rel_to_mid: [0.03963454472599657, 0.040602922389561764]
+
+saved /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/pulses/est/u_X_est_warm.npy
+      /Users/ziyi_dong_mac/Documents/GitHub/Qubit-Drive-GRAPE/logs/est_X_est_warm.json

@@ -334,7 +334,7 @@ def analyze_gate(gate, n_c, n_t=N_T, dt=DT, alpha=ALPHA):
     # Single-photon-loss error subspace. Kept separate from the 9-probe outside
     # set below: those probes sample the complement of C generically, E is the
     # one subspace a real loss actually produces, and mixing them would blur the
-    # existing L2 number that Section 11.2 of experiments.ipynb reports.
+    # existing L2 number that Section 11.2 of notebooks/grape_experiments.ipynb reports.
     E, _e_nrm = error_basis(n_t, n_c, alpha=alpha, B=B)
     err_metrics, err_seep = error_space_metrics(
         gate, U, B, E, n_t, n_c, U_ideal=IDEAL_LOGICAL_U.get(gate)

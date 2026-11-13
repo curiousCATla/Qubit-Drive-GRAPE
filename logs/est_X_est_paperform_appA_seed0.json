@@ -1,0 +1,93 @@
+{
+  "gate": "X",
+  "variant": "est_paperform",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 0,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "n_stages": 2,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": -0.10575723789556835,
+      "nit": 2000,
+      "nfev": 2140,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 1587.5072791576385,
+      "terms": {
+        "20": {
+          "c1": 0.03710865311588718,
+          "c2": -0.212053847704877,
+          "c3": 0.0007908444583513368,
+          "c4": 3.589117349902209e-05
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0
+      ],
+      "cost": -0.009801589338628316,
+      "nit": 2000,
+      "nfev": 2161,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 1597.4273071289062,
+      "terms": {
+        "20": {
+          "c1": 0.0018569101950044464,
+          "c2": -0.11660059780911602,
+          "c3": 0.0011447467924570879,
+          "c4": 1.560247278840172e-06
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.142679960417492,
+    "max_eps_transmon_rad_per_us": 25.1425491802549,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0009997724830780748,
+      "transmon": 0.00185444180271671
+    },
+    "endpoint_rel_to_mid": [
+      0.01048217085361502,
+      0.011412659644715127
+    ]
+  },
+  "base_variant": "est",
+  "cost_form": {
+    "c2_norm_power": 1,
+    "c2_include_endpoint": false,
+    "c3_normalize": false,
+    "c3_dt": 1.0
+  }
+}

@@ -19,7 +19,7 @@ hand-derived adjoint gradients. It reuses only `core.grape_core.make_ops`/`basis
 `core.fourier_cutoff.make_band_mask`; it does **not** modify anything under `core/`,
 `validation/`, or `analysis/`. See `EST/CLAUDE.md` and `EST/README.md`.
 
-**3. Passive AQEC (`AQEC/`, `aqec_experiments.ipynb`).** Write-up of the PReSPA tone combs of
+**3. Passive AQEC (`AQEC/`, `notebooks/aqec_experiments.ipynb`).** Write-up of the PReSPA tone combs of
 Shirol et al., PRX 16, 021042 (2026) on the odd-parity n̄=3 code `(|1>+|5>)/√2, |3>`. It uses a
 **third chip**, Shirol's Table I (storage/transmon/readout, `AQEC/device.py`), not the EsT or Heeres
 device; the EsT Table I lacks χ_ef, κ_r and T1_ef. Sign convention differs from `EST/device.py`:
@@ -38,7 +38,7 @@ Tests: `python3 validation/test_aqec_master_equation.py -v`
 (~1 min; the qutip frame-(ii) check is limited to 2 μs because qutip's python coefficients are slow) and
 `python3 validation/test_aqec_wigner.py -v`.
 
-**4. Exact open-system GRAPE (`DGRAPE/`, `dissipation_grape.ipynb`).** GRAPE whose cost is the process fidelity
+**4. Exact open-system GRAPE (`DGRAPE/`, `notebooks/dissipation_grape.ipynb`).** GRAPE whose cost is the process fidelity
 of a logical gate on the Shirol odd kitten code, computed from the **exact Lindblad evolution of density matrices**
 on the AQEC chip (imports `AQEC/device.py`, `AQEC/master_equation.py` helpers, `AQEC/odd_kitten.py`; same positive-χ/α
 sign convention). Frame = rotating at the linear mode frequencies only (AQEC frame (ii) + `-alpha|f><f|`), so the jump
@@ -49,7 +49,7 @@ superoperator; (s, m) from a norm bound at tol 1e-15. Three exact gradients of t
 `lindblad_np.fidelity_and_grad` (hand-derived adjoint, one W matrix per step, ~3 forward passes, the default and the
 fastest), `fidelity_and_grad_augmented` (block augmented generator, reference) and `lindblad_jax` (autodiff,
 `jax.checkpoint`ed scan). `tables/dgrape_gradient_benchmark.csv` holds the comparison. The training objective
-(`DGRAPE/objective.py`, notebook §8) is the `experiments.ipynb` production cost with F_coh replaced by the Lindblad
+(`DGRAPE/objective.py`, notebook §8) is the `notebooks/grape_experiments.ipynb` production cost with F_coh replaced by the Lindblad
 F_pro: band filter → ramp chain, derivative, modulus amplitude and Eq. 24 discrepancy penalties, pre-image box, smooth
 seeded cold start / `init_x` / `deramp` warm start, best-vs-final, `constraint_report`. Its **defaults are the
 Heeres-chip recipe** via `DGRAPE/recipe.py`, pinned to `main.build_arg_parser()` by a test; change the production
@@ -88,7 +88,7 @@ by 32%, giving **F_pro 0.9589** (all channels 0.9479), the best X gate so far, w
 its last 250 iterations): resume with `--init-x`. Next: train with `--dephasing`.
 Tests: `python3 validation/test_dgrape.py -v` (34 tests, ~4 min).
 
-**5. FWM GRAPE (`DGRAPE/fwm.py`, `fwm_grape.ipynb`).** Adds PReSPA pump tones (by default the six of Shirol, two combs, n = 1, 3, 5) as
+**5. FWM GRAPE (`DGRAPE/fwm.py`, `notebooks/fwm_grape.ipynb`).** Adds PReSPA pump tones (by default the six of Shirol, two combs, n = 1, 3, 5) as
 GRAPE controls β_k(t) next to DGRAPE's linear drives, on the same Lindblad model. The tones run on a CF4 sub-stepped
 propagator (`S` sub-steps per 2 ns step); `fwm.fidelity_and_grad` is the W-form exact gradient in β (and u, ready
 for Stage 3), checked against an augmented-generator derivative and finite differences. Recipe constants live in
@@ -114,7 +114,7 @@ Tables `fwm_stage2_full_scan.csv`, `fwm_stage2_full_heldout.csv`. Stage 3 (joint
 to run an idle-memory positive control first, with the six tones. Tests: `python validation/test_fwm_grape.py -v`
 (15 tests, ~1.5 min).
 
-**6. FWM tails (`DGRAPE/fwm_tail.py`, `FWM_tails.ipynb`).** The d2 X gate runs unchanged, then a **tail** of the two
+**6. FWM tails (`DGRAPE/fwm_tail.py`, `notebooks/FWM_tails.ipynb`).** The d2 X gate runs unchanged, then a **tail** of the two
 FWM combs only (linear drives off) acts on its mixed output (`fwm_tail.d2_output`: d2 at n_r = 1, embedded), scored
 against the ideal X at the end of the tail. Each comb is ONE complex waveform η_c(t) (control (N, 4) = η_1 I/Q, η_2
 I/Q, η = I − iQ), in a frame that rotates **only |f⟩** at Δ_ref = the comb-1 tooth 2 → 3 (n_ref = 3, 2π·140.485 MHz):
@@ -136,10 +136,10 @@ n_c 24 output (cut F = uncut to 3e-16, ~3x faster). Held-out scorer: `DGRAPE/fwm
 gate alone / idle / Table II teeth per condition) → `tables/fwm_tail_heldout.csv`. **On Windows set
 `OPENBLAS_NUM_THREADS=2` at launch** (numpy is OpenBLAS there; loky otherwise gives each worker 8 threads).
 **The notebook's EsT gate is the "good" one (2026-11-01, user decision):** seed 24 of the C_err cost
-(`u_X_est_err_closed_s24.npy`, see "Seed selection" below) is "EsT" in §1–§8 and Appendices B–C (`EST_PULSE` in Setup);
+(`u_X_est_err_closed_s24.npy`, see "Seed selection" below) is "EsT" in §1–§6, §8–§9 and Appendices B–C (the "X gate" in §7) (`EST_PULSE` in Setup);
 its tails are `pulses/dgrape/*X_tail_estg_T{05,08,1,14,2}_{t2,z}*` (600 it, one leg) and its held-out scores
 `tables/fwm_tail_heldout_good.csv` (gate `EsT-good`, renamed `EsT` on load). The earlier seed-42 "mid" gate
-(`u_X_est_closed.npy`, tails `X_tail_est_*`) appears only in Appendix D (good vs mid). §6 merges d2 and Ord rows of
+(`u_X_est_closed.npy`, tails `X_tail_est_*`) is no longer in the notebook (Appendix D removed 2026-11-09). §6 merges d2 and Ord rows of
 `fwm_tail_heldout.csv` with the good table; the re-timed (cropped) mid tails and their crop check (old Table C8) are
 dropped; `tables/fwm_tail_runs.csv` now holds the good rows. **Trained tails (notebook §6): one GO, at the bar.**
 19 runs: d2/Ord × 0.5/1/2 μs (300 it; 5 resumed `*_r*`), EsT × 0.5/0.8/1/1.4/2 μs. EsT + 0.8 μs **+0.32 %** (0.97027
@@ -151,10 +151,20 @@ of every tail (0.5 μs stays off): it repairs losses before it (to ~0.92) and no
 weighted, 0.9–1.2 %) is the floor. Estimate vs result (§6.4, Table 9, 1 μs): +1.23 % → +0.28 %, slow shot −0.41 %,
 non-loss −0.25 %, remainder −0.29 %. Fragile (§6.5): 0.8 μs η × 0.9 / 1.1 −10.3 / −12.8 %, Stark off −77 %, all
 channels +0.03 %, readout-empty −1.2 %. Next: a faster shot (comb 2 above all); robust training over pump scale; a gate
-trained for repairable losses. Mid's record (first campaign 2026-10-21/22: mid 1 μs +0.16 %; cropped 0.8/1.4 μs
+trained for repairable losses.
+**Tails alone (notebook §6.6, 2026-11-11, user).** Every EsT tail with NO gate in front, on the code words and on
+clean one-loss error words a E a'/3, scored against I, closed and open, plus one decay channel at a time
+(`fwm_tail.code_word_scores`, moved there from `fwm_tail_hgate.tail_on_code`, Table 16 bit for bit;
+`DGRAPE/fwm_tail_code.py`, ~2 min -> `tables/fwm_tail_code_lengths.csv`). The 50/50 mix is the exact average (linear;
+tested), so it is shown as such, with the break-even loss fraction p* = (1-F_code)/(1-F_code+F_err). Closed: code
+words >= 0.9998 at every length (idle loses 0.15-2.3 % to Kerr; even the 0.5 us tail cancels it), error words 0.904 /
+0.922 / 0.922 / 0.908 (0.8/1/1.4/2 us; 97-99 % of the kitten limit). Open: error words 0.820 -> 0.865, p* 1.8-2.2 %
+vs the gate's 2.68 % losses. Readout decay is the largest cost of a short repair (6.2 % at 0.8 us, -0.4 % at 2 us; not
+yet explained). A linear estimate from these numbers (losses scaled 0.851/0.935) overshoots Table 6 by a constant
+0.23-0.24 % at every length. Mid's record (first campaign 2026-10-21/22: mid 1 μs +0.16 %; cropped 0.8/1.4 μs
 +0.19/+0.05 %, `X_tail_est_T{08,14}_crop*`, `fwm_tail_heldout_retimed.csv`, `fwm_tail_retimed_crop_check.csv`,
-`fwm_tail_shot_timing{,_retimed}.csv`) stays on disk, unused by the notebook except Appendix D.
-**EsT gate, first version = mid (2026-10-20; now notebook Appendix D only).** `DGRAPE/est_gate.py` trains an error-semitransparent X gate with EST's cost
+`fwm_tail_shot_timing{,_retimed}.csv`) stays on disk, unused by the notebook.
+**EsT gate, first version = mid (2026-10-20; no longer in the notebook).** `DGRAPE/est_gate.py` trains an error-semitransparent X gate with EST's cost
 unchanged (`EST/grape_eigh.cost_and_grad`, C1–C4, weights (1, 0.7, 7, 1) then (1, 0.1, 0, 1), 2000 it per stage,
 pinned to `EST/train_est.py`) in the CLOSED system on this chip (DGRAPE drift and controls at n_r = 1, n_c 20), with
 d2's duration, dt, bands, ramp, cap, box and seed-42 smooth start; the three transparency measures are
@@ -167,7 +177,7 @@ moves (0.20 vs 0.24). Open: EsT alone 0.96803 > Ord 0.96380 > d2 0.95556; a mid-
 gentle start stage 1 parks or nearly parks: seed 44 parked (zero drive), seeds 42/43 stall at F1 ≈ 0.49 in stage 1
 and stage 2 closes from there (seed 43: F1 0.9985, F_ET 0.774, gain +1.96 %). The R-W best-recovery iteration stops
 3e-4 low at n_c 24 (d2 0.98938 vs 0.98968 at 16): a lower bound.
-**Seed selection with C_err (`est_gate_selection.ipynb`, 2026-10-29).** Variant `est_err` of `est_gate.py` =
+**Seed selection with C_err (`notebooks/est_gate_selection.ipynb`, 2026-10-29).** Variant `est_err` of `est_gate.py` =
 est_optimization §7's cost ((1,0.7,7,1,0.3,0,0) then (1,0.1,0,1,0,0,0), pinned to `EST/err_two_stage.WEIGHTS["run"]`);
 `DGRAPE/est_gate_seeds.py run|status|summarize|open_score` (runs in `~/fwm_runs/est_err_seeds`, 25 single-thread jobs,
 1.5 h a wave). Rule fixed before training, scored closed at n_c 24: F1 >= 0.99, peaks of Delta_QEC, L, eta <= 0.5, tails
@@ -209,12 +219,12 @@ L still fails; 0 candidates; all hit 2000 it. H on the EST chip was the most tra
 written here until 2026-11-02), but with chi 3.66 MHz vs 1.12 here: chi*T = 3.7 cycles there vs 1.2 here, so the short gate
 in units of 1/chi is the likely limit. Next options: longer H gate (duration is a module constant; chi*T = 3.7 needs ~3.3
 us), a cost on L(t)/eta(t), longer est_err2 stage 2. Done: 2 us, above.
-**Good vs mid EsT tails (notebook Appendix D, 2026-10-31; was §8).** "mid" = the seed-42 `u_X_est_closed.npy`; "good" =
+**Good vs mid EsT tails (2026-10-31; was notebook §8, then Appendix D, removed 2026-11-09).** "mid" = the seed-42 `u_X_est_closed.npy`; "good" =
 seed 24 above, which replaced mid in the rest of the notebook on 2026-11-01. Tails after both, both starts at 0.5/0.8/1/1.4/2 us, 600 it (`pulses/dgrape/*X_tail_estg_*`, new mid
 `*X_tail_est_T{08,14}_{t2,z}*`; ran 8 side by side x 1 BLAS thread, +12 % throughput over 4 x 2). Held-out tables
 `fwm_tail_heldout_{good,mid_extra,ord_idle_T08}.csv`. Good gains +0.12-0.21 % more at every length: **0.8 us +0.32 %
 (the first GO, just at the bar; mid +0.19 %)**, absolute only +0.03 %; same waveform; more pump-fragile (eta x 0.9:
--10 % vs -5 %). **Repeated X gates (notebook §8; was §9; no mid line since 2026-11-01)**: `DGRAPE/fwm_repeat.py` (B1 = N gates + one tail, B2 = N gate +
+-10 % vs -5 %). **Repeated X gates (notebook §8 since 2026-11-10; was §7, §8, before that §9; no mid line since 2026-11-01)**: `DGRAPE/fwm_repeat.py` (B1 = N gates + one tail, B2 = N gate +
 tail pairs, frame hand-off after each tail, teeth reference), `DGRAPE/fwm_repeat_run.py` (~4 h on 16 cores) ->
 `tables/fwm_tail_repeat_B{1,2}.csv`; tails `X_tail_{estg,ord,est,idle}_T08_*` (`train_fwm_tail.py --target I` after
 the zero pulse `u_idle_X_duration.npy` for idle). N = 20: one tail after 20 good EsT gates +7.3 %; 20 good pairs
@@ -223,35 +233,114 @@ references use a Kerr-corrected decoding** (2026-11-01, Gertler 2021 Methods: `f
 shift 2.5 K + logical Z 2 K t, free; `fwm_repeat_run.py --tails idle=X_tail_idle_T08_t2 --kerr-decode --n-jobs 8`,
 ~15 min -> `tables/fwm_tail_repeat_kerr.csv`, rows `decode` none|kerr; B1 = idle with/without its tail and the Table II
 teeth sampled every 1.1 us, B2 = plain idle and the teeth every 1.9 us; the two teeth samplings are one waveform and
-agree exactly at 20.9 us). Uncorrected, idle fell to 0.13 by N = 20 on Kerr phase alone. Decoded: idle closed 1
-exactly, open 0.624 at N = 20 (2.1 %/us = nbar/T1a), above every gated curve; idle + one tail 0.849 (+22.5 %); teeth
-beat plain idle from 4.4 us (0.741 at 22 us), 1.14 %/us (= EsT-good pairs, which stay above the teeth at the same time:
-0.642 vs 0.613 at 38 us; plain idle 0.450). Closed teeth fall to 0.540 at 22 us, below open (0.741), and it is NOT a
-phase (best phase correction +1.4 %): a Raman leak |n,g,0> -> |n+1,g,1> (comb-1 + comb-2 tooth n; middle state off by
-chi_gf, two-tone detuning only K; 43 % in |n+1,g,1> at 22 us), which kappa_r turns into weak heating (kappa_r as the
-only jump: 0.956); checked at n_c 12, notebook §8.1/§8.2 (2026-11-03). B2 "gate + idle" cannot be
-corrected (gates in between). Shown in the notebook (user, 2026-11-03): Figure 8 (B1) = gates + idle, idle + tail and
-teeth, all memory Kerr decoded, panel b at 0.9-1; Figure 9 (B2) = gate + tail pairs and gates back to back, plus
+agree exactly at 20.9 us). **§8's teeth are Stark-tuned (2026-11-09, user)**: each Table II tooth moved by its mean
+pump Stark shift, sum|beta|^2 (S_t - S_s) = +204 kHz comb 1, -204 kHz comb 2, against comb 1's 57 kHz drive
+(`fwm_tail.teeth_stark_shifts`, `eta_from_teeth(stark_tuned=True)`, default False so §2/§3/§6 teeth are unchanged;
+`fwm_repeat.teeth_memory(stark_tuned=True)` default). The kerr table also holds the untuned rows, label
+`idle + Table II teeth, bare carriers` (bit for bit the old numbers); `fwm_repeat_run.py --teeth-only` (main mode or
+`--every-k`) reruns only the teeth and replaces their rows in B2/B3 (B3 parts are not on the Mac). Uncorrected, idle
+fell to 0.13 by N = 20 on Kerr phase alone. Decoded: idle closed 1 exactly, open 0.624 at N = 20 (2.1 %/us =
+nbar/T1a); idle + one tail 0.849 (+22.5 %); tuned teeth beat plain idle from 3.3 us (0.806 at 22 us; bare 4.4 us,
+0.741) and **beat the EsT-good pairs from ~9 to ~41 us** (+4.3 % at 22.8 us; 0.654 vs 0.642 at 38 us; bare 0.613),
+then fall below (0.354 vs 0.442 at 76 us, B3): they keep ~91 % on Fock 1/3/5 throughout, so the late loss is in the
+repaired amplitudes/phases, not leakage. Closed tuned teeth 0.804 at 22 us (bare 0.540), best phase correction +3.2 %
+(bare +1.4 %): a Raman leak |n,g,0> -> |n+1,g,1> (comb-1 + comb-2 tooth n; middle state off by chi_gf, two-tone
+detuning only K, which the opposite-sign tuning keeps; 14 % in |n+1,g,1> at 22 us, bare 43 %), which kappa_r turns
+into weak heating (kappa_r as the only jump: 0.948, bare 0.956); checked at n_c 12, notebook §8.1/§8.2. B2 "gate + idle" cannot be
+corrected (gates in between). Shown in the notebook (user, 2026-11-03): Figure 13 (B1) = gates + idle, idle + tail and
+teeth, all memory Kerr decoded, panel b at 0.9-1; Figure 14 (B2) = gate + tail pairs and gates back to back, plus
 memory (idle, teeth; Kerr decoded, same time) in panel a only; gate + idle not shown (rows stay in the CSV); no time
-panel. Tests: `python validation/test_fwm_repeat.py -v` (10, ~5 s).
-**Is the tail error transparent? (notebook §9, 2026-11-04).** One jump put in by hand at time t of the EsT + 0.8 us
-tail (readout decay only, n_c 16; the next pair at n_c 24), scored as is, + ideal repair, and by best recovery.
-**Semi-transparent to photon loss**: a late loss ends as a clean error word (0.000 as is, 0.93 after an ideal repair,
-best recovery 0.999), and the next gate + tail repairs it to 0.71; that is the B2 first-pair vs later-pair gap (2.97 %
+panel. **A tail every k gates (notebook §8.4, 2026-11-09)**: `fwm_repeat.every_k` (B3; after every gate scored as
+is and with a closing tail on a copy), `fwm_repeat_run.py --tails EsT-good=X_tail_estg_T08_t2 --every-k 1 2 3 4 5 6 7 8
+--n-max 40 --n-jobs 20 --out-dir ~/fwm_runs/repeat_B3` (3.5 h; parts in `B3_parts`, reused on rerun) ->
+`tables/fwm_tail_repeat_B3.csv`. Open, 40 gates: k = 2 best from N = 20 (0.451, 60 us), k = 2-5 within 0.6 %, k = 1
+0.442 (76 us), k = 8 0.419, no tail 0.280; up to N = 5 the best k is N. n_c 28 check (k = 1, 8; `~/fwm_runs/repeat_B3_nc28`):
+no F moves more than 5e-4. **Tails retrained after m gates (§8.5, 2026-11-09/10)**: `train_fwm_tail.py --n-gates m`
+(gate pulse tiled m times = one propagation; default target X^m; json `n_gates`), tails
+`pulses/dgrape/*X_tail_estg_T08_m{2..8}_{t2,z}*` (600 it, 15.7 h, 14 side by side under an 80 % CPU cap);
+`fwm_repeat_run.py --matched` (block = `after_n_gates` row N = m, open + closed; kept start `every_k(k=m,
+closing_tail=False)` to 40 gates) -> `tables/fwm_tail_matched.csv` (3 h, 17 jobs). One block: retrained - reused
+-0.07 % (m 2, both starts) to +0.94 % (m 8); repeated to 40 gates +2.3-2.8 % (m 3: +0.76 %); best = retrained every 2
+gates, 0.478 vs 0.451 reused. Training (n_c 16, cut) = n_c 24 score to 1e-15.
+Tests: `python validation/test_fwm_repeat.py -v` (16, ~7 s).
+**Tails after the H gate (notebook §7, 2026-11-10, user).** Gate = the EsT H pick, seed 17 at 2 us
+(`u_H_est_err_closed_T2_s17.npy`, label `EsT-H` in the scorer); 0.8 us tails from the two cold starts
+(`train_fwm_tail.py --gate-pulse ... --gate-n-c 24 --target H`, 600 it, 2.7 h each, 2 side by side x 2 BLAS threads)
+-> `pulses/dgrape/*H_tail_esth_T08_{t2,z}*`. `DGRAPE/fwm_tail_hgate.py` (forward only): `baselines` | `profiles` |
+`code` -> `tables/fwm_tail_H_{baselines,profiles,code}.csv`, `cross-json` writes the swapped pseudo-runs
+`H_xtail_T08` (X tail after H) and `X_htail_T08` (H tail after X) for `fwm_tail_score.py` ->
+`tables/fwm_tail_heldout_H.csv` (it re-scores the X-gate references; identical to the good table, deduplicated on
+load). Ceilings (n_c 24): H alone 0.9501 vs X 0.9671, losses 0.044 vs 0.027 per gate, ideal repair +3.09 % vs
++1.99 %. **Result: the tail works after H and pays more**: H tail +1.19 % (t2 0.96200, z 0.96197, same optimum),
+but the **X tail moved unchanged gains +1.30 %** (also lower by the H training cost, 0.0404 vs 0.0411), so both
+cold starts sit in a worse early-shot optimum (comb 1 peaks at 50 ns vs 460 ns, comb 2 bursts from 300 ns; unrepaired window 613 vs
+458 ns). H tail after X +0.13 % (X tail +0.32 %). All channels after H: +0.98 % (X tail) / +0.87 %. **The tail is
+a gate-independent photon-loss corrector**: with no gate in front, closed, code words 0.9998/0.9999 vs I, clean
+error words 0.904 (X tail) / 0.892 (H tail) vs kitten 0.935; loss-time repair profiles equal after both gates to
+1e-3. Pump-fragile as before (eta x 0.9/1.1 -6 to -13 %, Stark off -61 to -77 %). Next: warm-start the H tail
+from the X tail; one tail trained for several gates.
+**Is the tail error transparent? (notebook §9 since 2026-11-10, was §8, §9, 2026-11-04; photon loss only since 2026-11-09, user).** One
+photon loss put in by hand at time t of the EsT + 0.8 us tail (readout decay only, n_c 16; the next pair at n_c 24),
+scored as is and + ideal repair.
+**Semi-transparent to photon loss**: a late loss ends as a clean error word (0.000 as is, 0.93 after an ideal repair),
+and the next gate + tail repairs it to 0.71; that is the B2 first-pair vs later-pair gap (2.97 %
 vs 2.07 %, = Table 7's 0.91 %). The next gate is the leak (0.93 -> 0.78 repairable), plus readout decay during
-comb 2 (an early loss 0.83 closed -> 0.77). **Not transparent to f->e** (0.25 % per tail, all lost, time-summed best
-recovery 0.62): mostly code words lifted to |f> by the strong comb 1, with a jump-time phase (chi_ef); neither comb
-acts on |e>. Caches `tables/fwm_tail_transparency_{jumps,summary,pair2}.csv` (~16 min with 8 jobs to rebuild).
-Notebook order (2026-11-04): Setup (glossary), §1 idea, §2 limits after d2, §3 EsT comparison, §4 method
-(frame, controls, cost, baselines), §5 training as run, §6 results (6.4 = estimate vs result, 6.5 robustness), §7
-conclusions, §8 repeated gates, §9 error transparency of the tail, Appendix A checks and timing, Appendix B dated decisions and run logistics, Appendix C
-supporting tables (no C8), Appendix D good vs mid. Runs top to bottom with `python3 -m nbconvert --execute --inplace`
-(~9 min with the shot-timing cache). Every figure and table has a markdown caption below it with a *Symbols* line;
+comb 2 (an early loss 0.83 closed -> 0.77). f->e and e->g jumps were dropped from this section and its caches on
+2026-11-09. **"Best recovery" (`ft.optimal_recovery_fidelity`, Reimpell-Werner) is no longer used anywhere in the
+notebook (2026-11-09, user)**; the function and its `Ceilings` test stay in `fwm_tail.py`.
+Caches `tables/fwm_tail_transparency_{jumps,summary,pair2}.csv` (~12.5 min with 8 jobs to rebuild).
+**Naming (2026-11-10, user): the notebook calls Shirol's Table II teeth "QEC teeth"** everywhere it displays them
+(text, tables, legends; start `t2` = "QEC teeth", T-II -> QEC). Only display labels changed: file tags (`t2`),
+`start_library` key `tableII`, `fwm.beta_table2`, and the CSV/module labels (`gate + Table II teeth`,
+`idle + Table II teeth[, bare carriers]`) are unchanged and are mapped at display time. Same day (user): Table 6's
+gains are plain F_pro differences (+0.00321, no %), and the notebook no longer uses the go / no-go verdict anywhere
+(no verdict column, no §5 rule 5, no bar in Figure 5, "the best tail" instead of "the GO"). The "GO" wording
+elsewhere in this file is the campaign's record.
+Notebook order (2026-11-10): Setup (glossary), §1 idea, §2 limits after the EsT gate (since 2026-11-10, user; was d2: Figure 1 = pie of its all-channel
+infidelity 0.0427, one channel at a time, photon loss 2.40 %; Table 1 ideal repair +1.99 % (rows per channel, P(even, g), gain per unit); Table 1b (2026-11-11) = even-population
+shares per channel and input, right/wrong error word, overlap of the two inputs (why the gain per unit varies); Figure 2 loss timing,
+EsT only; Figure 3 (2026-11-11) = population at T_g per Table 1 row: right/wrong code word, odd outside the
+code, right error word (correctable, 2.24 % all channels; x 0.935 = the +2.10 % gain), wrong error word, even
+uncorrectable, transmon e/f (1.0 %), numbers in Table C10; Table 2 idle/teeth tails; gate n_c 24, tails 16 cut; Table C4 keeps d2), §3 EsT comparison, §4 method
+(frame, controls, cost, baselines), §5 training as run, §6 results (6.4 = estimate vs result, 6.5 robustness, 6.6 tails alone: Figure 9, Tables 10-12), §7
+tails after the H gate (new 2026-11-10; Figures 10-11, Tables 13-16), §8 repeated gates, §9 error transparency of the
+tail, §10 conclusions and next steps (findings, then next steps; moved
+to the end 2026-11-09), Appendix A checks and timing, Appendix B dated decisions, run logistics, checklist (B.4) and
+open decisions (B.5), Appendix C
+supporting tables (C1-C9; Appendix D, good vs mid, removed 2026-11-09 with a moderate cleanup, user). §8.4 = B3,
+§8.5 = retrained tails (Tables 20-21, no figure); §9 figures are 16-18, tables 22-23 (renumbered 2026-11-11 when §6.6 was added). Runs top to bottom with `python3 -m nbconvert --execute --inplace`
+(~10 min with the shot-timing cache). Every figure and table has a markdown caption below it with a *Symbols* line;
 table gains are shown in %.
-Tests: `python3 validation/test_fwm_tail.py -v` (13 tests, ~90 s on the Windows PC),
+**Tail trained with all of Shirol's channels (`notebooks/tail_experiments.ipynb`, 2026-11-11/12, user).** New noise
+option `noise="shirol"` (`DGRAPE.model.shirol_collapse_ops`, = `AQEC.master_equation.collapse_operators` default, tested to
+1e-12): decay + heating g->e and e->f (with the pumps' Δγ↑, applied in gate AND tail) + storage heating + dephasing with
+the residual φ_a 0.23 ms⁻¹. Jump names `a r s_ge s_ef up_ge up_ef up_a phi_e phi_f phi_a` (`keep=` filters them); the
+|f> frame stays exact. Threaded through `fwm.model_with_channels`, `fwm_tail` (`tail_model`, `gate_output`, `tail_input`,
+`score`, `TailObjective(noise=)` with `decay|dgrape_all|shirol`), `train_fwm_tail.py --channels` (NOT `--noise`, which is
+the start noise), `fwm_tail_score.py` conditions `shirol`, `shirol_nc_a/b`; defaults bit for bit. Runs
+`pulses/dgrape/*X_tail_estg_T08_shirol_{t2,z}*` (warm from the decay 0.8 us tails, 600 it, 3.9 h each): **F_pro never
+rose (+7e-7 max)**; the cost fell only by smoothing (deriv 3.59e-3 -> 3.27e-3, F -0.006/-0.009 %), so best_seen =
+iteration 1 = the decay tail (|Δη| <= 1e-4). **Breaks even, barely: +0.044 % (t2; z +0.040 %) vs gate alone 0.95993,
+same at n_c 16/24/28 (to 2e-8)**; all_ch +0.027 %. Channels one at a time (`DGRAPE/tail_experiments_channels.py`):
+photon loss +0.78 %, other decay -0.25 %, and the four non-decay groups -0.28 % (transmon dephasing -0.19 %), which equals
+the decay -> Shirol drop. Tables `tables/tail_experiments_{baselines,heldout,channels}.csv` (now notebook Appendix A).
+**Noise-start sweep, derivative weight / 10 (notebook §4-§7 since 2026-11-13, user)**: `train_fwm_tail.py --deriv-scale`
+(multiplies `TAIL_PENALTIES["deriv"]`, default 1 = bit for bit; json `deriv_scale`; tested), runs
+`pulses/dgrape/*X_tail_estg_T08_shirol_d01_s{1..10}*` (`--start zero --noise 0.005 --seed s --channels shirol
+--deriv-scale 0.1`, 1000 it, 10.2-11.1 h each, 5 side by side x 3 jobs x 1 BLAS thread). Seed rule fixed before training
+(F spread over seeds 1-5 > 1e-4 -> seeds 6-10) fired (7.5e-4). **All ten break even: +0.055 to +0.131 % (seed 8,
+0.961235), n_c 16 = 28 to 2e-8; eight within 0.007 %**; seeds 4, 5 still climbing at 1000 it. Same waveform as the warm
+tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.405 % vs the
+decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
+(+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -14 to -22 % vs -10/-13 %). Tables
+`tables/tail_experiments_cold_{heldout,channels}.csv`. Next (not run): warm start at deriv / 10 to separate the two
+changes, resume seeds 4/5, deriv / 100 or 0, pump-robust training, shorter tails. `validation/test_dgrape.py`
+`TaylorStepTest.test_against_superoperator_expm` fails at 2.7e-9 vs 1e-12 on the Windows OpenBLAS install, with or
+without this change (the committed model.py gives the same).
+Tests: `python3 validation/test_fwm_tail.py -v` (22 tests incl. `NGates`, `ShirolNoise`, ~1.5 min on the Windows PC),
 `python3 validation/test_est_gate.py -v` (15 tests, ~1 s).
 
-**7. FWM tails with Gertler combs (`DGRAPE/fwm_tail_ge.py`, `FWM_tails_ge.ipynb`, 2026-11-03/04).** Track 6 redone with
+**7. FWM tails with Gertler combs (`DGRAPE/fwm_tail_ge.py`, `notebooks/FWM_tails_ge.ipynb`, 2026-11-03/04).** Track 6 redone with
 Gertler 2021 Eq. 4 instead of Shirol's |f> combs, gates EsT (s24) and Ord only (no d2). Comb T = a selective linear
 transmon drive (u[:, 2:4]) exciting g -> e on the even error states; comb M = `g_m xi_M a'r'q + h.c.`,
 g_m = sqrt(chi_ge chi_qr) = 2pi 1.125 MHz (11x weaker than Shirol's comb 2), |n,e,0> -> |n+1,g,1>. The tail runs on
@@ -282,7 +371,7 @@ sequential shot, Nelder-Mead, transplant EsT gate, n_c 12; 36 chips x T 0.4-1.4 
 nothing. The tail costs ~2.1 %/us on every chip (cavity T1 cancels), so +0.3 % at 0.6 us needs ~1.6 % repair, 80 % of
 the EsT ideal ceiling. Without free rotation high-chi chips lose 16-52 % (Kerr ~ chi^2 plus pump Stark). Not run:
 Phase-2 GRAPE grid (`DGRAPE/fwm_tail_ge_chip_grid.py`, ready), gate retraining on a chip, notebook
-`FWM_tails_ge_chips.ipynb`. Plan: `~/.claude/plans/be-my-research-partner-luminous-quill.md`.
+`notebooks/FWM_tails_ge_chips.ipynb`. Plan: `~/.claude/plans/be-my-research-partner-luminous-quill.md`.
 Tests: `python validation/test_fwm_tail_ge.py -v` (12 tests, ~10 s), `python validation/test_fwm_tail_ge_chip.py -v`
 (12 tests, ~5 s).
 
@@ -334,7 +423,7 @@ were also 445 byte-identical `" 2"` copies in `logs/`, `pulses/est/`, `pulses/st
 There is no build step and no pytest config — tests are plain `unittest` files run directly.
 
 `main.py` is the production training entry point for a single operation, and its CLI defaults
-**are** the production recipe (`analysis/penalty_sweep.py`'s `FIXED` and `experiments.ipynb`'s
+**are** the production recipe (`analysis/penalty_sweep.py`'s `FIXED` and `notebooks/grape_experiments.ipynb`'s
 `OPTIMIZATION_RECIPE` both mirror it). Training one gate takes on the order of an hour:
 
 ```bash
@@ -385,7 +474,7 @@ python validation/truncation_convergence.py
 python QuTip/qutip_validate.py
 ```
 
-Penalty-weight sweep (`analysis/penalty_sweep.py`, `penalty_optimization.ipynb`, `tables/penalty_sweep_*`,
+Penalty-weight sweep (`analysis/penalty_sweep.py`, `notebooks/penalty_optimization.ipynb`, `tables/penalty_sweep_*`,
 `results/penalty_sweep_cache/`): commands, the two-phase / `--phase` protocols, cache-hash rules, the
 noise floor, the selection rule and the pre-image caveats live in the `penalty-sweep` skill
 (`.claude/skills/penalty-sweep/SKILL.md`). Read it before running, merging, or quoting anything from
@@ -399,19 +488,24 @@ onto the production amplitude recipe (`amp_max` = `hard_amp_limit` = 25, `amp_no
 `amp_max` ladder densified to 9 rungs, so all 20 configs × 10 seeds were retrained from scratch. The
 u_max=40 tables (`tables/penalty_sweep_X_ofat_ramp*.csv`) are now a **second frozen regime** alongside
 the pre-ramp ones — same three axes, different amplitude settings, different pulses. Never concatenate
-across regimes. `penalty_optimization.ipynb` §1–§10 has been rewritten against the new campaign;
+across regimes. `notebooks/penalty_optimization.ipynb` §1–§10 has been rewritten against the new campaign;
 §11–§15 remain the frozen pre-ramp record. Two artifacts are **overwritten in place** and now hold
 u_max=25 data despite their names: `tables/penalty_sweep_summary_ramp.csv` and
-`figures/penalty_pareto.*` (the latter is still `\includegraphics`'d by
-`penalty_optimization_report.tex`, whose prose remains u_max=40 at a 70% budget — a known, unfixed
-inconsistency).
+`figures/penalty_pareto.*`.
 
 EsT module (`EST/`): commands, per-module notes and conventions live in `EST/CLAUDE.md`, which loads
 when working with files under `EST/`. Read it explicitly before EsT work that starts elsewhere
-(`est_experiments.ipynb`, `est_optimization.ipynb`, `pulses/est/`, `logs/est_*`).
+(`notebooks/est_experiments.ipynb`, `notebooks/est_optimization.ipynb`, `pulses/est/`, `logs/est_*`).
 
 All scripts assume they are run from the repository root (several insert `REPO_ROOT` onto
 `sys.path` explicitly, e.g. `analysis/pulse_analysis.py`).
+
+**Notebooks live in `notebooks/`** (moved there by the user 2026-11-11; `experiments.ipynb` was renamed
+`notebooks/grape_experiments.ipynb` at the same time). Every notebook's first code cell does
+`os.chdir("..")` when the working directory is `notebooks/`, so data paths (`tables/`, `pulses/`, `figures/`)
+stay relative to the repository root; keep that cell in any new notebook. Run one with
+`python3 -m nbconvert --to notebook --execute --inplace notebooks/<name>.ipynb`. Notebook names in docstrings and
+notes carry the `notebooks/` prefix; inside a notebook, other notebooks are named without it.
 
 ## Architecture
 

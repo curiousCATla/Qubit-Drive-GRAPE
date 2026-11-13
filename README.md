@@ -214,8 +214,9 @@ flowchart TB
 | `QuTip/` | An independent re-implementation of track 1's physics in QuTiP, used as a cross-check |
 | `analysis/`, `visualization/` | One-off analysis scripts (penalty sweep, decoherence, rescoring) and plotting helpers |
 | `pulses/` | Saved pulses (`u_*.npy`, shape (N, 4)). `pulses/u_*_main.npy` are track 1's production gates. `pulses/est/` and `pulses/dgrape/` hold the other tracks' pulses |
+| `notebooks/` | The write-up notebooks, one or two per track (table in Section 3). Each one's first code cell moves to the repository root, so it runs from `notebooks/` or from the root |
 | `tables/`, `figures/`, `wigner/`, `results/`, `logs/` | Generated output. Regenerate it with a script; do not edit it by hand |
-| `slides/` | LaTeX slides and notes on the EsT theory |
+| `slides/` | LaTeX slide deck on the EsT theory |
 | `sources/` | The papers (local only, not committed) |
 
 ---
@@ -224,13 +225,13 @@ flowchart TB
 
 | # | Question in plain words | Code | Notebook | Status |
 |---|-------------------------|------|----------|--------|
-| 1 | Can GRAPE build a full gate set on a cat-code qubit, under realistic pulse limits? | `core/`, `main.py` | `experiments.ipynb`, `penalty_optimization.ipynb` | Done. Gate fidelities 0.998–0.9998 |
-| 2 | Can we reproduce gates that stay correctable when a photon is lost mid-gate? | `EST/` | `est_experiments.ipynb`, `est_optimization.ipynb` | Replication done |
-| 3 | How does Shirol's passive error correction work, step by step? | `AQEC/` | `aqec_experiments.ipynb`, `fwm_tuning.ipynb` | Done. Reproduces PRX Fig. 2 |
-| 4 | What is the best gate when photon loss and decay are in the training itself? | `DGRAPE/` | `dissipation_grape.ipynb` | **Active** |
-| 5 | If the pump tones are extra GRAPE knobs, do they help a gate? | `DGRAPE/fwm.py` | `fwm_grape.ipynb` | Null result. The optimizer switches them off |
-| 6 | Can a short pump "tail" after a gate repair the photons the gate lost? | `DGRAPE/fwm_tail.py`, `DGRAPE/est_gate.py` | `FWM_tails.ipynb`, `est_gate_selection.ipynb` | **Active** |
-| 7 | Do the pumps of Gertler 2021 work better as a tail? On any realistic chip? | `DGRAPE/fwm_tail_ge.py`, `DGRAPE/ge_chip.py` | `FWM_tails_ge.ipynb` | No-go. Stopped 2026-11-05 |
+| 1 | Can GRAPE build a full gate set on a cat-code qubit, under realistic pulse limits? | `core/`, `main.py` | `notebooks/grape_experiments.ipynb`, `notebooks/penalty_optimization.ipynb` | Done. Gate fidelities 0.998–0.9998 |
+| 2 | Can we reproduce gates that stay correctable when a photon is lost mid-gate? | `EST/` | `notebooks/est_experiments.ipynb`, `notebooks/est_optimization.ipynb` | Replication done |
+| 3 | How does Shirol's passive error correction work, step by step? | `AQEC/` | `notebooks/aqec_experiments.ipynb`, `notebooks/fwm_tuning.ipynb` | Done. Reproduces PRX Fig. 2 |
+| 4 | What is the best gate when photon loss and decay are in the training itself? | `DGRAPE/` | `notebooks/dissipation_grape.ipynb` | **Active** |
+| 5 | If the pump tones are extra GRAPE knobs, do they help a gate? | `DGRAPE/fwm.py` | `notebooks/fwm_grape.ipynb` | Null result. The optimizer switches them off |
+| 6 | Can a short pump "tail" after a gate repair the photons the gate lost? | `DGRAPE/fwm_tail.py`, `DGRAPE/est_gate.py` | `notebooks/FWM_tails.ipynb`, `notebooks/est_gate_selection.ipynb` | **Active** |
+| 7 | Do the pumps of Gertler 2021 work better as a tail? On any realistic chip? | `DGRAPE/fwm_tail_ge.py`, `DGRAPE/ge_chip.py` | `notebooks/FWM_tails_ge.ipynb` | No-go. Stopped 2026-11-05 |
 
 How they connect: track 1 built the GRAPE machinery and the pulse rules. Track 2 added the idea of error
 transparency. Track 3 built a faithful model of a chip that can correct its own photon loss. Tracks 4–7 put the
@@ -260,7 +261,7 @@ Shirol chip: how close the real, noisy operation is to a perfect X, where 1 is p
   close second that repairs better.
 - **Next:** a cost term that rewards transparency *during* the whole gate, not only at the end. More seeds
   will not help.
-- Notebooks: `est_gate_selection.ipynb`, `FWM_tails.ipynb` §3.
+- Notebooks: `notebooks/est_gate_selection.ipynb`, `notebooks/FWM_tails.ipynb` §3.
 
 ### Open-system GRAPE (track 4)
 
@@ -273,7 +274,7 @@ ways to 1e-13).
 - One truncation ($n_c = 16$) turned out to be enough, which saves time.
 - What is left: **dephasing (~1.05 %)** is now the largest loss, and training has not seen it yet.
 - **Next:** train with `--dephasing`. Resume `d3b`, which had not finished converging (`--init-x`).
-- Notebook: `dissipation_grape.ipynb` §10–§12.
+- Notebook: `notebooks/dissipation_grape.ipynb` §10–§12.
 
 ### Repair tails after a gate (track 6)
 
@@ -290,7 +291,7 @@ excitation into the readout resonator, which carries it away. GRAPE shapes the t
   f → e decay during the tail does not.
 - **Next:** a faster repair "shot", training that is robust to pump strength, and a gate trained to make
   its losses repairable.
-- Notebook: `FWM_tails.ipynb` §6 (results), §8 (repeated gates), §9 (transparency).
+- Notebook: `notebooks/FWM_tails.ipynb` §6 (results), §8 (repeated gates), §9 (transparency).
 
 **Recently closed:** track 5 (pump tones as gate knobs: null), track 7 (Gertler pumps and a 36-chip
 search: no realistic chip clears +0.3 %).
@@ -305,7 +306,8 @@ pip3 install qutip                   # only for the QuTip/ cross-check
 ```
 
 Run everything from the repository root, with `python3`. There is no build step, and the tests are plain
-`unittest` files.
+`unittest` files. The notebooks are in `notebooks/`; run one top to bottom with
+`python3 -m nbconvert --to notebook --execute --inplace notebooks/FWM_tails.ipynb`.
 
 **Train one track-1 gate** (about an hour; the defaults are the production recipe, Section 6.7):
 
@@ -353,7 +355,7 @@ plot_wigner_from_pulse("pulses/u_enc_main.npy", initial_state="vacuum", transmon
 
 This section is the reference for track 1 (`core/`, `main.py`). Read it before changing `core/grape_core.py`,
 `core/optimizer.py` or `core/cat_code.py`. The history behind each choice (retrain campaigns, before/after
-tables, benchmarks) lives in `experiments.ipynb` §5–6 and in git history.
+tables, benchmarks) lives in `notebooks/grape_experiments.ipynb` §5–6 and in git history.
 
 ### 6.1 Model
 
@@ -507,7 +509,7 @@ print(compute_fidelity(simulate_with_decoherence(u, psi0), target))
 
 ### 6.7 Production recipe
 
-`main.py`'s CLI defaults *are* the recipe. `experiments.ipynb`'s `OPTIMIZATION_RECIPE` and
+`main.py`'s CLI defaults *are* the recipe. `notebooks/grape_experiments.ipynb`'s `OPTIMIZATION_RECIPE` and
 `analysis/penalty_sweep.py`'s `FIXED` mirror it. Many values differ from the library defaults of
 `optimize_multi_state_pulse`:
 

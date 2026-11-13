@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Train an EsT (or Ord control) gate (X by default, --gate H etc.) on the Shirol chip in the closed system (DGRAPE/est_gate.py,
-FWM_tails.ipynb §3): EST's two-stage weights, d2's chip, code, duration, drive limits and start.
+notebooks/FWM_tails.ipynb §3): EST's two-stage weights, d2's chip, code, duration, drive limits and start.
 
     python3 DGRAPE/train_est_gate.py --variant est --dry-run          # one timed evaluation
     python3 DGRAPE/train_est_gate.py --variant est --maxiter 2000     # tag X_est_closed

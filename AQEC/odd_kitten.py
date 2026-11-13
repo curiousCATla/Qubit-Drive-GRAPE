@@ -10,7 +10,7 @@ here are CAVITY-ONLY Fock vectors of length n_c; embedding into the three-mode
 
 Unlike EST/kitten_code.py, a|0_L> and a|1_L> have equal norm sqrt(3) (Knill-Laflamme
 for {I, a}), but the PReSPA recovery sum_n |2n+1><2n| does NOT invert a on the code:
-it sends |0_E> to (|1> + sqrt(5)|5>)/sqrt(6), not |0_L>. See aqec_experiments.ipynb §4.
+it sends |0_E> to (|1> + sqrt(5)|5>)/sqrt(6), not |0_L>. See notebooks/aqec_experiments.ipynb §4.
 """
 
 import numpy as np

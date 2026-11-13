@@ -1,0 +1,31 @@
+label,duration_us,channels,protocol,F_pro,n_c
+aqec_T10_s42,1.0,decay,real AQEC (as is),0.8233996525633592,24
+aqec_T10_s42,1.0,decay,real AQEC (leftover transmon reset first),0.8251015402338284,24
+aqec_T10_s42,1.0,decay,"real AQEC, no readout window",0.8448458193425183,24
+aqec_T10_s42,1.0,decay,"real AQEC, closed system (gate and step)",0.8671384768446326,24
+aqec_T10_s42,1.0,decay,"ideal AQEC, same length",0.9630742781833719,24
+aqec_T15_s43,1.5,decay,real AQEC (as is),0.9205429051381178,24
+aqec_T15_s43,1.5,decay,real AQEC (leftover transmon reset first),0.9221870967738243,24
+aqec_T15_s43,1.5,decay,"real AQEC, no readout window",0.9452519885318424,24
+aqec_T15_s43,1.5,decay,"real AQEC, closed system (gate and step)",0.9857006178007263,24
+aqec_T15_s43,1.5,decay,"ideal AQEC, same length",0.9624734072179191,24
+aqec_T20_s42,2.0,decay,real AQEC (as is),0.9123611343487346,24
+aqec_T20_s42,2.0,decay,real AQEC (leftover transmon reset first),0.9143404569663556,24
+aqec_T20_s42,2.0,decay,"real AQEC, no readout window",0.9369655419185405,24
+aqec_T20_s42,2.0,decay,"real AQEC, closed system (gate and step)",0.9986833316638456,24
+aqec_T20_s42,2.0,decay,"ideal AQEC, same length",0.9617620222634271,24
+aqec_T10_s42,1.0,all,real AQEC (as is),0.8033481921896348,24
+aqec_T10_s42,1.0,all,real AQEC (leftover transmon reset first),0.805972332464657,24
+aqec_T10_s42,1.0,all,"real AQEC, no readout window",0.8267294633171811,24
+aqec_T10_s42,1.0,all,"real AQEC, closed system (gate and step)",0.8671384768446326,24
+aqec_T10_s42,1.0,all,"ideal AQEC, same length",0.9502918510722781,24
+aqec_T15_s43,1.5,all,real AQEC (as is),0.8911339815217735,24
+aqec_T15_s43,1.5,all,real AQEC (leftover transmon reset first),0.8938722362297391,24
+aqec_T15_s43,1.5,all,"real AQEC, no readout window",0.9178628475933261,24
+aqec_T15_s43,1.5,all,"real AQEC, closed system (gate and step)",0.9857006178007263,24
+aqec_T15_s43,1.5,all,"ideal AQEC, same length",0.9484124922743706,24
+aqec_T20_s42,2.0,all,real AQEC (as is),0.8829534127626325,24
+aqec_T20_s42,2.0,all,real AQEC (leftover transmon reset first),0.8859943455189048,24
+aqec_T20_s42,2.0,all,"real AQEC, no readout window",0.909516561887809,24
+aqec_T20_s42,2.0,all,"real AQEC, closed system (gate and step)",0.9986833316638456,24
+aqec_T20_s42,2.0,all,"ideal AQEC, same length",0.9464365102608863,24

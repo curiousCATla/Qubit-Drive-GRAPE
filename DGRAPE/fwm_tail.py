@@ -1,5 +1,5 @@
 """
-FWM tails (FWM_tails.ipynb): the d2 X gate runs as trained, then a TAIL of four-wave-mixing (FWM)
+FWM tails (notebooks/FWM_tails.ipynb): the d2 X gate runs as trained, then a TAIL of four-wave-mixing (FWM)
 pumps acts on its mixed output state, with the linear drives off. The fidelity is scored against the
 ideal X at the end of the tail. Same chip, drift, jump operators and Taylor step map as
 DGRAPE/model.py, DGRAPE/lindblad_np.py and DGRAPE/fwm.py; none of those modules is changed.
@@ -23,7 +23,8 @@ V = exp(i Delta_ref t P_f). Then
     A_2 = q^2 r' lowers f -> g and gains the opposite phase, which cancels xi_2's;
   - H_d, S and M = a' r' are diagonal or do not touch |f>, so they commute with P_f;
   - the jump operators a, r, |g><e| (and the opt-in dephasing and heating ones) commute with P_f;
-    |e><f| only gains a global phase, which the dissipator D[c] ignores;
+    |e><f| only gains a global phase, which the dissipator D[c] ignores; so does the |f><e| heating
+    of noise="shirol" (Shirol's full set, DGRAPE.model.shirol_collapse_ops);
   - V = 1 at the start of the tail, and every target has the transmon in |g>, where V acts as 1,
     so F_pro is the same in both frames.
 With eta constant over a step the generator is constant over the step, so ONE exponential per step
@@ -60,7 +61,7 @@ from types import SimpleNamespace
 import numpy as np
 from joblib import Parallel, delayed
 from scipy.linalg import expm
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 
 from AQEC import device as dev
 from DGRAPE import fwm
@@ -71,7 +72,7 @@ from DGRAPE.model import _QUIET, F, G, Model, drift_hamiltonian, index, operator
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 U_D2_PATH = os.path.join(REPO_ROOT, "pulses", "dgrape", "u_X_open_d2.npy")
 
-# Recipe (FWM_tails.ipynb, decisions of 2026-10-19)
+# Recipe (notebooks/FWM_tails.ipynb, decisions of 2026-10-19)
 DT = 0.002                   # us, the DGRAPE control grid
 N_REF = 3                    # reference tooth: comb-1 repair 2 -> 3 (the code's mean photon number)
 TAIL_US = 1.0                # default tail length (a parameter everywhere; 3.0 until 2026-10-20)
@@ -107,12 +108,12 @@ def frame_frequency(n_c, n_r=2, n_ref=N_REF, include_higher_order=True):
 
 
 def tail_model(n_c, n_r=2, n_ref=N_REF, include_higher_order=True, keep=None, dephasing=False,
-               heating=False, mixing=0.0, g_scale=1.0):
+               heating=False, mixing=0.0, g_scale=1.0, noise="dgrape"):
     """SimpleNamespace(model, fw, delta_ref, n_c, n_r, n_ref) for the tail, in the frame that rotates
     |f> at Delta_ref (module docstring). model is a DGRAPE Model (jump operators restricted to `keep`
     as in fwm.model_with_channels) with H_d -> H_d + Delta_ref P_f; fw is fwm.fwm_terms with one tone
     per comb, (1, n_ref) and (2, n_ref), and both carriers set to 0, so beta (N, 2) IS eta."""
-    model = fwm.model_with_channels(n_c, n_r, keep, include_higher_order, dephasing, heating)
+    model = fwm.model_with_channels(n_c, n_r, keep, include_higher_order, dephasing, heating, noise)
     delta_ref = frame_frequency(n_c, n_r, n_ref, include_higher_order)
     model.H_d = model.H_d + delta_ref * operators(n_c, n_r)["Pf"]
     # The only Model fields derived from H_d (DGRAPE/model.py): the centring shift and the half width
@@ -135,6 +136,24 @@ def tooth_offsets(n_c=16, n_ref=N_REF, paths=REPAIR_PATHS, include_higher_order=
     ref = frame_frequency(n_c, 2, n_ref, include_higher_order)
     K = len(fw0.paths)
     return {"paths": fw0.paths, "comb1": fw0.Delta[:K] - ref, "comb2": fw0.Delta[K:] + ref}
+
+
+def teeth_stark_shifts(beta_teeth, n_c=16, paths=REPAIR_PATHS, include_higher_order=True):
+    """(2K,) rad/us, fwm.tone_list(paths) order: how far the pump Stark shift moves each tooth's line when the
+    constant teeth beta_teeth are on. The Stark term is -(|xi_1|^2 + |xi_2|^2) S (fwm.h_eff); the teeth all have
+    different frequencies, so the time average of |xi_1|^2 + |xi_2|^2 is x = sum |beta_k|^2. A line s -> t
+    (comb 1: |n-1,g,0> -> |n,f,0>; comb 2: |n,f,0> -> |n,g,1>, as fwm.fwm_terms) then has the carrier
+    -(E_t - E_s) + x (S_t - S_s): add the returned shift to the bare carrier. At Table II about +204 kHz on
+    comb 1 and -204 kHz on comb 2 (the -4 alpha shift of |f>), against comb 1's 57 kHz drive."""
+    fw0 = fwm.fwm_terms(Model(n_c, 2, include_higher_order=include_higher_order), paths=paths)
+    x = float(np.sum(np.abs(np.asarray(beta_teeth, dtype=complex)) ** 2))
+    S = fw0.S_diag
+    out = []
+    for c, n in fw0.tones:
+        s, t = ((index(n - 1, G, 0, n_c, 2), index(n, F, 0, n_c, 2)) if c == 1
+                else (index(n, F, 0, n_c, 2), index(n, G, 1, n_c, 2)))
+        out.append(x * (S[t] - S[s]))
+    return np.array(out)
 
 
 # ---------------------------------------------------------------------------
@@ -166,34 +185,35 @@ _GATE_CACHE = {}
 
 
 def gate_output(pulse=None, n_c=16, n_r=2, keep=None, include_higher_order=True, dephasing=False,
-                heating=False):
+                heating=False, noise="dgrape"):
     """(3, d, d): Phi_gate(E_b) for the process inputs E_00, E_11, E_01 (DGRAPE.code.PROCESS_PAIRS)
     through the gate pulse (N, 4) on the 2 ns grid (None = d2), propagated at n_r = 1 with the jump
     operators named in `keep` (None = the decay set, plus the opt-in channels), then embedded with the
     readout in |0>. Cached in memory, keyed by the pulse's bytes."""
     u = d2_pulse() if pulse is None else np.ascontiguousarray(pulse, dtype=float)
     key = (hashlib.sha1(u.tobytes()).hexdigest(), u.shape, n_c, n_r,
-           None if keep is None else frozenset(keep), include_higher_order, dephasing, heating)
+           None if keep is None else frozenset(keep), include_higher_order, dephasing, heating, noise)
     if key not in _GATE_CACHE:
-        m = fwm.model_with_channels(n_c, 1, keep, include_higher_order, dephasing, heating)
+        m = fwm.model_with_channels(n_c, 1, keep, include_higher_order, dephasing, heating, noise)
         E_in, _, _ = process_targets("X", n_c, 1)      # the inputs do not depend on the gate
         _GATE_CACHE[key] = embed_readout(lnp.propagate(m, u, E_in, DT), n_r)
     return _GATE_CACHE[key].copy()
 
 
-def d2_output(n_c=16, n_r=2, keep=None, include_higher_order=True, dephasing=False, heating=False):
+def d2_output(n_c=16, n_r=2, keep=None, include_higher_order=True, dephasing=False, heating=False,
+              noise="dgrape"):
     """gate_output for the d2 X gate."""
-    return gate_output(None, n_c, n_r, keep, include_higher_order, dephasing, heating)
+    return gate_output(None, n_c, n_r, keep, include_higher_order, dephasing, heating, noise)
 
 
 def tail_input(pulse=None, n_c=16, n_r=2, gate_n_c=None, keep=None, include_higher_order=True,
-               dephasing=False, heating=False):
+               dephasing=False, heating=False, noise="dgrape"):
     """The tail's input: gate_output at n_c, or, with gate_n_c, the gate propagated at gate_n_c and cut
     to n_c storage levels (cut_storage). A closed-trained gate needs n_c 24 to run but ends with
-    <= 2e-5 above Fock 16, so its tail can be trained at n_c 16 (FWM_tails.ipynb §7)."""
+    <= 2e-5 above Fock 16, so its tail can be trained at n_c 16 (notebooks/FWM_tails.ipynb §7)."""
     if gate_n_c is None or gate_n_c == n_c:
-        return gate_output(pulse, n_c, n_r, keep, include_higher_order, dephasing, heating)
-    R = gate_output(pulse, gate_n_c, n_r, keep, include_higher_order, dephasing, heating)
+        return gate_output(pulse, n_c, n_r, keep, include_higher_order, dephasing, heating, noise)
+    R = gate_output(pulse, gate_n_c, n_r, keep, include_higher_order, dephasing, heating, noise)
     return cut_storage(R, n_c, n_r)
 
 
@@ -260,12 +280,19 @@ def eta_stats(eta):
 # ---------------------------------------------------------------------------
 
 def eta_from_teeth(beta_teeth, N, dt=DT, n_c=16, n_ref=N_REF, paths=REPAIR_PATHS, window=None,
-                   include_higher_order=True):
+                   include_higher_order=True, stark_tuned=False):
     """eta (N, 2) of teeth with complex amplitudes beta_teeth, (2K,) constant or (N, 2K), in the order of
     fwm.tone_list(paths) (comb-1 teeth, then comb-2 teeth): eta_c(t) = sum_n beta_{c,n} exp(i delta_{c,n} t),
-    sampled at the step midpoints. With window=(t0, t1) us the teeth are on only inside it."""
+    sampled at the step midpoints. With window=(t0, t1) us the teeth are on only inside it.
+    stark_tuned=True moves each tooth by its mean pump Stark shift (teeth_stark_shifts, constant beta_teeth
+    only), as an experiment tunes the tones with the pumps on; the default keeps the bare carriers."""
     off = tooth_offsets(n_c, n_ref, paths, include_higher_order)
     K = len(off["paths"])
+    if stark_tuned:
+        if np.ndim(beta_teeth) != 1:
+            raise ValueError("stark_tuned needs constant teeth, beta_teeth of shape (2K,)")
+        d = teeth_stark_shifts(beta_teeth, n_c, paths, include_higher_order)
+        off = {**off, "comb1": off["comb1"] + d[:K], "comb2": off["comb2"] + d[K:]}
     b = np.broadcast_to(np.asarray(beta_teeth, dtype=complex), (N, 2 * K))
     t = (np.arange(N) + 0.5) * dt
     eta = np.stack([(b[:, :K] * np.exp(1j * off["comb1"][None] * t[:, None])).sum(1),
@@ -336,24 +363,37 @@ def start_library(tail_us=TAIL_US, dt=DT, n_c=16, n_ref=N_REF, paths=REPAIR_PATH
 _TAIL_CACHE = {}
 
 
-def _cached_tail(n_c, n_r, n_ref, hot, mixing):
-    key = (n_c, n_r, n_ref, hot, mixing)
+def noise_flags(noise):
+    """TailObjective's `noise` -> (dephasing, heating, model noise): "decay" (the default),
+    "dgrape_all" (DGRAPE's opt-in dephasing + heating, the scorer's all_ch) or "shirol" (Shirol's
+    full set, DGRAPE.model.shirol_collapse_ops)."""
+    table = {"decay": (False, False, "dgrape"), "dgrape_all": (True, True, "dgrape"),
+             "shirol": (False, False, "shirol")}
+    if noise not in table:
+        raise ValueError(f"noise must be one of {sorted(table)}, not {noise!r}")
+    return table[noise]
+
+
+def _cached_tail(n_c, n_r, n_ref, hot, mixing, noise="decay"):
+    key = (n_c, n_r, n_ref, hot, mixing, noise)
     if key not in _TAIL_CACHE:
-        _TAIL_CACHE[key] = tail_model(n_c, n_r, n_ref, hot, mixing=mixing)
+        deph, heat, nz = noise_flags(noise)
+        _TAIL_CACHE[key] = tail_model(n_c, n_r, n_ref, hot, dephasing=deph, heating=heat, mixing=mixing,
+                                      noise=nz)
     return _TAIL_CACHE[key]
 
 
 def _eval_piece(n_c, n_r, n_ref, hot, mixing, R0, T, w, eta, dt, mask_kind, forbid_fock_min,
-                occ_weights, occ_idx, want_grad):
+                occ_weights, occ_idx, want_grad, noise="decay"):
     """One process-input subset; module level so loky can pickle it (models cached per worker)."""
     with np.errstate(**_QUIET):
         return _eval_piece_quiet(n_c, n_r, n_ref, hot, mixing, R0, T, w, eta, dt, mask_kind,
-                                 forbid_fock_min, occ_weights, occ_idx, want_grad)
+                                 forbid_fock_min, occ_weights, occ_idx, want_grad, noise)
 
 
 def _eval_piece_quiet(n_c, n_r, n_ref, hot, mixing, R0, T, w, eta, dt, mask_kind, forbid_fock_min,
-                      occ_weights, occ_idx, want_grad):
-    tm = _cached_tail(n_c, n_r, n_ref, hot, mixing)
+                      occ_weights, occ_idx, want_grad, noise="decay"):
+    tm = _cached_tail(n_c, n_r, n_ref, hot, mixing, noise)
     masks = None
     if mask_kind and occ_idx:
         masks = np.array([lnp.forbidden_mask(tm.model, forbid_fock_min) if k == "forbid"
@@ -383,12 +423,14 @@ class TailObjective:
     The three process inputs run as separate joblib jobs (n_jobs = 3; they never interact). Mirrors
     fwm.Stage2Objective. `pulse` is the gate before the tail (None = d2), propagated at `gate_n_c`
     (None = n_c) and cut to n_c (tail_input); `inputs` replaces the gate output (3, d, d) altogether,
-    e.g. for a positive control.
+    e.g. for a positive control. `noise` (noise_flags: "decay", "dgrape_all", "shirol") is the channel
+    set of the gate AND the tail.
     """
 
     def __init__(self, tail_us=TAIL_US, dt=DT, n_c=16, n_r=2, n_ref=N_REF, gate="X", readout=READOUT,
                  penalties=None, cap=ETA_CAP, band=ETA_BAND, ramp_ns=RAMP_NS, forbid_fock_min=10,
-                 include_higher_order=True, mixing=0.0, n_jobs=3, inputs=None, pulse=None, gate_n_c=None):
+                 include_higher_order=True, mixing=0.0, n_jobs=3, inputs=None, pulse=None, gate_n_c=None,
+                 noise="decay"):
         self.N, self.dt, self.tail_us = n_steps(tail_us, dt), dt, tail_us
         self.n_c, self.n_r, self.n_ref, self.gate, self.readout = n_c, n_r, n_ref, gate, readout
         self.cap, self.band, self.ramp_ns = cap, tuple(band), ramp_ns
@@ -396,9 +438,12 @@ class TailObjective:
         if penalties:
             self.pen.update(penalties)
         self.hot, self.mixing, self.forbid_fock_min = include_higher_order, mixing, forbid_fock_min
-        self.tm = _cached_tail(n_c, n_r, n_ref, include_higher_order, mixing)
+        self.noise = noise
+        self.tm = _cached_tail(n_c, n_r, n_ref, include_higher_order, mixing, noise)
         self.gate_n_c = gate_n_c
-        self.R0 = (tail_input(pulse, n_c, n_r, gate_n_c, include_higher_order=include_higher_order)
+        deph, heat, nz = noise_flags(noise)
+        self.R0 = (tail_input(pulse, n_c, n_r, gate_n_c, include_higher_order=include_higher_order,
+                              dephasing=deph, heating=heat, noise=nz)
                    if inputs is None else np.asarray(inputs, dtype=complex))
         self.trace_cut = float(1.0 - np.mean([np.trace(self.R0[b]).real for b in lnp.FORBID_IDX]))
         self.T, self.w = tail_targets(n_c, n_r, gate, readout)
@@ -433,7 +478,7 @@ class TailObjective:
             oi = (0,) if b in lnp.FORBID_IDX else ()
             tasks.append((self.n_c, self.n_r, self.n_ref, self.hot, self.mixing, self.R0[b:b + 1],
                           self.T[b:b + 1], self.w[b:b + 1], eta, self.dt, self.mask_kind,
-                          self.forbid_fock_min, self.occ_weights, oi, want_grad))
+                          self.forbid_fock_min, self.occ_weights, oi, want_grad, self.noise))
         out = self._map(tasks)
         Fv = sum(o[0] for o in out)
         gF = sum(o[1] for o in out) if want_grad else None
@@ -483,22 +528,24 @@ class TailObjective:
 
 def score(eta, dt=DT, n_c=16, n_r=2, n_ref=N_REF, gate="X", readout=READOUT, include_higher_order=True,
           tail_higher_order=None, keep=None, dephasing=False, heating=False, stark=True, mixing=0.0,
-          g_scale=1.0, eta_scale=1.0, occupations=False, forbid_fock_min=10, pulse=None, gate_n_c=None):
+          g_scale=1.0, eta_scale=1.0, occupations=False, forbid_fock_min=10, pulse=None, gate_n_c=None,
+          noise="dgrape"):
     """F_pro of gate + tail under one condition; `pulse` is the gate (None = d2), propagated at
     `gate_n_c` (None = n_c) and cut to n_c before the tail (tail_input). The channel options
     (keep, dephasing, heating) apply to the gate AND the tail; include_higher_order to the gate, and to
-    the tail unless tail_higher_order is given; stark, mixing, g_scale, eta_scale to the tail only. An
+    the tail unless tail_higher_order is given; stark, mixing, g_scale, eta_scale to the tail only.
+    noise="shirol" (gate and tail) replaces the channel set by Shirol's full set (keep still filters it). An
     eta with 0 rows scores the gate alone.
     Returns F_pro (by `readout`), F_traced, F_empty, and <n_r>, P_e, P_f at the end averaged over
     |0_L>, |1_L> (diagonal entries, so frame independent); with occupations, C_forbid and C_transmon
     as time sums over the tail (code inputs only)."""
     eta = eta_scale * np.asarray(eta, dtype=complex).reshape(-1, 2)
-    R0 = tail_input(pulse, n_c, n_r, gate_n_c, keep, include_higher_order, dephasing, heating)
+    R0 = tail_input(pulse, n_c, n_r, gate_n_c, keep, include_higher_order, dephasing, heating, noise)
     if eta.shape[0] == 0:
         R, states = R0, []
     else:
         th = include_higher_order if tail_higher_order is None else tail_higher_order
-        tm = tail_model(n_c, n_r, n_ref, th, keep, dephasing, heating, mixing, g_scale)
+        tm = tail_model(n_c, n_r, n_ref, th, keep, dephasing, heating, mixing, g_scale, noise)
         out = propagate(tm, eta, R0, dt, store=occupations, stark=stark)
         R = out[0]
         states = (out[1][1:] + [R]) if occupations else []
@@ -618,6 +665,57 @@ def kitten_repair_limit():
     photon-adding repair: (|1>+|5>)/sqrt2 -> (|0>+sqrt5|4>)/sqrt6 -> (|1>+sqrt5|5>)/sqrt6, overlap
     (1 + sqrt5)/sqrt12 with |0_L>, while |1_L> = |3> is restored exactly: (1 + (1+sqrt5)/sqrt12)^2 / 4."""
     return (1 + (1 + math.sqrt(5)) / math.sqrt(12)) ** 2 / 4
+
+
+# ---------------------------------------------------------------------------
+# A tail with no gate in front: code words and clean one-loss error words
+# ---------------------------------------------------------------------------
+
+def logical_targets(U, n_c=16, n_r=2):
+    """(T, w) for the logical unitary U (2 x 2) on the code, transmon in g, readout traced out (as
+    tail_targets)."""
+    _, _, w = process_targets("I", n_c, n_r)
+    B = embedded_basis(n_c, n_r) @ U
+    T = np.stack([np.outer(B[:, i], B[:, j].conj()) for i, j in PROCESS_PAIRS])
+    return fwm.readout_traced(T, n_c, n_r), w
+
+
+def rz(theta):
+    """Logical Z rotation Rz(theta) = diag(e^{-i theta/2}, e^{+i theta/2})."""
+    return np.diag([np.exp(-0.5j * theta), np.exp(0.5j * theta)])
+
+
+def code_word_inputs(n_c=16, n_r=2):
+    """{name: (R0, p)}: the code's process inputs E_b ("code words", p = 1) and the clean one-loss error
+    words a E_b a' ("one-loss error words", p = <n> = 3 on both code words). Dividing F by p scores the
+    normalised input; since p is the same for both code words, the error-word map is linear and
+    F(mix) = sum_k c_k F_k for any mixture of the two (normalised) inputs."""
+    E, _, _ = process_targets("I", n_c, n_r)
+    a = operators(n_c, n_r)["a"]
+    out = {}
+    for name, R0 in (("code words", E), ("one-loss error words", np.einsum("ij,bjk,lk->bil", a, E, a.conj()))):
+        out[name] = (R0, float(np.mean([np.real(np.trace(R0[b])) for b in (0, 1)])))
+    return out
+
+
+def code_word_scores(eta, n_c=16, n_r=2, keep=frozenset(), inputs=None):
+    """A tail with NO gate in front, on ideal inputs (code_word_inputs). keep=frozenset() = closed (no
+    jumps; the default, notebook Table 16), keep=None = the decay set. For each input: F_vs_I = process
+    fidelity against the identity, F_best_Rz = the same with the best logical Z rotation allowed for free,
+    theta_best. Readout traced. Returns a list of dicts."""
+    tm = tail_model(n_c, n_r, keep=keep)
+    eta = np.asarray(eta, dtype=complex)
+    rows = []
+    for name, (R0, p) in (inputs or code_word_inputs(n_c, n_r)).items():
+        R = propagate(tm, eta, R0)[0] if len(eta) else R0
+
+        def F_of(th):
+            T, w = logical_targets(rz(th), n_c, n_r)
+            return fidelity_from_outputs(R, T, w) / p
+        opt = minimize_scalar(lambda th: -F_of(th), bounds=(-np.pi, np.pi), method="bounded",
+                              options={"xatol": 1e-8})
+        rows.append({"input": name, "F_vs_I": F_of(0.0), "F_best_Rz": -opt.fun, "theta_best": float(opt.x)})
+    return rows
 
 
 def kraus_from_outputs(R_out, tol=1e-13):

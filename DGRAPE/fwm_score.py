@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Held-out scoring of Stage 2 FWM pulses (fwm_grape.ipynb §6.5 and Table 11, §7.5). Forward only.
+Held-out scoring of Stage 2 FWM pulses (notebooks/fwm_grape.ipynb §6.5 and Table 11, §7.5). Forward only.
 
 Each pulse's tone set comes from its <tag>.json ("paths"; (1, 3, 5) when the key is missing, as for
 the six-tone X_fwm_s2_* runs). All pulses in one call must share a tone set, which the tones-off

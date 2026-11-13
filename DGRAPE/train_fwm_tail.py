@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-FWM-tail training (FWM_tails.ipynb §7): the d2 X gate runs as trained, then a tail of the two FWM combs
+FWM-tail training (notebooks/FWM_tails.ipynb §7): the d2 X gate runs as trained, then a tail of the two FWM combs
 (one complex waveform eta_c(t) per comb, DGRAPE/fwm_tail.py) is optimized by L-BFGS-B on its pre-image
 x (N, 4), scored against the ideal X at the end of the tail. Nothing else moves.
 
 Settings are DGRAPE/fwm_tail.py's recipe: tail 1 us (--tail-us), n_c = 16, n_r = 2, one exact
 exponential per 2 ns step in the |f>-rotating frame, readout traced out (--readout empty to require it
-empty), decay set, higher-order terms on, cap |eta_c| <= 0.1 per comb (modulus penalty), band +-12 MHz
+empty), decay set (--channels dgrape_all | shirol for more), higher-order terms on, cap |eta_c| <= 0.1 per comb (modulus penalty), band +-12 MHz
 on each eta_c, 48 ns ramp, box |x| <= 25 with x = 250 eta, gtol 1e-12 (as DGRAPE/train.py),
-best-vs-final.
+best-vs-final. Penalty weights are fwm_tail.TAIL_PENALTIES (amp 5.0, deriv 0.625); --deriv-scale multiplies the derivative
+(smoothness) weight (0.1 in notebooks/tail_experiments.ipynb).
 
 The gate before the tail is d2 unless --gate-pulse FILE names another (N, 4) pulse on the 2 ns grid
 (e.g. pulses/dgrape/u_X_est_closed.npy, DGRAPE/est_gate.py); --target names the ideal gate at the end
 (default X; I after the idle pulse pulses/dgrape/u_idle_X_duration.npy). --gate-n-c propagates the gate at that
 truncation and cuts its output to --n-c for the tail (fwm_tail.tail_input): the closed-trained gates
-need n_c 24 to run but end with <= 2e-5 above Fock 16.
+need n_c 24 to run but end with <= 2e-5 above Fock 16. --n-gates m runs that gate m times back to back
+before the tail (one propagation of the pulse tiled m times; the gates share the DGRAPE frame); the default
+target is then X^m (X for odd m, I for even m).
 
 On Windows (OpenBLAS) set OPENBLAS_NUM_THREADS=2 at launch: loky otherwise gives each of the three
 workers cpu_count / 3 threads, which is slower at n_c 16 (31 s against 12 s per 1 us evaluation).
@@ -65,18 +68,32 @@ def start_preimage(start, tail_us, n_c):
     return np.load(start)
 
 
-def make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse=None, gate_n_c=None, target="X"):
-    pulse = None if gate_pulse is None else np.load(gate_pulse)
+def default_target(n_gates):
+    """X^m: X after an odd number of X gates, I after an even number."""
+    return "X" if n_gates % 2 else "I"
+
+
+def make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse=None, gate_n_c=None, target="X",
+                   n_gates=1, channels="decay", deriv_scale=1.0):
+    if n_gates < 1:
+        raise ValueError(f"n_gates must be >= 1, not {n_gates}")
+    if n_gates > 1 and gate_pulse is None:
+        raise ValueError("--n-gates needs --gate-pulse")
+    pulse = None if gate_pulse is None else np.tile(np.load(gate_pulse), (n_gates, 1))
     return ft.TailObjective(tail_us=tail_us, n_c=n_c, gate=target, readout=readout, band=band, cap=cap,
-                            mixing=mixing, n_jobs=n_jobs, pulse=pulse, gate_n_c=gate_n_c)
+                            mixing=mixing, n_jobs=n_jobs, pulse=pulse, gate_n_c=gate_n_c, noise=channels,
+                            penalties=None if deriv_scale == 1.0 else
+                            {"deriv": deriv_scale * ft.TAIL_PENALTIES["deriv"]})
 
 
 def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, band=ft.ETA_BAND,
-            cap=ft.ETA_CAP, mixing=0.0, gate_pulse=None, gate_n_c=None, target="X"):
+            cap=ft.ETA_CAP, mixing=0.0, gate_pulse=None, gate_n_c=None, target="X", n_gates=1, channels="decay",
+            deriv_scale=1.0):
     """One cost + gradient evaluation of the start, timed. No optimizer."""
     x0 = start_preimage(start, tail_us, n_c)
     t0 = time.time()
-    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target)
+    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target, n_gates,
+                         channels, deriv_scale)
     t_build = time.time() - t0
     try:
         t0 = time.time()
@@ -84,7 +101,9 @@ def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, ban
         t_eval = time.time() - t0
     finally:
         obj.close()
-    out = {"start": start, "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c, "target": target,
+    out = {"start": start, "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c, "n_gates": n_gates,
+           "channels": channels, "deriv_scale": deriv_scale, "penalties": obj.pen,
+           "target": target,
            "trace_cut": obj.trace_cut, "tail_us": tail_us, "N": obj.N, "n_c": n_c, "n_jobs": n_jobs, "cost": cost,
            "grad_norm": float(np.linalg.norm(g)), "build_s": t_build, "eval_s": t_eval, **terms}
     print(json.dumps(out, indent=1, default=float), flush=True)
@@ -93,7 +112,7 @@ def dry_run(start, tail_us=ft.TAIL_US, n_c=16, n_jobs=3, readout=ft.READOUT, ban
 
 def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise=0.0, n_c=16, n_jobs=3,
           readout=ft.READOUT, band=ft.ETA_BAND, cap=ft.ETA_CAP, mixing=0.0, max_hours=None, verbose=True,
-          gate_pulse=None, gate_n_c=None, target="X"):
+          gate_pulse=None, gate_n_c=None, target="X", n_gates=1, channels="decay", deriv_scale=1.0):
     x0 = start_preimage(start, tail_us, n_c)
     N = ft.n_steps(tail_us)
     if x0.shape != (N, 4):
@@ -101,7 +120,8 @@ def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise
     if noise > 0:
         x0 = x0 + noise * ft.S_ETA * np.random.default_rng(seed).normal(size=x0.shape)
     x0 = np.clip(x0, -ft.U_BOX, ft.U_BOX)
-    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target)
+    obj = make_objective(tail_us, n_c, n_jobs, readout, band, cap, mixing, gate_pulse, gate_n_c, target, n_gates,
+                         channels, deriv_scale)
     history = []
     t0 = time.time()
     try:
@@ -148,7 +168,7 @@ def train(start, tag, outdir, tail_us=ft.TAIL_US, max_iter=300, seed=None, noise
     eta = fwm.beta_from_real(b4)
     pinned = float(np.mean(np.abs(x) >= ft.U_BOX * (1 - 1e-9)))
     info = {"tag": tag, "start": str(start), "gate_pulse": gate_pulse or "d2", "gate_n_c": gate_n_c or n_c,
-            "target": target,
+            "n_gates": n_gates, "target": target, "channels": channels, "deriv_scale": deriv_scale,
             "trace_cut": obj.trace_cut, "seed": seed, "noise": noise,
             "tail_us": tail_us, "N": N,
             "n_c": n_c, "n_r": obj.n_r, "n_ref": obj.n_ref, "readout": readout, "mixing": mixing,
@@ -179,6 +199,11 @@ def main():
     p.add_argument("--max-hours", type=float, default=None, help="wall limit; returns best-vs-final")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--noise", type=float, default=0.0, help="std of added eta noise (eta units)")
+    p.add_argument("--channels", choices=("decay", "dgrape_all", "shirol"), default="decay",
+                   help="jump operators of the gate and the tail: decay set (default), DGRAPE dephasing + heating, "
+                        "or Shirol's full set (fwm_tail.noise_flags)")
+    p.add_argument("--deriv-scale", type=float, default=1.0,
+                   help="multiply the derivative (smoothness) penalty weight, fwm_tail.TAIL_PENALTIES['deriv'] = 0.625")
     p.add_argument("--n-c", type=int, default=16)
     p.add_argument("--n-jobs", type=int, default=3)
     p.add_argument("--readout", choices=("traced", "empty"), default=ft.READOUT)
@@ -188,18 +213,22 @@ def main():
     p.add_argument("--gate-pulse", default=None, help="(N, 4) gate pulse .npy before the tail (default d2)")
     p.add_argument("--gate-n-c", type=int, default=None,
                    help="propagate the gate at this n_c, then cut its output to --n-c (default: --n-c)")
-    p.add_argument("--target", default="X",
-                   help="ideal logical gate at the end of the tail (I after an idle gate pulse)")
+    p.add_argument("--target", default=None,
+                   help="ideal logical gate at the end of the tail (default X^m: X for odd --n-gates, I for even; "
+                        "pass I after an idle gate pulse)")
+    p.add_argument("--n-gates", type=int, default=1, help="run the gate pulse this many times before the tail")
     p.add_argument("--dry-run", action="store_true", help="one timed cost + gradient evaluation, no training")
     a = p.parse_args()
+    if a.target is None:
+        a.target = default_target(a.n_gates)
     if a.dry_run:
         dry_run(a.start, a.tail_us, a.n_c, a.n_jobs, a.readout, tuple(a.band), a.cap, a.mixing, a.gate_pulse,
-                a.gate_n_c, a.target)
+                a.gate_n_c, a.target, a.n_gates, a.channels, a.deriv_scale)
         return
     os.makedirs(a.outdir, exist_ok=True)
     train(a.start, a.tag, a.outdir, a.tail_us, a.max_iter, a.seed, a.noise, a.n_c, a.n_jobs, a.readout,
           tuple(a.band), a.cap, a.mixing, a.max_hours, gate_pulse=a.gate_pulse, gate_n_c=a.gate_n_c,
-          target=a.target)
+          target=a.target, n_gates=a.n_gates, channels=a.channels, deriv_scale=a.deriv_scale)
 
 
 if __name__ == "__main__":

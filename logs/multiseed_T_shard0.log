@@ -1,0 +1,61 @@
+shard 0/4: seeds [0, 4, 8]
+
+======================================================================
+[train] T / est / seed 0  maxiter=500/stage
+======================================================================
+
+=== T / est / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.60312  c2=0.40032  c3=0.14983  c4=0.00000   [F1=0.39688  F_ET=0.59968]
+    end    c1=0.02906  c2=0.08387  c3=0.01089  c4=0.00000   [F1=0.97094  F_ET=0.91613]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=531 cost=1.640031e-01 (228.2s)
+
+=== T / est / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.02906  c2=0.08387  c3=0.01089  c4=0.00000   [F1=0.97094  F_ET=0.91613]
+    end    c1=0.00002  c2=0.05520  c3=0.21042  c4=0.00000   [F1=0.99998  F_ET=0.94480]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=529 cost=5.537559e-03 (225.2s)
+[done] seed 0: F1_trained=0.999982 F_ET_trained=0.944803 F_heldout_mean=0.999982 (455s)
+
+======================================================================
+[train] T / est / seed 4  maxiter=500/stage
+======================================================================
+
+=== T / est / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.37263  c2=0.25919  c3=0.18789  c4=0.00000   [F1=0.62737  F_ET=0.74081]
+    end    c1=0.03988  c2=0.07685  c3=0.00933  c4=0.00000   [F1=0.96012  F_ET=0.92315]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=537 cost=1.590195e-01 (228.6s)
+
+=== T / est / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.03988  c2=0.07685  c3=0.00933  c4=0.00000   [F1=0.96012  F_ET=0.92315]
+    end    c1=0.00002  c2=0.05529  c3=0.21308  c4=0.00000   [F1=0.99998  F_ET=0.94471]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=536 cost=5.547399e-03 (227.4s)
+[done] seed 4: F1_trained=0.999981 F_ET_trained=0.944713 F_heldout_mean=0.999981 (457s)
+
+======================================================================
+[train] T / est / seed 8  maxiter=500/stage
+======================================================================
+
+=== T / est / stage 1  weights=(1.0, 0.7, 7.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.51760  c2=0.36162  c3=0.17201  c4=0.00000   [F1=0.48240  F_ET=0.63838]
+    end    c1=0.03372  c2=0.07808  c3=0.00876  c4=0.00000   [F1=0.96628  F_ET=0.92192]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=540 cost=1.496667e-01 (219.4s)
+
+=== T / est / stage 2  weights=(1.0, 0.1, 0.0, 1.0) ===
+    N=600 dt=1.0 ns  trunc_list=[20]  [eigh + analytic adjoint]
+    start  c1=0.03372  c2=0.07808  c3=0.00876  c4=0.00000   [F1=0.96628  F_ET=0.92192]
+    end    c1=0.00002  c2=0.05560  c3=0.17257  c4=0.00000   [F1=0.99998  F_ET=0.94440]
+    STOP: TOTAL NO. of ITERATIONS REACHED LIMIT
+    nit=500 nfev=522 cost=5.579167e-03 (211.5s)
+[done] seed 8: F1_trained=0.999981 F_ET_trained=0.944401 F_heldout_mean=0.999981 (432s)
+
+shard 0/4 done (3 seeds cached). Run:
+  python EST/multiseed_est.py --gate T --seeds 0 1 2 3 4 5 6 7 8 9 --merge

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Forward-only pre-scan of Gertler-style tails (FWM_tails_ge.ipynb §2): for EsT and Ord, every tail length
+Forward-only pre-scan of Gertler-style tails (notebooks/FWM_tails_ge.ipynb §2): for EsT and Ord, every tail length
 and mixing-comb cap, the fixed starts of fwm_tail_ge.start_library (gertler: Gertler's continuous teeth;
 sequential: selective pi, then the swap), raw and through the training chain, plus the gate alone and
 gate + idle. No training. Writes tables/fwm_tail_ge_prescan.csv.

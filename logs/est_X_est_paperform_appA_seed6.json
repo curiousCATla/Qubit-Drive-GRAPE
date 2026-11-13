@@ -1,0 +1,93 @@
+{
+  "gate": "X",
+  "variant": "est_paperform",
+  "n_t": 3,
+  "dt": 0.001,
+  "N": 1000,
+  "trunc_list": [
+    20
+  ],
+  "w_amp": 1.0,
+  "seed": 6,
+  "amp0": 20.0,
+  "hard_bound": 60.0,
+  "maxiter": 2000,
+  "n_stages": 2,
+  "init": null,
+  "band_mhz": [
+    -50.0,
+    50.0
+  ],
+  "ramp_ns": 48.0,
+  "eps_max_rad_per_us": 25.132741228718345,
+  "pipeline": "eigh_adjoint",
+  "stages": [
+    {
+      "stage": 1,
+      "weights": [
+        1.0,
+        0.7,
+        7.0,
+        1.0
+      ],
+      "cost": -0.16699337237995265,
+      "nit": 2000,
+      "nfev": 2151,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 1597.1055109500885,
+      "terms": {
+        "20": {
+          "c1": 0.021607933512319488,
+          "c2": -0.28416188416528443,
+          "c3": 0.0014650232584837405,
+          "c4": 5.685021404075661e-05
+        }
+      },
+      "max_abs_preimage": 60.0
+    },
+    {
+      "stage": 2,
+      "weights": [
+        1.0,
+        0.1,
+        0.0,
+        1.0
+      ],
+      "cost": -0.02076732047863802,
+      "nit": 2000,
+      "nfev": 2167,
+      "message": "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT",
+      "seconds": 1603.8027460575104,
+      "terms": {
+        "20": {
+          "c1": 0.002236074277279343,
+          "c2": -0.23006897382350755,
+          "c3": 0.002833196102961358,
+          "c4": 3.502626433394764e-06
+        }
+      },
+      "max_abs_preimage": 60.0
+    }
+  ],
+  "constraints": {
+    "max_eps_cavity_rad_per_us": 25.144594298605462,
+    "max_eps_transmon_rad_per_us": 25.145842132728937,
+    "eps_max_rad_per_us": 25.132741228718345,
+    "amplitude_cap_satisfied": true,
+    "out_of_band_fraction": {
+      "cavity": 0.0007181019861433075,
+      "transmon": 0.0011057356336283168
+    },
+    "endpoint_rel_to_mid": [
+      0.012898216770213529,
+      0.01248167978193496
+    ]
+  },
+  "base_variant": "est",
+  "cost_form": {
+    "c2_norm_power": 1,
+    "c2_include_endpoint": false,
+    "c3_normalize": false,
+    "c3_dt": 1.0
+  }
+}

@@ -128,7 +128,7 @@ Two consequences are measured on the seed-0 X pulses:
 
 That variant's logged `c2` and `c3` are therefore not comparable to an `est` log. Every default is unchanged.
 
-*Result, X at seed 0* (`est_experiments.ipynb` Appendix A): the printed form is **not** more transparent, and it leaks more at the end of the gate.
+*Result, X at seed 0* (`notebooks/est_experiments.ipynb` Appendix A): the printed form is **not** more transparent, and it leaks more at the end of the gate.
 - **End of gate:** $L(T)$ is 0.470, against 0.396 for the delivered `u_X_est`, and the error-basis overlap at $T$ is 0.411 against 0.589.
 - **Costs:** max active Fock 13 against 9, and 2.9× the infidelity.
 - **Photon number:** the extra photons are bought with a cavity drive that sits at the amplitude cap 24% of the time, against 11%.
@@ -530,7 +530,7 @@ python EST/train_est.py --gate X --variant est --maxiter 1000 \
 # Cold vs. warm-stage-1 vs. warm-stage-2 vs. Ord, scored through both code paths
 python EST/compare_warmstart.py
 
-# T gate, drive shape, SINGLE STAGE (est_optimization.ipynb §3): C6 alone (`est_sm`, needs
+# T gate, drive shape, SINGLE STAGE (notebooks/est_optimization.ipynb §3): C6 alone (`est_sm`, needs
 # --w-smooth) at seed 1, 2000 it; the control is reused (stage 1 of u_T_est_best2000).
 python3 EST/drive_shape_t.py commands   # three C6 runs + a check retrain of the control
 python3 EST/drive_shape_t.py compare    # -> tables/est_drive_T_seed1_sp{.csv,_traces.npz}

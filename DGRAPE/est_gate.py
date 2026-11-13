@@ -1,15 +1,15 @@
 """
-An error-semitransparent (EsT) X gate on the Shirol chip (FWM_tails.ipynb §3): the EsT cost of EST/
+An error-semitransparent (EsT) X gate on the Shirol chip (notebooks/FWM_tails.ipynb §3): the EsT cost of EST/
 (Roy, Wetherbee & Fatemi, arXiv:2603.15356) on the odd kitten code and the chip of the d2 gate,
 trained in the CLOSED system and scored in the open system like d2.
 
 WHY. A photon lost during d2 is scrambled by the rest of the pulse, so the FWM tail can repair only the
-losses near the end of the gate (FWM_tails.ipynb §2.2). An EsT gate is also trained to move the error
+losses near the end of the gate (notebooks/FWM_tails.ipynb §2.2). An EsT gate is also trained to move the error
 words the way it moves the code words, so a loss at any time should end as a clean, repairable error.
 
 SAME SYSTEM AS d2. Drift and controls are DGRAPE/model.py's at n_r = 1 (the readout is inert during a
 gate), higher-order terms on; the code is DGRAPE/code.py's odd kitten code with the transmon in |g>.
-Duration 1.1 us (a parameter of train(); est_gate_selection.ipynb §7 runs H at 2 us), dt 2 ns (N = 550), and d2's drive limits (DGRAPE/recipe.py): bands +-27 / +-33 MHz,
+Duration 1.1 us (a parameter of train(); notebooks/est_gate_selection.ipynb §7 runs H at 2 us), dt 2 ns (N = 550), and d2's drive limits (DGRAPE/recipe.py): bands +-27 / +-33 MHz,
 48 ns ramp, box |x| <= 25 on the pre-image, cap |eps| <= 25 rad/us per drive, and d2's seed-42 smooth
 start. Only the cost differs from d2.
 
@@ -24,7 +24,7 @@ with EST's two-stage weights (EST/train_est.py SCHEDULES; validation/test_est_ga
 The error cardinals are a|cardinal> renormalized. They equal the cardinals built on the error words
 (|0> + sqrt5 |4>)/sqrt6, |2> because a|0_L> and a|1_L> have the same norm sqrt3 (asserted in system()).
 
-VARIANT est_err (est_gate_selection.ipynb, 2026-10-29) is est_optimization.ipynb §7's cost: `est` plus
+VARIANT est_err (notebooks/est_gate_selection.ipynb, 2026-10-29) is notebooks/est_optimization.ipynb §7's cost: `est` plus
 C_err = C1's form on the error cardinals at t = T (target: the ideal X in the error basis), in stage 1 only:
     est_err  (1, 0.7, 7, 1, 0.3, 0, 0)  then  (1, 0.1, 0, 1, 0, 0, 0)    (w1, w2, w3, w4, w_err, w5, w6)
 pinned to EST/err_two_stage.WEIGHTS["run"]. Its 7-tuples make cost_and_grad report cerr in both stages; the
@@ -74,9 +74,9 @@ W_AMP = 1.0                        # C4 weight, as EST/
 SCHEDULES = {                      # (w1, w2, w3) per stage, copied from EST/train_est.py
     "est": [(1.0, 0.7, 7.0), (1.0, 0.1, 0.0)],
     "ord": [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
-    # (w1, w2, w3, w_err): est_optimization.ipynb §7, C_err in stage 1 only
+    # (w1, w2, w3, w_err): notebooks/est_optimization.ipynb §7, C_err in stage 1 only
     "est_err": [(1.0, 0.7, 7.0, 0.3), (1.0, 0.1, 0.0, 0.0)],
-    # est_gate_selection.ipynb §7 (2026-11-02): est_err with C_err kept on in stage 2. Stage 1 is est_err's,
+    # notebooks/est_gate_selection.ipynb §7 (2026-11-02): est_err with C_err kept on in stage 2. Stage 1 is est_err's,
     # so a run resumed at stage 2 from an est_err stage-1 pre-image is this variant's full run
     "est_err2": [(1.0, 0.7, 7.0, 0.3), (1.0, 0.1, 0.0, 0.3)],
 }
@@ -201,7 +201,7 @@ def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, ga
     from the previous stage's x. An init_x outside the box is refused rather than clipped (as EST/).
     start_stage > 1 skips the earlier stages (init_x is then the previous stage's pre-image); info["stages"]
     holds only the stages run. stage_hook(i, u, x, terms) runs after each stage (the CLI saves there).
-    duration_us sets N = duration_us / DT (est_gate_selection.ipynb §7: H at 2 us); everything else is unchanged.
+    duration_us sets N = duration_us / DT (notebooks/est_gate_selection.ipynb §7: H at 2 us); everything else is unchanged.
     chip (DGRAPE.ge_chip) trains on that chip's drift; None = Shirol's chip (info["chip"] is then absent)."""
     if start_stage > 1 and init_x is None:
         raise ValueError("start_stage > 1 needs init_x, the pre-image the earlier stage ended at")

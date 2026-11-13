@@ -1,0 +1,21 @@
+start for,case,condition,F_pro
+0.8,trained 1 μs tail,all decay,0.9696584577713487
+0.8,trained 1 μs tail,closed,0.9977869020829694
+0.8,"same, first 200 ns set to zero",all decay,0.9504903658575382
+0.8,"same, first 200 ns set to zero",closed,0.9780918802893449
+0.8,"its last 0.8 μs, cut exactly",all decay,0.9511351173221158
+0.8,"its last 0.8 μs, cut exactly",closed,0.9780038430233862
+0.8,"the training start (0.8 μs, after the ramp and band)",all decay,0.9373927620687171
+0.8,"the training start (0.8 μs, after the ramp and band)",closed,0.9639943394833899
+0.8,idle 0.8 μs,all decay,0.9476425133634983
+0.8,idle 0.8 μs,closed,0.9941622419612851
+1.4,trained 2 μs tail,all decay,0.9658171679943572
+1.4,trained 2 μs tail,closed,0.997836104881067
+1.4,"same, first 600 ns set to zero",all decay,0.9655864510497308
+1.4,"same, first 600 ns set to zero",closed,0.9976220444061226
+1.4,"its last 1.4 μs, cut exactly",all decay,0.9650655029106435
+1.4,"its last 1.4 μs, cut exactly",closed,0.9953590202242035
+1.4,"the training start (1.4 μs, after the ramp and band)",all decay,0.9650174545844689
+1.4,"the training start (1.4 μs, after the ramp and band)",closed,0.9952881760553965
+1.4,idle 1.4 μs,all decay,0.9281556958099747
+1.4,idle 1.4 μs,closed,0.9865717308388613

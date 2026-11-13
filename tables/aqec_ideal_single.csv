@@ -1,0 +1,13 @@
+channels,protocol,time_us,F_pro,F_empty,n_r_end,P_e_end,P_f_end,trace,gate_pulse,n_c,n_r,tau1_us,tau2_us
+decay,gate alone,1.1,0.9670594096925791,0.9670594096925791,0.0,0.006698734638597178,3.519187269331481e-08,1.0000000000000016,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,gate + 2.2 us idle (Kerr decoded),3.3,0.921464978141095,0.921464978141095,0.0,0.006410382980509678,3.278094575923615e-08,1.000000000000006,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,gate + ideal AQEC,3.3,0.9630742781833719,0.9630742781833719,0.0,0.0,0.0,1.0000000000000009,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,"gate + ideal AQEC, strict",3.3,0.9609058735973461,0.9609058735973461,0.0,0.0,0.0,0.9933012301695295,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,gate + no readout window,2.1,0.9894174472779952,0.9894174472779952,0.0,0.0,0.0,1.000000000000004,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+decay,gate + instant,1.1,0.9900597590844025,0.9900597590844025,0.0,0.0,0.0,1.0000000000000016,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,gate alone,1.1,0.9573326335039702,0.9573326335039702,0.0,0.010386270646040422,2.7145963177567162e-05,0.9999999999999987,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,gate + 2.2 us idle (Kerr decoded),3.3,0.9067143174703077,0.9067143174703077,0.0,0.010677578411961604,2.5286245897198065e-05,1.0,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,gate + ideal AQEC,3.3,0.9502918510722781,0.9502918510722781,0.0,0.0,0.0,0.9996576149145273,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,"gate + ideal AQEC, strict",3.3,0.9468704056217665,0.9468704056217665,0.0,0.0,0.0,0.9892477637038509,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,gate + no readout window,2.1,0.9794283685015361,0.9794283685015361,0.0,0.0,0.0,0.9996576149145304,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2
+all,gate + instant,1.1,0.9827712428522206,0.9827712428522206,0.0,0.0,0.0,0.9999999999999989,pulses/dgrape/u_X_est_err_closed_s24.npy,24,1,1.0,1.2

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Stage 2 training (fwm_grape.ipynb §6): the d2 X gate frozen, only the FWM tone envelopes
+Stage 2 training (notebooks/fwm_grape.ipynb §6): the d2 X gate frozen, only the FWM tone envelopes
 optimized, by L-BFGS-B on the tone pre-image x (N, 2K) of DGRAPE/fwm.py's Stage2Objective. By
 default the six tones (--paths 1 3 5, x is (N, 12)); --paths 1 2 3 4 5 6 7 8 9 trains all 18 (every
-repair n-1 -> n up to 8 -> 9, fwm_grape.ipynb §7), and x is (N, 36). --band defaults to +-2 MHz for
+repair n-1 -> n up to 8 -> 9, notebooks/fwm_grape.ipynb §7), and x is (N, 36). --band defaults to +-2 MHz for
 the six tones and +-1 MHz for any other set (fwm.default_band).
 
 Settings are DGRAPE/fwm.py's Stage 2 recipe: n_c = 16, CF4 S = 2, readout-traced target, decay set,
