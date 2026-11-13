@@ -395,28 +395,40 @@ Runs on Python 3.9. Note: on Apple's Accelerate BLAS backend, `core/grape_core.p
 sets `np.seterr(divide='ignore', over='ignore', invalid='ignore')` to silence spurious
 RuntimeWarnings from ordinary complex matmuls (verified benign — no actual NaN/Inf).
 
-### iCloud sync
+### Syncing between devices (GitHub only)
 
-The repo lives in `~/Documents`, which iCloud ("Desktop & Documents") syncs between the user's
-devices, on purpose. iCloud does not understand git. When two writes to one file collide, it keeps
-both and renames one to `<name> 2.<ext>` (or `<name> 2`). **Found 2026-10-19:** `.git/index` was
-gone, replaced by `.git/index 2` and `.git/index 3`. With no index, git reported all 1230 tracked
-files as staged-deleted and the same files as untracked, which looks like data loss but is not. There
-were also 445 byte-identical `" 2"` copies in `logs/`, `pulses/est/`, `pulses/staging_umax25/`
-(since renamed `pulses/archive_umax25_seeds/`), `pulses/archive_umax40/` and `tables/`.
+**Since 2026-11-13 GitHub (`origin`) is the only way the repo syncs between devices.** The user has a
+Windows PC (runs the long simulations) and a Mac, each with its own clone outside any cloud-synced
+folder. Each device runs `git pull --rebase` before working and commits and pushes before switching.
+Things that follow from this:
 
-- **Check:** a `git status` full of `D` plus `??` for the same paths, `ls .git/index*`, and
+- **Training outputs in `~/fwm_runs` are not in git.** They exist only on the device that ran them
+  until they are copied into `pulses/dgrape/` or `tables/` and pushed.
+- **Generated files can't be merged.** Don't edit or re-execute on one device a notebook, pulse or
+  table that a run on the other device will overwrite. If they conflict anyway, keep one side
+  (`git checkout --ours|--theirs <file>`) and rerun.
+- **Line endings:** `.gitattributes` stores every text file with LF endings (`* text=auto eol=lf`)
+  and marks `.npy`, `.npz`, `.pkl`, `.pdf` and images as binary. The 748 files committed earlier with
+  Windows CRLF endings (logs, JSON, CSV, 3 notebooks) were converted in one commit on 2026-11-13.
+  Python on Windows writes CRLF; git converts it on `git add`, so this needs no care.
+
+**iCloud history (until 2026-11-13 the Mac clone lived in iCloud's `~/Documents`).** iCloud does not
+understand git: when two writes to one file collide it keeps both and renames one `<name> 2.<ext>`
+(or `<name> 2`). On 2026-10-19 `.git/index` was replaced by `.git/index 2` and `index 3`, so git
+showed every tracked file as staged-deleted and also untracked (no data was lost), and there were
+445 byte-identical `" 2"` copies. `.gitignore` still ignores `" 2"` names. If old copies turn up:
+
+- **Check:** `ls .git/index*`, and
   `find . -path ./.git/objects -prune -o \( -name '* [0-9]' -o -name '* [0-9].*' \) -print`.
   Use exactly that pattern. A looser `'* [0-9]*'` also matches real names such as
-  `sources/Gertler et al. - 2021 - ….pdf`, and since that name has no original to compare with,
-  a `cmp` check passes against itself.
+  `sources/Gertler et al. - 2021 - ….pdf`.
 - **Fix the index:** `git reset` (mixed; it rebuilds the index from HEAD and leaves every working
-  file alone), then confirm `git status` shows only real edits, then remove the `index N` copies.
-- **Fix `" 2"` copies:** `cmp` each against its original first. Delete only identical ones. A copy
+  file alone), then confirm `git status` shows only real edits.
+- **Fix `" 2"` copies:** `cmp` each against its original and delete only identical ones. A copy
   that differs may be another device's newer version, so read both before choosing.
-- **Avoid it:** let iCloud finish syncing before working on another device, never run git or a
-  training job on two devices at once, and do not commit `" 2"` files (`.gitignore` ignores them).
-  Training runs that write many files (`pulses/est/`, `logs/`) are the usual trigger.
+
+Some script docstrings still say outputs go "outside iCloud" (`~/fwm_runs`); the default folder is
+still right, only the reason is out of date.
 
 ## Commands
 
