@@ -398,19 +398,43 @@ RuntimeWarnings from ordinary complex matmuls (verified benign — no actual NaN
 ### Syncing between devices (GitHub only)
 
 **Since 2026-11-13 GitHub (`origin`) is the only way the repo syncs between devices.** The user has a
-Windows PC (runs the long simulations) and a Mac, each with its own clone outside any cloud-synced
-folder. Each device runs `git pull --rebase` before working and commits and pushes before switching.
+Windows PC (`C:\Users\iando\Developer\Qubit-Drive-GRAPE`, runs the long simulations) and a Mac (the
+user works there meanwhile), each with its own clone outside any cloud-synced folder.
+`pull.rebase true` is set globally on both. Protocol (agreed with the user 2026-11-13):
+
+1. **Start a run (PC):** `git pull`, confirm `git status` is clean, then launch in its own terminal
+   with `$env:OPENBLAS_NUM_THREADS = 2`. Note the `--tag`. The PC must not sleep or install
+   updates during a run (Windows power settings; pause Windows Update).
+2. **While a run is going, never `git pull`, `git switch`, `git checkout <branch>` or `git rebase` in
+   the clone the run started from.** loky workers can re-read modules from disk mid-run, so new code
+   would silently mix into the run. Before any of those on the PC, check for running training jobs
+   (`Get-Process python`, or ask the user). To keep using git on the PC during a run, start the run
+   from a second worktree (`git worktree add ..\GRAPE-run`) instead.
+3. **Meanwhile (Mac):** pull, edit, commit, push often. Don't create files with the running job's
+   tag, and don't re-execute and commit a notebook that the PC will also re-execute with the run's
+   results.
+4. **Run finished (PC):** `git pull` first, copy the run's files from `~/fwm_runs` into
+   `pulses/dgrape/` (and `tables/` if any), check `git status`, add files **by name** (never
+   `git add .`), commit, push right away. Then `git pull` on the Mac.
+5. **Check sync:** `git fetch && git status -sb`: `ahead` = push, `behind` = pull, both = pull then
+   push.
+
 Things that follow from this:
 
 - **Training outputs in `~/fwm_runs` are not in git.** They exist only on the device that ran them
-  until they are copied into `pulses/dgrape/` or `tables/` and pushed.
-- **Generated files can't be merged.** Don't edit or re-execute on one device a notebook, pulse or
-  table that a run on the other device will overwrite. If they conflict anyway, keep one side
-  (`git checkout --ours|--theirs <file>`) and rerun.
+  until they are copied into `pulses/dgrape/` or `tables/` and pushed. Remind the user to push
+  finished results promptly. The trainers checkpoint every iteration there, so a killed run resumes.
+- **Generated files can't be merged.** For a conflict in a notebook, `.csv`, `.npy` or `.json`,
+  keep one side (`git checkout --ours|--theirs <file>`, `git add`, `git rebase --continue`) and
+  rerun. During a rebase `--theirs` is the local commit being replayed and `--ours` is the upstream
+  one; read both before choosing. `git rebase --abort` undoes a pull that went wrong.
+  `.py`/`.md` conflicts are resolved by hand as usual.
+- **A rejected push** ("fetch first") means the other device pushed first: `git pull`, then push.
 - **Line endings:** `.gitattributes` stores every text file with LF endings (`* text=auto eol=lf`)
   and marks `.npy`, `.npz`, `.pkl`, `.pdf` and images as binary. The 748 files committed earlier with
   Windows CRLF endings (logs, JSON, CSV, 3 notebooks) were converted in one commit on 2026-11-13.
-  Python on Windows writes CRLF; git converts it on `git add`, so this needs no care.
+  Python on Windows writes CRLF; git converts it on `git add`, so this needs no care. If a device
+  shows unedited files as modified after a pull, `git add --renormalize .` clears it.
 
 **iCloud history (until 2026-11-13 the Mac clone lived in iCloud's `~/Documents`).** iCloud does not
 understand git: when two writes to one file collide it keeps both and renames one `<name> 2.<ext>`
