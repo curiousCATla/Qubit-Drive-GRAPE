@@ -331,7 +331,11 @@ the decay -> Shirol drop. Tables `tables/tail_experiments_{baselines,heldout,cha
 (F spread over seeds 1-5 > 1e-4 -> seeds 6-10) fired (7.5e-4); seeds 11-15 added at the user's request (2026-11-13/14,
 same settings, run from a `..\GRAPE-run` worktree). **All fifteen break even: +0.055 to +0.131 % (seed 8, 0.961235),
 n_c 16 = 28 to 2e-8; twelve within 0.007 %**; seeds 4, 5 still climbing at 1000 it. Seeds 11-15 span 7.8e-5, best
-(s14) 4e-6 below seed 8: more seeds will not help. Same waveform as the warm
+(s14) 4e-6 below seed 8: more seeds will not help. **Seed 8 is the FWM reference of `notebooks/AQEC_compare.ipynb`
+since 2026-11-14** (replacing `X_tail_estg_T08_t2`; one gate from the cold held-out table, repeated gates from
+`fwm_repeat_run.py --tails EsT-s8=X_tail_estg_T08_shirol_d01_s8 --n-jobs 9`, 3.1 h, decay set, n_c 24 ->
+`tables/fwm_tail_repeat_s8_B{1,2}.csv`, teeth rows dropped): B1 one tail after 20 gates 0.597 (was 0.593), B2 20 pairs
+0.647 (was 0.641), 1.70 %/pair; the ideal AQEC now catches one tail at N = 4 (was 3). Same waveform as the warm
 tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.407 % vs the
 decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
 (+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -13 to -22 % vs -10/-13 %). Tables
