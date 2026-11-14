@@ -326,15 +326,18 @@ photon loss +0.78 %, other decay -0.25 %, and the four non-decay groups -0.28 % 
 the decay -> Shirol drop. Tables `tables/tail_experiments_{baselines,heldout,channels}.csv` (now notebook Appendix A).
 **Noise-start sweep, derivative weight / 10 (notebook §4-§7 since 2026-11-13, user)**: `train_fwm_tail.py --deriv-scale`
 (multiplies `TAIL_PENALTIES["deriv"]`, default 1 = bit for bit; json `deriv_scale`; tested), runs
-`pulses/dgrape/*X_tail_estg_T08_shirol_d01_s{1..10}*` (`--start zero --noise 0.005 --seed s --channels shirol
+`pulses/dgrape/*X_tail_estg_T08_shirol_d01_s{1..15}*` (`--start zero --noise 0.005 --seed s --channels shirol
 --deriv-scale 0.1`, 1000 it, 10.2-11.1 h each, 5 side by side x 3 jobs x 1 BLAS thread). Seed rule fixed before training
-(F spread over seeds 1-5 > 1e-4 -> seeds 6-10) fired (7.5e-4). **All ten break even: +0.055 to +0.131 % (seed 8,
-0.961235), n_c 16 = 28 to 2e-8; eight within 0.007 %**; seeds 4, 5 still climbing at 1000 it. Same waveform as the warm
-tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.405 % vs the
+(F spread over seeds 1-5 > 1e-4 -> seeds 6-10) fired (7.5e-4); seeds 11-15 added at the user's request (2026-11-13/14,
+same settings, run from a `..\GRAPE-run` worktree). **All fifteen break even: +0.055 to +0.131 % (seed 8, 0.961235),
+n_c 16 = 28 to 2e-8; twelve within 0.007 %**; seeds 4, 5 still climbing at 1000 it. Seeds 11-15 span 7.8e-5, best
+(s14) 4e-6 below seed 8: more seeds will not help. Same waveform as the warm
+tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.407 % vs the
 decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
-(+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -14 to -22 % vs -10/-13 %). Tables
-`tables/tail_experiments_cold_{heldout,channels}.csv`. Next (not run): warm start at deriv / 10 to separate the two
-changes, resume seeds 4/5, deriv / 100 or 0, pump-robust training, shorter tails. `validation/test_dgrape.py`
+(+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -13 to -22 % vs -10/-13 %). Tables
+`tables/tail_experiments_cold_{heldout,channels}.csv` (both rewritten for 15 seeds; seed 1-10 rows bit for bit). Next
+(not run): warm start at deriv / 10 to separate the two changes, resume seeds 4/5, deriv / 100 or 0, pump-robust
+training, shorter tails. `validation/test_dgrape.py`
 `TaylorStepTest.test_against_superoperator_expm` fails at 2.7e-9 vs 1e-12 on the Windows OpenBLAS install, with or
 without this change (the committed model.py gives the same).
 Tests: `python3 validation/test_fwm_tail.py -v` (22 tests incl. `NGates`, `ShirolNoise`, ~1.5 min on the Windows PC),
@@ -404,7 +407,11 @@ user works there meanwhile), each with its own clone outside any cloud-synced fo
 
 1. **Start a run (PC):** `git pull`, confirm `git status` is clean, then launch in its own terminal
    with `$env:OPENBLAS_NUM_THREADS = 2`. Note the `--tag`. The PC must not sleep or install
-   updates during a run (Windows power settings; pause Windows Update).
+   updates during a run (Windows power settings; pause Windows Update). On the PC, `python`/`python3` on
+   PATH are Microsoft Store stubs: use `C:\Users\iando\anaconda3\python.exe`. Without an activated conda env,
+   also put `anaconda3\Library\bin` (and `Library\mingw-w64\bin`, `Library\usr\bin`, `Scripts`) on PATH, or
+   `nbconvert` fails with a zmq "DLL load failed". A keep-awake loop that watches PIDs can outlive the run,
+   because Windows reuses PIDs; check that it released.
 2. **While a run is going, never `git pull`, `git switch`, `git checkout <branch>` or `git rebase` in
    the clone the run started from.** loky workers can re-read modules from disk mid-run, so new code
    would silently mix into the run. Before any of those on the PC, check for running training jobs
