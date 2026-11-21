@@ -351,8 +351,7 @@ once, ceiling 1 (not the FWM photon-add). Loss every 10 ns (271 branches; n_c 28
 in place (0.83-0.91), 800-1100 ns scrambled (0.56-0.76 even repaired), last 200 ns + window clean error words
 (0.95-1.00 repaired). Exposure 7.0 % (gate 2.7 %), cost 4.41 % as is (window 2.66 %), 0.76 % after ideal repair. Next
 pair (every 20 ns): window losses 0.000 -> 0.81 (gate 2 is the leak: 0.997 -> 0.855 repairable); +2.9 % won back.
-Tests in `validation/test_aqec_ideal.py` (`Transparency`, 18 tests total, ~25 s). **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user; training
-pending on the PC)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
+Tests in `validation/test_aqec_ideal.py` (`Transparency`, 18 tests total, ~25 s). **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
 `code="fock01"` on `DGRAPE/code.embedded_basis`/`process_targets`, `est_gate.system/train/truncation_scan`,
 `fwm_repeat.inputs/score_state` (default kitten, bit for bit; fock01 has no error words, so only `--variant ord`).
 Training `train_est_gate.py --code fock01 --variant ord --duration-us 1.1|1.5 --seed 42|43|44`, tags
@@ -360,8 +359,15 @@ Training `train_est_gate.py --code fock01 --variant ord --duration-us 1.1|1.5 --
 (`DGRAPE/fock01_reference.py` docstring): F1(24) >= 0.999, |F1(28) - F1(24)| < 1e-4, < 1 % pinned; 1.1 us if any seed
 passes, else 1.5 us; pick by single-gate open F_pro (Shirol). `fock01_reference.py select` -> `tables/fock01_gate_runs.csv`,
 `chain --pulse` (decay / all / shirol at n_c 24, shirol 28; plus a zero-drive Fock idle) -> `tables/aqec_fock01_ref.csv`.
-Tests `Fock01` in `test_est_gate.py` and `test_fwm_repeat.py` (the decay-set idle equals amplitude damping to 1e-10). A 300 + 300-iteration smoke run on the Mac (seed 42, 1.1 us, not kept) already reached closed F1
-0.99995 (n_c 16-28 agree), open F_pro 0.9896 decay / 0.9835 Shirol, and 0.72 Shirol after 20 gates, but P_e 0.13 by then (no reset). Same waveform as the warm
+Tests `Fock01` in `test_est_gate.py` and `test_fwm_repeat.py` (the decay-set idle equals amplitude damping to 1e-10). **Result (PC, 2026-11-21; 6 runs side by side,
+0.5-1.2 h each)**: all six pass (closed F1 0.999998-0.999999 at n_c 20/24/28, 0 % pinned), so the pick is **1.1 us seed 42**
+(`pulses/dgrape/u_X_fock01_ord_closed_s42.npy`): one gate F_pro **0.9896 decay / 0.9828 all / 0.9835 Shirol** (EsT X
+0.9671 / 0.9573 / 0.9599; 1.5 us runs 0.977-0.978 Shirol). Chain (12 min on 4 jobs): 20 gates **0.814 decay / 0.722
+Shirol** (B2 at N = 20 vs EsT X + ideal AQEC 0.755 / 0.656, FWM pairs 0.647 / 0.542), 0.92 % / 1.37 % per gate; n_c 28
+vs 24 2.6e-6; P_e 0.076 / 0.123 at N = 20 (no reset); zero-drive Fock idle 22 us 0.924 / 0.906. **No kitten chain beats
+it at any N <= 20** (decay: only the unphysical no-window and instant maps do). **tau_L** (Table 17, fit 1/4 + A
+lambda^N over N >= 3, -T_cycle/ln lambda, Shirol): Fock 47 us (decay 77 us), ideal AQEC 106-114, open step 51-52 (but
+below Fock at every time up to 22 us), FWM 41-45, none 17-18 (rough: those curves miss the fit by up to 0.034). Same waveform as the warm
 tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.407 % vs the
 decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
 (+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -13 to -22 % vs -10/-13 %). Tables
