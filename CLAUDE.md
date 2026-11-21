@@ -367,7 +367,9 @@ Shirol** (B2 at N = 20 vs EsT X + ideal AQEC 0.755 / 0.656, FWM pairs 0.647 / 0.
 vs 24 2.6e-6; P_e 0.076 / 0.123 at N = 20 (no reset); zero-drive Fock idle 22 us 0.924 / 0.906. **No kitten chain beats
 it at any N <= 20** (decay: only the unphysical no-window and instant maps do). **tau_L** (Table 17, fit 1/4 + A
 lambda^N over N >= 3, -T_cycle/ln lambda, Shirol): Fock 47 us (decay 77 us), ideal AQEC 106-114, open step 51-52 (but
-below Fock at every time up to 22 us), FWM 41-45, none 17-18 (rough: those curves miss the fit by up to 0.034). Same waveform as the warm
+below Fock at every time up to 22 us), FWM 41-45, none 17-18 (rough: those curves miss the fit by up to 0.034).
+Training record: notebook **Appendix A** (settings, stage-by-stage Table A2, training curves Figure A1, rule, commands);
+logs `logs/dgrape_X_fock01_ord_closed_*.log` (checked against the run JSONs in the notebook). Same waveform as the warm
 tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.407 % vs the
 decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
 (+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -13 to -22 % vs -10/-13 %). Tables
