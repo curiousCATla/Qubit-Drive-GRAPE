@@ -39,6 +39,11 @@ propagator, so re-scoring is an independent check). Each is 0 for a perfectly tr
     L(t)          how much of the evolved error state has left the instantaneous error space
     eta(t)        distance between the code state's and the projected error state's Bloch vectors
 
+FOCK {0,1} (code="fock01", notebooks/AQEC_compare.ipynb §6, 2026-11-21): the same system and the ord cost on the
+Fock encoding |0_L> = |0>, |1_L> = |1> (DGRAPE/code.py), the break-even reference of the kitten gates. a|0> = 0, so
+there are no error words: E0 is a finite placeholder (a copy of C0) that only C2 reads, and C2 has weight 0 in ord.
+Only variant "ord" is allowed with it. The default code="kitten" is unchanged bit for bit.
+
 Pulses go to pulses/dgrape/ (u_X_est_closed.npy, ...), never pulses/ or pulses/est/: the scripts there
 assume other chips and codes.
 """
@@ -103,11 +108,12 @@ def tier(F1, gate=GATE):
     return "open" if F1 < CLOSED_F1 else "closed"
 
 
-def system(n_c, include_higher_order=True, gate=GATE, chip=None):
+def system(n_c, include_higher_order=True, gate=GATE, chip=None, code="kitten"):
     """Closed system at n_r = 1: H0 (d, d), Hc (4, d, d), A (storage a), code words (d, 2), the six code
     cardinals C0 and error cardinals E0 (d, 6), columns in EST.kitten_code.CARDINAL_ORDER, and the gate
     targets (d, 6). chip (DGRAPE.ge_chip; FWM_tails_ge_chips.ipynb): None = Shirol's chip, unchanged;
-    otherwise the drift is that chip's."""
+    otherwise the drift is that chip's. code: DGRAPE/code.py CODES; "fock01" has no error words, so E0, err_words
+    and target_err are copies of C0, words and target (placeholders; ord gives them weight 0)."""
     if chip is None:
         H0 = drift_hamiltonian(n_c, 1, include_higher_order)
     else:
@@ -115,9 +121,13 @@ def system(n_c, include_higher_order=True, gate=GATE, chip=None):
         H0 = ge_chip.drift(chip, n_c, 1, include_higher_order)
     Hc = control_hamiltonians(n_c, 1)
     A = operators(n_c, 1)["a"]
-    words = embedded_basis(n_c, 1)
+    words = embedded_basis(n_c, 1, code)
     coeff = _coeff_matrix()
     C0 = words @ coeff
+    if code == "fock01":
+        target = words @ (IDEAL_LOGICAL_U[gate] @ coeff)
+        return SimpleNamespace(n_c=n_c, H0=H0, Hc=Hc, A=A, words=words, err_words=words.copy(), C0=C0,
+                               E0=C0.copy(), target=target, target_err=target.copy())
     with np.errstate(**_QUIET):
         raw = A @ C0
     E0 = raw / np.linalg.norm(raw, axis=0, keepdims=True)
@@ -152,10 +162,11 @@ class EstObjective:
     """
 
     def __init__(self, weights, n_c=N_C_TRAIN, N=N_STEPS, dt=DT, gate=GATE, cav_band=CAV_BAND,
-                 tra_band=TRA_BAND, ramp_ns=RAMP_NS, eps_max=EPS_MAX, include_higher_order=True, chip=None):
+                 tra_band=TRA_BAND, ramp_ns=RAMP_NS, eps_max=EPS_MAX, include_higher_order=True, chip=None,
+                 code="kitten"):
         self.weights = tuple(float(w) for w in weights)
         self.N, self.dt, self.gate, self.eps_max = N, dt, gate, eps_max
-        self.sys = system(n_c, include_higher_order, gate, chip)
+        self.sys = system(n_c, include_higher_order, gate, chip, code)
         self.to_physical, self.to_preimage_grad = make_constraint_chain(N, dt, cav_band, tra_band, ramp_ns)
         self.n_evals = 0
         self._cache_x, self._cache = None, None
@@ -194,7 +205,7 @@ class EstObjective:
 
 
 def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, gate=GATE, verbose=True,
-          stage_hook=None, print_every=100, start_stage=1, duration_us=DURATION_US, chip=None):
+          stage_hook=None, print_every=100, start_stage=1, duration_us=DURATION_US, chip=None, code="kitten"):
     """Run the two-stage schedule from d2's start (or init_x) and return (u, x, info).
 
     Each stage is L-BFGS-B on the pre-image in the box |x| <= U_BOX, with EST's options, warm-started
@@ -202,7 +213,10 @@ def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, ga
     start_stage > 1 skips the earlier stages (init_x is then the previous stage's pre-image); info["stages"]
     holds only the stages run. stage_hook(i, u, x, terms) runs after each stage (the CLI saves there).
     duration_us sets N = duration_us / DT (notebooks/est_gate_selection.ipynb §7: H at 2 us); everything else is unchanged.
-    chip (DGRAPE.ge_chip) trains on that chip's drift; None = Shirol's chip (info["chip"] is then absent)."""
+    chip (DGRAPE.ge_chip) trains on that chip's drift; None = Shirol's chip (info["chip"] is then absent).
+    code "fock01" (module docstring) needs variant "ord"; info["code"] is written only for a code other than kitten."""
+    if code != "kitten" and variant != "ord":
+        raise ValueError(f"code {code!r} has no error words: only variant 'ord' is allowed, not {variant!r}")
     if start_stage > 1 and init_x is None:
         raise ValueError("start_stage > 1 needs init_x, the pre-image the earlier stage ended at")
     N = int(round(duration_us / DT))
@@ -213,7 +227,7 @@ def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, ga
     t_run = time.time()
     obj = None
     for i, weights in enumerate(stage_weights(variant)[start_stage - 1:], start=start_stage):
-        obj = EstObjective(weights, n_c, N, DT, gate, chip=chip)
+        obj = EstObjective(weights, n_c, N, DT, gate, chip=chip, code=code)
         start = obj.report(x)
         if verbose:
             print(f"=== {gate} / {variant} / stage {i}  weights={weights}  n_c={n_c}  N={N}", flush=True)
@@ -258,6 +272,8 @@ def train(variant="est", maxiter=2000, seed=SEED, n_c=N_C_TRAIN, init_x=None, ga
     if chip is not None:
         from DGRAPE import ge_chip
         info["chip"] = ge_chip.resolve(chip).table_row()
+    if code != "kitten":
+        info["code"] = code
     return u, x, info
 
 
@@ -299,11 +315,12 @@ def summary(m):
             "eta_mean": float(m["eta_avg"].mean()), "max_active_fock": m["max_active_fock"]}
 
 
-def truncation_scan(u, trunc=(16, 18, 20, 24, 28), gate=GATE, include_higher_order=True, dt=DT, chip=None):
+def truncation_scan(u, trunc=(16, 18, 20, 24, 28), gate=GATE, include_higher_order=True, dt=DT, chip=None,
+                    code="kitten"):
     """{n_c: closed F1}: a pulse that does not use the truncation wall reads the same at every n_c."""
     out = {}
     for n_c in trunc:
-        s = system(n_c, include_higher_order, gate, chip)
+        s = system(n_c, include_higher_order, gate, chip, code)
         with np.errstate(**_QUIET):
             _, _, terms = cost_and_grad(np.asarray(u, dtype=float), s.H0, s.Hc, s.A, s.C0, s.E0, s.target, dt,
                                         (1.0, 0.0, 0.0, 0.0), want_grad=False)

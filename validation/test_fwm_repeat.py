@@ -248,5 +248,40 @@ class Targets(unittest.TestCase):
         np.testing.assert_allclose(asq.target_after("X", 3), U["X"], atol=1e-15)
 
 
+class Fock01(unittest.TestCase):
+    """code="fock01" scoring (DGRAPE/fock01_reference.py, notebooks/AQEC_compare.ipynb §6)."""
+
+    def test_x_by_hand_is_one(self):
+        from DGRAPE.code import embedded_basis
+        n_c, n_r = 6, 1
+        R = rp.inputs(n_c, n_r, "fock01")
+        B = embedded_basis(n_c, n_r, "fock01")
+        P = B @ np.array([[0, 1], [1, 0]]) @ B.conj().T                      # X on the code
+        V = P + (np.eye(B.shape[0]) - B @ B.conj().T)
+        out = np.stack([V @ r @ V.conj().T for r in R])
+        self.assertAlmostEqual(rp.score_state(out, n_c, n_r, "X", "fock01")["F_pro"], 1.0, delta=1e-14)
+        self.assertAlmostEqual(rp.score_state(R, n_c, n_r, "I", "fock01")["F_pro"], 1.0, delta=1e-14)
+        self.assertAlmostEqual(rp.score_state(R, n_c, n_r, "X", "fock01")["F_pro"], 0.0, delta=1e-14)
+
+    def test_idle_is_amplitude_damping(self):
+        # decay set, transmon g, readout empty: |0>, |1> see only storage loss (no Kerr or chi for n <= 1), so the
+        # idle is the amplitude-damping channel, F_pro = (1 + exp(-kappa_a t / 2))^2 / 4
+        from AQEC import device as dev
+        from DGRAPE import aqec_ideal as aq
+        from DGRAPE import fock01_reference as fk
+        n_c, t = 6, 3.7
+        m = aq.model(n_c, 1, "decay")
+        R = aq.idle(m, rp.inputs(n_c, 1, "fock01"), t)
+        F = rp.score_state(R, n_c, 1, "I", "fock01")["F_pro"]
+        self.assertAlmostEqual(F, (1 + np.exp(-dev.kappa_a * t / 2)) ** 2 / 4, delta=1e-10)
+        # the chain's idle rows are the same channel, N gates long
+        u = np.zeros((25, 4))
+        rows = fk.chain(u, "decay", n_c, n_max=2)
+        idle = [r for r in rows if r["correction"] == fk.IDLE_CORR]
+        for r in idle:
+            ref = (1 + np.exp(-dev.kappa_a * r["time_us"] / 2)) ** 2 / 4
+            self.assertAlmostEqual(r["F_pro"], ref, delta=1e-10)
+
+
 if __name__ == "__main__":
     unittest.main()

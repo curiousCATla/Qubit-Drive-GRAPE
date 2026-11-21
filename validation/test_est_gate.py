@@ -246,5 +246,62 @@ class Idle(unittest.TestCase):
         self.assertGreater(m1["eta_avg"][-1], 1e-6)
 
 
+class Fock01(unittest.TestCase):
+    """code="fock01" (notebooks/AQEC_compare.ipynb §6): the Fock {0,1} reference gate; kitten stays the default."""
+
+    def test_kitten_default_unchanged(self):
+        from AQEC.odd_kitten import logical_basis
+        from DGRAPE.code import embedded_basis, process_targets
+        B = embedded_basis(NC, 1)
+        np.testing.assert_array_equal(B, embedded_basis(NC, 1, "kitten"))
+        np.testing.assert_array_equal(B[::3, :], logical_basis(NC))            # transmon g, n_r = 1
+        for a, b in zip(process_targets("X", NC, 2), process_targets("X", NC, 2, "kitten")):
+            np.testing.assert_array_equal(a, b)
+
+    def test_fock_words(self):
+        from DGRAPE.code import embedded_basis
+        from DGRAPE.model import G, index
+        for n_r in (1, 2):
+            B = embedded_basis(NC, n_r, "fock01")
+            for k in (0, 1):
+                e = np.zeros(B.shape[0])
+                e[index(k, G, 0, NC, n_r)] = 1.0
+                np.testing.assert_array_equal(B[:, k], e)
+        with self.assertRaises(ValueError):
+            embedded_basis(NC, 1, "cat")
+
+    def test_system_and_targets(self):
+        s = eg.system(NC, code="fock01")
+        self.assertTrue(np.all(np.isfinite(s.E0)))
+        np.testing.assert_allclose(np.linalg.norm(s.C0, axis=0), 1.0, atol=1e-14)
+        # X maps the +Z cardinal |0> to |1>
+        np.testing.assert_allclose(s.target[:, 0], s.words[:, 1], atol=1e-14)
+        # an idle closed gate keeps +-Z (populations) but not the X target: F1 of the zero pulse is the parked value
+        u = np.zeros((50, 4))
+        F1 = eg.truncation_scan(u, trunc=(NC,), include_higher_order=True, code="fock01")[NC]
+        self.assertTrue(np.isfinite(F1))
+        self.assertLess(F1, 0.5)
+
+    def test_preimage_gradient(self):
+        N = 40
+        rng = np.random.default_rng(3)
+        obj = eg.EstObjective(eg.stage_weights("ord")[0], NC, N, ramp_ns=8.0, cav_band=(-120, 120),
+                              tra_band=(-120, 120), code="fock01")
+        x = 40.0 * rng.normal(size=(N, 4))
+        cost, g, terms = obj.evaluate(x)
+        self.assertTrue(np.isfinite(cost))
+        self.assertGreater(terms["c4"], 0.0)
+        h = 1e-4
+        for j in rng.choice(N * 4, 6, replace=False):
+            e = np.zeros(N * 4)
+            e[j] = h
+            fd = (obj.cost(x.ravel() + e) - obj.cost(x.ravel() - e)) / (2 * h)
+            self.assertLess(abs(fd - g[j]), 1e-6 * max(1.0, np.abs(g).max()))
+
+    def test_only_ord(self):
+        with self.assertRaises(ValueError):
+            eg.train("est", maxiter=1, n_c=NC, code="fock01", verbose=False)
+
+
 if __name__ == "__main__":
     unittest.main()

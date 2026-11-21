@@ -6,6 +6,7 @@ notebooks/FWM_tails.ipynb §3): EST's two-stage weights, d2's chip, code, durati
     python3 DGRAPE/train_est_gate.py --variant est --dry-run          # one timed evaluation
     python3 DGRAPE/train_est_gate.py --variant est --maxiter 2000     # tag X_est_closed
     python3 DGRAPE/train_est_gate.py --variant ord --maxiter 2000     # tag X_ord_closed
+    python3 DGRAPE/train_est_gate.py --variant ord --code fock01      # Fock {0,1} reference, tag X_ord_closed_fock01
 
 Writes to --outdir (default ~/fwm_runs, outside iCloud): u_<tag>.npy (physical pulse, (N, 4)),
 x_<tag>.npy (pre-image; resume with --init-x), the same per stage (_stage1, _stage2) and <tag>.json
@@ -29,7 +30,7 @@ if REPO_ROOT not in sys.path:
 import numpy as np                                    # noqa: E402
 
 from DGRAPE import est_gate as eg                     # noqa: E402
-from DGRAPE.code import IDEAL_LOGICAL_U               # noqa: E402
+from DGRAPE.code import CODES, IDEAL_LOGICAL_U        # noqa: E402
 
 DEFAULT_OUT = os.path.join(os.path.expanduser("~"), "fwm_runs")
 
@@ -41,15 +42,17 @@ def _dump(path, obj):
     os.replace(tmp, path)
 
 
-def dry_run(variant, seed, n_c, gate=eg.GATE, duration_us=eg.DURATION_US, chip=None):
+def dry_run(variant, seed, n_c, gate=eg.GATE, duration_us=eg.DURATION_US, chip=None, code="kitten"):
     N = int(round(duration_us / eg.DT))
     x0 = eg.start_preimage(seed, N)
     t0 = time.time()
-    obj = eg.EstObjective(eg.stage_weights(variant)[0], n_c, N=N, gate=gate, chip=chip)
+    if code != "kitten" and variant != "ord":
+        raise ValueError(f"code {code!r} has no error words: only variant 'ord' is allowed, not {variant!r}")
+    obj = eg.EstObjective(eg.stage_weights(variant)[0], n_c, N=N, gate=gate, chip=chip, code=code)
     t_build = time.time() - t0
     t0 = time.time()
     cost, g, terms = obj.evaluate(x0)
-    out = {"gate": gate, "variant": variant, "n_c": n_c, "N": obj.N, "cost": cost, "grad_norm": float(np.linalg.norm(g)),
+    out = {"gate": gate, "variant": variant, "code": code, "duration_us": duration_us, "n_c": n_c, "N": obj.N, "cost": cost, "grad_norm": float(np.linalg.norm(g)),
            "build_s": t_build, "eval_s": time.time() - t0, **terms}
     print(json.dumps(out, indent=1, default=float), flush=True)
     return out
@@ -72,6 +75,8 @@ def main():
     p.add_argument("--chi-ge", type=float, default=None,
                    help="MHz; with --chi-qr: train on DGRAPE.ge_chip.derived(chi_ge, chi_qr) (FWM_tails_ge_chips)")
     p.add_argument("--chi-qr", type=float, default=None, help="MHz")
+    p.add_argument("--code", choices=sorted(CODES), default="kitten",
+                   help="logical code (DGRAPE/code.py): kitten, or fock01 = Fock |0>, |1> (needs --variant ord)")
     a = p.parse_args()
     if (a.chi_ge is None) != (a.chi_qr is None):
         p.error("--chi-ge and --chi-qr go together")
@@ -80,9 +85,11 @@ def main():
         from DGRAPE import ge_chip
         chip = ge_chip.derived(a.chi_ge, a.chi_qr)
     if a.dry_run:
-        dry_run(a.variant, a.seed, a.n_c, a.gate, a.duration_us, chip)
+        dry_run(a.variant, a.seed, a.n_c, a.gate, a.duration_us, chip, a.code)
         return
-    tag = a.tag or f"{a.gate}_{a.variant}_closed"
+    if a.code != "kitten" and a.variant != "ord":
+        p.error(f"--code {a.code} needs --variant ord (no error words)")
+    tag = a.tag or f"{a.gate}_{a.variant}_closed" + ("" if a.code == "kitten" else f"_{a.code}")
     os.makedirs(a.outdir, exist_ok=True)
 
     def hook(i, u, x, terms):
@@ -92,10 +99,11 @@ def main():
 
     init_x = None if a.init_x is None else np.load(a.init_x)
     u, x, info = eg.train(a.variant, a.maxiter, a.seed, a.n_c, init_x, gate=a.gate, stage_hook=hook,
-                          start_stage=a.start_stage, duration_us=a.duration_us, chip=chip)
+                          start_stage=a.start_stage, duration_us=a.duration_us, chip=chip, code=a.code)
     info["tag"] = tag
     info["init_x_path"] = a.init_x
-    info["trunc_scan"] = {str(k): v for k, v in eg.truncation_scan(u, gate=a.gate, chip=chip).items()}
+    info["trunc_scan"] = {str(k): v for k, v in eg.truncation_scan(u, gate=a.gate, chip=chip,
+                                                                             code=a.code).items()}
     np.save(os.path.join(a.outdir, f"u_{tag}.npy"), u)
     np.save(os.path.join(a.outdir, f"x_{tag}.npy"), x)
     _dump(os.path.join(a.outdir, f"{tag}.json"), info)

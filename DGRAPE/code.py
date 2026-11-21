@@ -18,6 +18,10 @@ targets carry |g,0>, so leakage out of the code, a transmon left in |e>/|f> or a
 readout photon all count as error. For a unitary Phi(rho) = V rho V' it reduces to
 |Tr(U' P V P)|^2 / 4.
 
+OTHER CODES. code="fock01" (notebooks/AQEC_compare.ipynb §6, the break-even reference, 2026-11-21) swaps the
+kitten words for the Fock {0,1} encoding |0_L> = |0>, |1_L> = |1> with the same embedding (transmon g, readout 0).
+The default code="kitten" is unchanged bit for bit.
+
 Phi preserves Hermiticity, so Phi(E_10) = Phi(E_01)' and Tr[T_10' Phi(E_10)] =
 conj(Tr[T_01' Phi(E_01)]). Only E_00, E_11, E_01 are propagated, with weights (1, 1, 2):
 
@@ -43,9 +47,24 @@ PROCESS_PAIRS = ((0, 0), (1, 1), (0, 1))
 PROCESS_WEIGHTS = np.array([1.0, 1.0, 2.0])
 
 
-def embedded_basis(n_c, n_r=2):
-    """(d, 2), columns |0_L, g, 0>, |1_L, g, 0>."""
-    B = logical_basis(n_c)                      # (n_c, 2), asserts Knill-Laflamme
+CODES = ("kitten", "fock01")
+FOCK01_MIN_N_C = 3
+
+
+def storage_words(n_c, code="kitten"):
+    """(n_c, 2) storage code words: the odd kitten code (asserts Knill-Laflamme) or Fock |0>, |1>."""
+    if code == "kitten":
+        return logical_basis(n_c)
+    if code == "fock01":
+        if n_c < FOCK01_MIN_N_C:
+            raise ValueError(f"n_c={n_c} < {FOCK01_MIN_N_C}")
+        return np.eye(n_c, 2, dtype=complex)
+    raise ValueError(f"unknown code {code!r}; have {CODES}")
+
+
+def embedded_basis(n_c, n_r=2, code="kitten"):
+    """(d, 2), columns |0_L, g, 0>, |1_L, g, 0> of the code (CODES)."""
+    B = storage_words(n_c, code)                # (n_c, 2)
     gq = np.zeros(N_Q)
     gq[G] = 1.0
     r0 = np.zeros(n_r)
@@ -53,14 +72,14 @@ def embedded_basis(n_c, n_r=2):
     return np.stack([np.kron(np.kron(B[:, k], gq), r0) for k in range(2)], axis=1)
 
 
-def process_targets(gate, n_c, n_r=2):
+def process_targets(gate, n_c, n_r=2, code="kitten"):
     """(E, T, w): E, T are (3, d, d) stacks of inputs E_ij and targets T_ij for the pairs
     in PROCESS_PAIRS, w the weights; F_pro = sum_b w_b Re Tr[T_b' Phi(E_b)] / 4."""
     if gate not in IDEAL_LOGICAL_U:
         raise KeyError(f"unknown gate {gate!r}; have {sorted(IDEAL_LOGICAL_U)}")
-    if n_c < MIN_N_C:
+    if code == "kitten" and n_c < MIN_N_C:
         raise ValueError(f"n_c={n_c} < {MIN_N_C}")
-    B = embedded_basis(n_c, n_r)
+    B = embedded_basis(n_c, n_r, code)
     BU = B @ IDEAL_LOGICAL_U[gate]               # column i = embedded U|i_L>
     E = np.stack([np.outer(B[:, i], B[:, j].conj()) for i, j in PROCESS_PAIRS])
     T = np.stack([np.outer(BU[:, i], BU[:, j].conj()) for i, j in PROCESS_PAIRS])
