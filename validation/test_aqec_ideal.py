@@ -98,6 +98,13 @@ class Modes(unittest.TestCase):
                                    aq.forgive(aq.apply_map(R, K), N_C, 1), atol=1e-14)
 
 
+class Channels(unittest.TestCase):
+    def test_shirol_set(self):
+        names = {nm for nm, _ in aq.model(6, 2, "shirol").c_ops}       # n_r 2: at n_r 1 the readout jump is 0, dropped
+        self.assertEqual(names, {"a", "r", "s_ge", "s_ef", "up_ge", "up_ef", "up_a", "phi_e", "phi_f", "phi_a"})
+        self.assertEqual({nm for nm, _ in aq.model(6, 2, "decay").c_ops}, {"a", "r", "s_ge", "s_ef"})
+
+
 class Idle(unittest.TestCase):
     def test_idle_matches_many_small_steps(self):
         m = fwm.model_with_channels(N_C, 1, None, True)
@@ -146,6 +153,54 @@ class OpenTraining(unittest.TestCase):
         h = 1e-4
         fd = (self.obj.cost(self.x + h * dx) - self.obj.cost(self.x - h * dx)) / (2 * h)
         self.assertAlmostEqual(fd / (g @ dx.ravel()), 1.0, places=6)
+
+
+class Transparency(unittest.TestCase):
+    """aqec_transparency (AQEC_compare §6.2): the repair with free phases, the no-jump run, one branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        from DGRAPE import aqec_transparency as at
+        cls.at = at
+        cls.Rg = at.first_input(N_C)
+        cls.states = at.no_jump_states(cls.Rg, 100, N_C)
+
+    def test_phase0_is_the_ideal_map(self):
+        for n_r in (1, 2):
+            for A, B in zip(aq.kraus(N_C, n_r), self.at.repair_kraus(N_C, n_r)):
+                np.testing.assert_allclose(A, B, atol=1e-14)
+
+    def test_repair_is_a_channel_on_g(self):
+        Kg, Ke = self.at.repair_kraus(N_C, 1, (1.3, -0.7))
+        np.testing.assert_allclose(Kg.conj().T @ Kg + Ke.conj().T @ Ke, operators(N_C, 1)["Pg"], atol=1e-12)
+
+    def test_repair_fixes_a_clean_error_word(self):
+        self.assertAlmostEqual(self.at.score(self.at.repair(error_inputs(), N_C), "I", N_C), 1.0, places=12)
+        # a phase on |4> and a logical Z on the error words are found by the fit
+        v = np.ones(3 * N_C, complex)
+        for j in range(3):
+            v[4 * 3 + j], v[2 * 3 + j] = np.exp(0.9j), np.exp(-0.4j)
+        R = v[None, :, None] * error_inputs() * v.conj()[None, None, :]
+        self.assertAlmostEqual(self.at.repair_fidelity(R, "I", N_C, n_starts=3)["F"], 1.0, places=8)
+
+    def test_no_jump_equals_open_step(self):
+        from DGRAPE import aqec_pulse as ap
+        m = fwm.model_with_channels(N_C, 1, frozenset(), True)
+        ref = ap.open_step(m, self.Rg, self.at.step_pulse())
+        np.testing.assert_allclose(aq.forgive(self.states[max(self.states)], N_C, 1), ref, atol=1e-10)
+        np.testing.assert_allclose(self.at.full_step(self.Rg, N_C), ref, atol=1e-10)
+
+    def test_window_states_chain(self):
+        T_p = self.at.pulse_ns()
+        one = aq.idle(self.at.model(N_C), self.states[T_p], 0.5)
+        np.testing.assert_allclose(self.states[T_p + 500], one, atol=1e-10)
+
+    def test_last_branch_is_loss_then_reset(self):
+        t = max(self.states)
+        p, R = self.at.branch(self.states[t], t, N_C)
+        p2, Rb = self.at.loss(self.states[t], N_C)
+        self.assertAlmostEqual(p, p2, places=14)
+        np.testing.assert_allclose(R, aq.forgive(Rb, N_C, 1), atol=1e-14)
 
 
 if __name__ == "__main__":

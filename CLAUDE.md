@@ -335,16 +335,38 @@ n_c 16 = 28 to 2e-8; twelve within 0.007 %**; seeds 4, 5 still climbing at 1000 
 since 2026-11-14** (replacing `X_tail_estg_T08_t2`; one gate from the cold held-out table, repeated gates from
 `fwm_repeat_run.py --tails EsT-s8=X_tail_estg_T08_shirol_d01_s8 --n-jobs 9`, 3.1 h, decay set, n_c 24 ->
 `tables/fwm_tail_repeat_s8_B{1,2}.csv`, teeth rows dropped): B1 one tail after 20 gates 0.597 (was 0.593), B2 20 pairs
-0.647 (was 0.641), 1.70 %/pair; the ideal AQEC now catches one tail at N = 4 (was 3). Same waveform as the warm
+0.647 (was 0.641), 1.70 %/pair; the ideal AQEC now catches one tail at N = 4 (was 3). **H and alternating X/H gates (AQEC_compare §6.1, 2026-11-17, user)**: `DGRAPE/aqec_sequences.py` (X, H =
+`u_H_est_err_closed_T2_s17.npy`, XH alternating X first, target = product; ideal AQEC, open step `aqec_open_T15_w`,
+seed-8 tail, none retrained; `aqec_ideal.model(channels="shirol")`, `fwm_repeat.score_state` takes a 2x2 target) and
+`DGRAPE/aqec_sequences_run.py` (17 jobs, 45 min on the Mac, 9 jobs; --channels decay reproduces the X tables to
+1e-15) -> `tables/aqec_seq_B{1,2}.csv`, Shirol set, n_c 24 (28 within 3e-4). One gate: tail +1.13 % after H (+0.13 %
+after X), ideal AQEC +0.85 % (-0.59 %), open step -3.3 %. B2 at N = 20 FWM 0.542/0.459/0.502 (X/H/XH) vs none
+0.452/0.308/0.370, ideal 0.656/0.580/0.619; loss per gate removed: ideal 41-43 %, tail 17-22 %, step 2-15 %. FWM pairs
+end with P_e+P_f ~0.2 (no reset). **Is the AQEC step error transparent? (AQEC_compare §6.2, 2026-11-19, user)**:
+FWM_tails §9 redone for EsT X + the open step `aqec_open_T15_w` (1.5 us pulse + 1.2 us window + reset):
+`DGRAPE/aqec_transparency.py one|pair2 --n-jobs 8` (~8 / ~9 min) -> `tables/aqec_transparency_{jumps,summary,pair2}.csv`.
+Readout decay only, as §9; at n_r 1 that is the CLOSED system + one hand-placed loss (no-jump F = Table 13's closed
+0.99933, tested). Yardstick (user): Section 2's ideal AQEC map with two free phases (|4> in |0_E>, logical Z), fitted
+once, ceiling 1 (not the FWM photon-add). Loss every 10 ns (271 branches; n_c 28 within 2e-5): first 300 ns repaired
+in place (0.83-0.91), 800-1100 ns scrambled (0.56-0.76 even repaired), last 200 ns + window clean error words
+(0.95-1.00 repaired). Exposure 7.0 % (gate 2.7 %), cost 4.41 % as is (window 2.66 %), 0.76 % after ideal repair. Next
+pair (every 20 ns): window losses 0.000 -> 0.81 (gate 2 is the leak: 0.997 -> 0.855 repairable); +2.9 % won back.
+Tests in `validation/test_aqec_ideal.py` (`Transparency`, 18 tests total, ~25 s). Same waveform as the warm
 tail, only stronger (comb 1 shot at the cap, comb-2 bursts larger; roughness 1.5-1.7x). Decay-set gain +0.407 % vs the
 decay-trained tail's +0.321 %: the old deriv weight was the limit, not the start. Extra gain = photon-loss repair
 (+0.047 %); other decay -0.016 %; more pump-fragile (eta x 0.9/1.1 -13 to -22 % vs -10/-13 %). Tables
 `tables/tail_experiments_cold_{heldout,channels}.csv` (both rewritten for 15 seeds; seed 1-10 rows bit for bit). Next
 (not run): warm start at deriv / 10 to separate the two changes, resume seeds 4/5, deriv / 100 or 0, pump-robust
-training, shorter tails. `validation/test_dgrape.py`
+training, shorter tails. **Tails alone (notebook §7, 2026-11-17, user)**: seed 8 and the decay tail
+`X_tail_estg_T08_t2` with no gate in front, as FWM_tails §6.6 (`fwm_tail.code_word_scores(..., noise=)`, new argument,
+default bit for bit; `DGRAPE/tail_experiments_code.py`, ~40 s -> `tables/tail_experiments_code.csv`: closed, decay set,
+Shirol set, each Shirol group alone). Code words equal to 2e-4 (closed 0.99985/0.99980); seed 8 repairs a clean error
+word to 0.914/0.849/0.845 (closed/decay/Shirol) vs 0.904/0.820/0.816, almost all from readout decay (4.19 % vs 6.18 %
+of the error word; not explained). The linear estimate (FWM_tails Table 12) predicts seed 8's +0.09 % lead; the
+remainder is the same for both tails (-0.23 % decay, -0.17 % Shirol). The verdict is now §8. `validation/test_dgrape.py`
 `TaylorStepTest.test_against_superoperator_expm` fails at 2.7e-9 vs 1e-12 on the Windows OpenBLAS install, with or
 without this change (the committed model.py gives the same).
-Tests: `python3 validation/test_fwm_tail.py -v` (22 tests incl. `NGates`, `ShirolNoise`, ~1.5 min on the Windows PC),
+Tests: `python3 validation/test_fwm_tail.py -v` (23 tests incl. `NGates`, `ShirolNoise`, ~1.5 min on the Windows PC),
 `python3 validation/test_est_gate.py -v` (15 tests, ~1 s).
 
 **7. FWM tails with Gertler combs (`DGRAPE/fwm_tail_ge.py`, `notebooks/FWM_tails_ge.ipynb`, 2026-11-03/04).** Track 6 redone with

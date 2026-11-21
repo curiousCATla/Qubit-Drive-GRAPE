@@ -54,10 +54,13 @@ _QUIET = dict(divide="ignore", over="ignore", invalid="ignore")
 
 
 def model(n_c=N_C, n_r=1, channels="decay"):
-    """DGRAPE model for the gate and the idles: channels "decay" (photon loss, readout and transmon decay) or "all"
-    (plus dephasing and heating, DGRAPE's opt-in set)."""
-    if channels not in ("decay", "all"):
-        raise ValueError(f"channels must be 'decay' or 'all', not {channels!r}")
+    """DGRAPE model for the gate and the idles: channels "decay" (photon loss, readout and transmon decay), "all"
+    (plus dephasing and heating, DGRAPE's opt-in set) or "shirol" (Shirol's full set, DGRAPE.model.shirol_collapse_ops:
+    decay, thermal + pump heating on g->e and e->f, storage heating, residual dephasing)."""
+    if channels not in ("decay", "all", "shirol"):
+        raise ValueError(f"channels must be 'decay', 'all' or 'shirol', not {channels!r}")
+    if channels == "shirol":
+        return fwm.model_with_channels(n_c, n_r, None, True, noise="shirol")
     on = channels == "all"
     return fwm.model_with_channels(n_c, n_r, None, True, dephasing=on, heating=on)
 

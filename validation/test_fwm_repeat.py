@@ -229,6 +229,24 @@ class Targets(unittest.TestCase):
         self.assertEqual([rp.target_of(n) for n in range(1, 5)], ["X", "I", "X", "I"])
         self.assertEqual(rp.target_of(3, "I"), "I")
 
+    def test_unitary_target_equals_name(self):
+        # score_state takes a 2 x 2 unitary as well as a gate name (DGRAPE/aqec_sequences.py)
+        from DGRAPE.code import IDEAL_LOGICAL_U
+        R = _rand_states(NC * 3 * 2, 11)
+        for g in ("X", "H", "I"):
+            a = rp.score_state(R, NC, 2, g)
+            b = rp.score_state(R, NC, 2, IDEAL_LOGICAL_U[g])
+            self.assertAlmostEqual(a["F_pro"], b["F_pro"], delta=1e-14)
+            self.assertAlmostEqual(a["F_empty"], b["F_empty"], delta=1e-14)
+
+    def test_sequence_targets(self):
+        from DGRAPE import aqec_sequences as asq
+        from DGRAPE.code import IDEAL_LOGICAL_U as U
+        self.assertEqual([asq.gate_at("XH", k) for k in range(1, 5)], ["X", "H", "X", "H"])
+        np.testing.assert_allclose(asq.target_after("XH", 3), U["X"] @ U["H"] @ U["X"], atol=1e-15)
+        np.testing.assert_allclose(asq.target_after("H", 2), np.eye(2), atol=1e-15)
+        np.testing.assert_allclose(asq.target_after("X", 3), U["X"], atol=1e-15)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,7 +39,7 @@ import numpy as np
 from DGRAPE import fwm
 from DGRAPE import fwm_tail as ft
 from DGRAPE import lindblad_np as lnp
-from DGRAPE.code import process_targets
+from DGRAPE.code import PROCESS_PAIRS, embedded_basis, process_targets
 from AQEC import device as dev
 from DGRAPE.model import operators
 
@@ -97,10 +97,24 @@ def kerr_decode(R, n_c, n_r, tau_us, include_higher_order=True):
     return c[:, None] * R * c.conj()[None, :]
 
 
+def _targets(n_c, n_r, target, readout):
+    """(T, w) for a gate name (fwm_tail.tail_targets) or a 2 x 2 logical unitary (e.g. a product of gates,
+    DGRAPE/aqec_sequences.py), transmon in g, readout traced out or required empty."""
+    if isinstance(target, str):
+        return ft.tail_targets(n_c, n_r, target, readout)
+    _, _, w = process_targets("I", n_c, n_r)
+    B = embedded_basis(n_c, n_r) @ np.asarray(target, dtype=complex)
+    T = np.stack([np.outer(B[:, i], B[:, j].conj()) for i, j in PROCESS_PAIRS])
+    if readout == "traced":
+        return fwm.readout_traced(T, n_c, n_r), w
+    return T, w
+
+
 def score_state(R, n_c, n_r, target):
-    """F_pro (readout traced), F_empty, and <n_r>, P_e, P_f averaged over |0_L>, |1_L> (as fwm_tail.score)."""
-    T_tr, w = ft.tail_targets(n_c, n_r, target, "traced")
-    T_em, _ = ft.tail_targets(n_c, n_r, target, "empty")
+    """F_pro (readout traced), F_empty, and <n_r>, P_e, P_f averaged over |0_L>, |1_L> (as fwm_tail.score).
+    target: a gate name ("X", "I", ...) or a 2 x 2 logical unitary."""
+    T_tr, w = _targets(n_c, n_r, target, "traced")
+    T_em, _ = _targets(n_c, n_r, target, "empty")
     o = operators(n_c, n_r)
     mean = lambda op: float(np.mean([np.real(np.trace(op @ R[b])) for b in (0, 1)]))  # noqa: E731
     return {"F_pro": ft.fidelity_from_outputs(R, T_tr, w), "F_empty": ft.fidelity_from_outputs(R, T_em, w),

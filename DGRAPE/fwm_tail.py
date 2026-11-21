@@ -698,12 +698,13 @@ def code_word_inputs(n_c=16, n_r=2):
     return out
 
 
-def code_word_scores(eta, n_c=16, n_r=2, keep=frozenset(), inputs=None):
+def code_word_scores(eta, n_c=16, n_r=2, keep=frozenset(), inputs=None, noise="dgrape"):
     """A tail with NO gate in front, on ideal inputs (code_word_inputs). keep=frozenset() = closed (no
-    jumps; the default, notebook Table 16), keep=None = the decay set. For each input: F_vs_I = process
-    fidelity against the identity, F_best_Rz = the same with the best logical Z rotation allowed for free,
-    theta_best. Readout traced. Returns a list of dicts."""
-    tm = tail_model(n_c, n_r, keep=keep)
+    jumps; the default, notebook Table 16), keep=None = the whole channel set of `noise` ("dgrape" = the
+    decay set, the default; "shirol" = Shirol's full set, keep then filters its jump names). For each input:
+    F_vs_I = process fidelity against the identity, F_best_Rz = the same with the best logical Z rotation
+    allowed for free, theta_best. Readout traced. Returns a list of dicts."""
+    tm = tail_model(n_c, n_r, keep=keep, noise=noise)
     eta = np.asarray(eta, dtype=complex)
     rows = []
     for name, (R0, p) in (inputs or code_word_inputs(n_c, n_r)).items():

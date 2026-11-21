@@ -319,6 +319,18 @@ class CodeWords(unittest.TestCase):
             F_mix = ft.code_word_scores(eta, NC, keep=keep, inputs=mix)[0]["F_vs_I"]
             self.assertAlmostEqual(F_mix, 0.5 * (r["code words"] + r["one-loss error words"]), delta=1e-12)
 
+    def test_noise_set(self):
+        # Closed is the same under either set; with every channel on, Shirol's set costs more than decay.
+        eta = _rand_eta(30, 0.03, 7)
+        for keep in (frozenset(), None):
+            d = {x["input"]: x["F_vs_I"] for x in ft.code_word_scores(eta, NC, keep=keep)}
+            s = {x["input"]: x["F_vs_I"] for x in ft.code_word_scores(eta, NC, keep=keep, noise="shirol")}
+            if keep is None:
+                self.assertLess(s["code words"], d["code words"] - 1e-6)
+            else:
+                for k in d:
+                    self.assertAlmostEqual(s[k], d[k], delta=1e-13)
+
     def test_table_14(self):
         path = os.path.join(REPO_ROOT, "tables", "fwm_tail_H_code.csv")
         eta_path = os.path.join(REPO_ROOT, "pulses", "dgrape", "eta_X_tail_estg_T08_t2.npy")
