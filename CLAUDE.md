@@ -432,7 +432,7 @@ Track 2's equivalent is `EST/README.md`.
 
 ```bash
 pip install -r requirements.txt
-pip install qutip                 # QuTip/qutip_validate.py cross-check only
+pip install qutip qutip-qtrl     # QuTip/ cross-checks and the QuTiP GRAPE benchmark only
 ```
 
 `requirements.txt` covers everything except qutip. `jax` is needed only by `EST/`; the
@@ -559,6 +559,16 @@ python validation/truncation_convergence.py
 
 # Independent fidelity cross-check via qutip.sesolve (does not import core.grape_core.make_ops)
 python QuTip/qutip_validate.py
+
+# Benchmark vs QuTiP's GRAPE (qutip-qtrl, unitary dynamics): B1 same fidelity, B2 gradient
+# accuracy, B3 cost per evaluation, B4 L-BFGS-B time to solution. Raw results per case in
+# ~/fwm_runs/qutip_bench/raw (resumable); `report` writes QuTip/benchmark_results/ (README.md,
+# CSVs, PNGs). Optional hand-written QuTip/benchmark_interpretation.md is pulled into the report.
+# qutip-qtrl 0.2.0 builds its time steps in float32 unless given an explicit float64 `tau`
+# (the benchmark passes one; B1 reports both). Full run ~3-4 h single-threaded.
+python QuTip/benchmark_qtrl.py run --part all [--quick]
+python QuTip/benchmark_qtrl.py report
+python3 validation/test_qutip_benchmark.py -v   # 3 tests, ~1 s; skipped without qutip-qtrl
 ```
 
 Penalty-weight sweep (`analysis/penalty_sweep.py`, `notebooks/penalty_optimization.ipynb`, `tables/penalty_sweep_*`,
