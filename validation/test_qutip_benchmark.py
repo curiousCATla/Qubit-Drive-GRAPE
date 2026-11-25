@@ -101,6 +101,10 @@ class ReportFromCsv(unittest.TestCase):
         self.assertEqual(md.count("$$") % 2, 0)
         for line in md.replace("$$", "").splitlines():
             self.assertEqual(line.count("$") % 2, 0, line)
+        # GitHub applies markdown escapes before rendering maths, so a backslash followed by
+        # ASCII punctuation (\{ \, \; \!) loses its backslash: use \lbrace, \thinspace, ...
+        bad = re.findall(r"\\[!-/:-@\[-`{-~]", md)
+        self.assertEqual(bad, [], "backslash + punctuation in README maths")
         # no literal | inside maths in a table row (it would split the cell)
         for line in md.splitlines():
             if line.startswith("|"):
