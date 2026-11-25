@@ -822,12 +822,12 @@ PROBLEM_SECTION = r"""## The shared problem
 operator $a$), so the state space has dimension $d = 3n_c$. In the frame rotating with both modes,
 
 $$
-H(t) = H_0 + \sum_{j=1}^{4} u_j(t)\thinspace H_j ,
+H(t) = H_0 + \sum_{j=1}^{4} u_j(t) H_j ,
 \qquad
-H_0 = \chi\thinspace a^\dagger a\thinspace b^\dagger b
-    + \frac{K}{2}\thinspace a^{\dagger 2} a^{2}
-    + \frac{\chi'}{2}\thinspace b^\dagger b\thinspace a^{\dagger 2} a^{2}
-    + \frac{\alpha}{2}\thinspace b^{\dagger 2} b^{2} ,
+H_0 = \chi a^\dagger a b^\dagger b
+    + \frac{K}{2} a^{\dagger 2} a^{2}
+    + \frac{\chi'}{2} b^\dagger b a^{\dagger 2} a^{2}
+    + \frac{\alpha}{2} b^{\dagger 2} b^{2} ,
 $$
 
 with the four controls $H_1 = a + a^\dagger$ and $H_2 = i(a - a^\dagger)$ (cavity I and Q), $H_3 = b + b^\dagger$
@@ -840,9 +840,9 @@ anharmonicity). The amplitudes $u_j$ are in rad/μs.
 Hamiltonian is $H_n = H_0 + \sum_j u_{nj} H_j$, and the gate is the ordered product
 
 $$
-U = U_N\thinspace U_{N-1} \cdots U_1 ,
+U = U_N U_{N-1} \cdots U_1 ,
 \qquad
-U_n = e^{-i H_n \Delta t} = V_n\thinspace e^{-i \Lambda_n \Delta t}\thinspace V_n^\dagger ,
+U_n = e^{-i H_n \Delta t} = V_n e^{-i \Lambda_n \Delta t} V_n^\dagger ,
 $$
 
 where $H_n = V_n \Lambda_n V_n^\dagger$ is the eigendecomposition both codes use. The pulse is the $N \times 4$
@@ -859,11 +859,11 @@ which is 1 only if $U$ sends every input to its target with one common phase. Qu
 fidelity (`PSU`) is
 
 $$
-f = \frac{1}{k} \left| \mathrm{Tr} \negthinspace \left( W^\dagger U V \right) \right| ,
+f = \frac{1}{k} \left| \mathrm{Tr} \left( W^\dagger U V \right) \right| ,
 $$
 
 with the inputs as the columns of $V$ and the targets as the columns of $W$. So $F = f^2$ and
-$\partial F / \partial u_{nj} = 2f\thinspace \partial f / \partial u_{nj}$; every QuTiP number below is converted this way.
+$\partial F / \partial u_{nj} = 2f \partial f / \partial u_{nj}$; every QuTiP number below is converted this way.
 
 | problem (B1-B3) | name (B4) | inputs $\to$ targets | $k$ |
 |---|---|---|---|
@@ -1009,7 +1009,7 @@ def write_report(dest, quick=False):
         r"random entries $(n, j)$ (time step $n$, control $j$) and compare each code's gradient "
         r"$g_{nj} = \partial F / \partial u_{nj}$ with the central finite difference" + "\n\n"
         r"$$" + "\n"
-        r"g^\text{FD}_{nj} = \frac{F(u + h\thinspace e_{nj}) - F(u - h\thinspace e_{nj})}{2h} , \qquad h = 10^{-6} ," + "\n"
+        r"g^\text{FD}_{nj} = \frac{F(u + h e_{nj}) - F(u - h e_{nj})}{2h} , \qquad h = 10^{-6} ," + "\n"
         r"$$" + "\n\n"
         r"where $e_{nj}$ is the unit pulse that is 1 at entry $(n, j)$ and 0 elsewhere. The error is relative to "
         r"the largest finite difference:" + "\n\n"
@@ -1132,7 +1132,7 @@ $$
 The time to reach an infidelity threshold $\epsilon$ uses the best fidelity seen so far,
 
 $$
-t_\epsilon = \min \left\lbrace t \thickspace : \thickspace 1 - \max_{t' \le t} F(t') \le \epsilon \right\rbrace ,
+t_\epsilon = \min \left\lbrace t \mid 1 - \max_{t' \le t} F(t') \le \epsilon \right\rbrace ,
 \qquad \epsilon \in \lbrace 10^{-2},\ 10^{-3},\ 10^{-4} \rbrace ,
 $$
 

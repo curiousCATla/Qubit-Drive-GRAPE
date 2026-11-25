@@ -105,6 +105,9 @@ class ReportFromCsv(unittest.TestCase):
         # ASCII punctuation (\{ \, \; \!) loses its backslash: use \lbrace, \thinspace, ...
         bad = re.findall(r"\\[!-/:-@\[-`{-~]", md)
         self.assertEqual(bad, [], "backslash + punctuation in README maths")
+        # spacing macros GitHub's renderer rejects (seen: \thickspace)
+        for macro in ("thickspace", "thinspace", "negthinspace", "medspace"):
+            self.assertNotIn("\\" + macro, md)
         # no literal | inside maths in a table row (it would split the cell)
         for line in md.splitlines():
             if line.startswith("|"):
