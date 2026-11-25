@@ -1,0 +1,13 @@
+{
+ "platform": "Windows-10-10.0.26200-SP0",
+ "machine": "AMD64",
+ "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+ "cpu_count": 24,
+ "python": "3.9.13",
+ "numpy": "1.26.4",
+ "scipy": "1.11.4",
+ "blas_threads": 1,
+ "qutip": "5.0.4",
+ "qutip_qtrl": "0.2.0",
+ "blas": "openblas"
+}
