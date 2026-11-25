@@ -6,12 +6,16 @@ On a tiny system (n_t 3, n_c 4, N 20) the two codes must give the same
 fidelity and the same gradient for the same pulse, in the repo's F = f^2
 convention; otherwise the benchmark compares different problems. Also a
 smoke test of both optimisation runners. Skipped when qutip-qtrl is missing
-(pip install qutip-qtrl). Run from the repo root:
+(pip install qutip-qtrl). ReportFromCsv needs no qutip: it rebuilds the README
+and both figures from the committed CSVs. Run from the repo root:
 
-    python3 validation/test_qutip_benchmark.py -v      (~5 s)
+    python3 validation/test_qutip_benchmark.py -v      (~8 s)
 """
 import os
+import re
+import shutil
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -73,6 +77,35 @@ class SameProblem(unittest.TestCase):
                 F_trace = max(F for _, F in r["trace"])
                 self.assertAlmostEqual(r["F_final"], F_trace, delta=1e-9 + 0.05)
                 self.assertGreaterEqual(r["F_final"], r["trace"][0][1] - 1e-12)
+
+
+class ReportFromCsv(unittest.TestCase):
+    """write_report rebuilds README.md + figures from the CSVs alone (no raw JSON, no qutip)."""
+
+    def test_report_from_committed_csvs(self):
+        import benchmark_qtrl as bqr
+        src = os.path.join(REPO_ROOT, "QuTip", "benchmark_results")
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in os.listdir(src):
+                if name.endswith((".csv", ".json")):
+                    shutil.copy(os.path.join(src, name), tmp)
+            bqr.write_report(tmp)
+            for name in ("README.md", "b3_timing.png", "b4_convergence.png"):
+                self.assertTrue(os.path.exists(os.path.join(tmp, name)), name)
+            md = open(os.path.join(tmp, "README.md")).read()
+        for n in range(1, 10):
+            self.assertIn(f"Table {n}.", md)
+        for n in (1, 2):
+            self.assertIn(f"**Figure {n}.**", md)
+        # display maths: every $$ on its own line, in pairs; inline $ balanced per line
+        self.assertEqual(md.count("$$") % 2, 0)
+        for line in md.replace("$$", "").splitlines():
+            self.assertEqual(line.count("$") % 2, 0, line)
+        # no literal | inside maths in a table row (it would split the cell)
+        for line in md.splitlines():
+            if line.startswith("|"):
+                for m in re.findall(r"\$([^$]*)\$", line):
+                    self.assertNotIn("|", m, line)
 
 
 if __name__ == "__main__":

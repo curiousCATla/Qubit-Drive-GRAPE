@@ -40,8 +40,10 @@ Usage (from the repository root)
 
 `run` writes one JSON file per case into DIR/raw (default ~/fwm_runs/qutip_bench)
 and skips cases that already exist, so a killed run resumes where it stopped
-(a half-finished case restarts). `report` reads DIR/raw and writes the readable
-report, CSVs and figures into --dest. Timings use single-threaded BLAS by
+(a half-finished case restarts). `report` has two stages: export_tables turns
+DIR/raw into the CSVs in --dest (skipped when DIR/raw does not exist, e.g. on a
+machine that did not run the benchmark), then write_report builds README.md and
+both figures from the CSVs in --dest alone. Timings use single-threaded BLAS by
 default (--threads), set before numpy is imported.
 """
 import argparse
@@ -532,6 +534,7 @@ def run_opt(cfg, store):
 # Report
 # --------------------------------------------------------------------------
 def _load(out):
+    """Raw JSON rows from <out>/raw (written by `run`), and the run's environment."""
     raw = os.path.join(out, "raw")
     rows = []
     for name in sorted(os.listdir(raw)):
@@ -570,59 +573,67 @@ def _time_to(trace, thr):
     return float("nan")
 
 
-def report(out, dest):
+# Report names of the two test problems (B4 names; B1-B3 use the `problem` key).
+PROBLEMS = {
+    "A_fock1": dict(problem="fock1", k=1,
+                    title=r"Fock state $|g,0\rangle \to |g,1\rangle$"),
+    "B_Xgate": dict(problem="X", k=2, title=r"Cat-code logical X"),
+}
+CODE_STYLE = {   # same colours as the B3 figure (repo C0, QuTiP DIAG C1)
+    "repo": dict(color="C0", label="repo (grape_core)"),
+    "qutip": dict(color="C1", label="QuTiP qtrl, DIAG"),
+}
+
+
+def _sci(x, digits=1):
+    """x as LaTeX scientific notation, e.g. 1.5 \\times 10^{-13} (for use inside $...$)."""
+    if x != x:
+        return r"\text{nan}"
+    if x == 0:
+        return "0"
+    m, e = f"{x:.{digits}e}".split("e")
+    if m == "1":
+        return rf"10^{{{int(e)}}}"
+    return rf"{m} \times 10^{{{int(e)}}}"
+
+
+def _fill(template, **kw):
+    """Replace <<key>> placeholders (LaTeX braces make str.format awkward)."""
+    for k, v in kw.items():
+        template = template.replace(f"<<{k}>>", str(v))
+    assert "<<" not in template, template
+    return template
+
+
+def export_tables(out, dest):
+    """Stage 1 (needs <out>/raw, i.e. the machine that ran the benchmark): raw JSON -> CSVs."""
     import pandas as pd
-    import matplotlib
-    import matplotlib.ticker
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
     rows, env = _load(out)
     os.makedirs(dest, exist_ok=True)
     with open(os.path.join(dest, "environment.json"), "w") as fh:
         json.dump(env, fh, indent=1)
     by = lambda b: [r for r in rows if r.get("bench") == b]  # noqa: E731
-    md = []
-    quick = os.path.basename(os.path.normpath(out)).endswith("quick")
 
-    # ---- B1
     b1 = pd.DataFrame(by("B1"))
     if len(b1):
-        b1 = b1[["problem", "n_c", "N", "pulse", "F_repo", "F_qutip", "abs_diff",
-                 "abs_diff_float32_tau"]]
-        b1.to_csv(os.path.join(dest, "b1_agreement.csv"), index=False)
-    # ---- B2
+        b1[["problem", "n_c", "N", "pulse", "F_repo", "F_qutip", "abs_diff",
+            "abs_diff_float32_tau"]].to_csv(os.path.join(dest, "b1_agreement.csv"), index=False)
     b2 = pd.DataFrame(by("B2"))
     if len(b2):
         b2.to_csv(os.path.join(dest, "b2_gradient.csv"), index=False)
-    # ---- B3
     b3 = pd.DataFrame(by("B3"))
-    prof = by("B3profile")
     if len(b3):
-        b3 = b3.sort_values(["sweep", "n_c", "N"])
-        b3.to_csv(os.path.join(dest, "b3_timing.csv"), index=False)
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-        for ax, sweep, xcol, xlabel in ((axes[0], "nc", "d", "Hilbert-space dimension d = 3 n_c"),
-                                        (axes[1], "N", "N", "number of time steps N")):
-            s = b3[b3.sweep == sweep]
-            ax.loglog(s[xcol], s["repo_fg_s"], "o-", label="repo (grape_core)")
-            ax.loglog(s[xcol], s["qutip_DIAG_fg_s"], "s-", label="QuTiP qtrl, DIAG (default)")
-            if "qutip_FRECHET_fg_s" in s:
-                ax.loglog(s[xcol], s["qutip_FRECHET_fg_s"], "^--", label="QuTiP qtrl, FRECHET")
-            ax.set_xlabel(xlabel)
-            ax.set_xticks(sorted(s[xcol].unique()))
-            ax.xaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
-            ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-            ax.set_ylabel("seconds per fidelity + gradient")
-            ax.grid(True, which="both", alpha=0.3)
-            ax.set_title("N = %d" % s.N.iloc[0] if sweep == "nc" else "n_c = %d" % s.n_c.iloc[0])
-        axes[0].legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(os.path.join(dest, "b3_timing.png"), dpi=150)
-        plt.close(fig)
-    # ---- B4
+        b3.sort_values(["sweep", "n_c", "N"]).to_csv(os.path.join(dest, "b3_timing.csv"), index=False)
+    prof = by("B3profile")
+    if prof:
+        p = prof[0]
+        parts = ("hamiltonians", "propagators", "forward", "onward", "gradient")
+        tot = sum(p[k] for k in parts)
+        pd.DataFrame([dict(n_c=p["n_c"], N=p["N"], calls=p["calls"], part=k, seconds=p[k],
+                           share_percent=100 * p[k] / tot) for k in parts]).to_csv(
+            os.path.join(dest, "b3_qutip_profile.csv"), index=False)
     b4 = by("B4")
-    entry = pd.DataFrame(by("B4entry"))
     if b4:
         trace_rows, summ = [], []
         for r in b4:
@@ -636,184 +647,583 @@ def report(out, dest):
             for thr in THRESHOLDS:
                 s[f"t_to_{thr:g}_s"] = _time_to(r["trace"], thr)
             summ.append(s)
-        summ = pd.DataFrame(summ).sort_values(["name", "code", "seed"])
-        summ.to_csv(os.path.join(dest, "b4_optimisation.csv"), index=False)
+        pd.DataFrame(summ).sort_values(["name", "code", "seed"]).to_csv(
+            os.path.join(dest, "b4_optimisation.csv"), index=False)
         pd.DataFrame(trace_rows).to_csv(os.path.join(dest, "b4_traces.csv"), index=False)
-        names = sorted(summ.name.unique())
-        fig, axes = plt.subplots(len(names), 2, figsize=(11, 3.8 * len(names)), squeeze=False)
-        colors = {"repo": "C0", "qutip": "C3"}
-        for i, name in enumerate(names):
-            for r in b4:
-                if r["name"] != name or not r["trace"]:
-                    continue
-                tr = np.array(r["trace"])
-                best = 1 - np.maximum.accumulate(tr[:, 1])
-                lab = ("repo" if r["code"] == "repo" else "QuTiP qtrl") if r["seed"] == min(
-                    x["seed"] for x in b4 if x["name"] == name) else None
-                axes[i, 0].semilogy(np.maximum(tr[:, 0], 1e-3), np.maximum(best, 1e-12),
-                                    color=colors[r["code"]], alpha=0.8, label=lab)
-                axes[i, 1].semilogy(np.arange(1, len(best) + 1), np.maximum(best, 1e-12),
-                                    color=colors[r["code"]], alpha=0.8, label=lab)
-            axes[i, 0].set_xscale("log")
-            axes[i, 0].set_xlabel("wall time (s)")
-            axes[i, 1].set_xlabel("fidelity evaluations")
-            for ax in axes[i]:
-                ax.set_ylabel("1 - F (best so far)")
-                ax.set_title(name)
-                ax.grid(True, which="both", alpha=0.3)
-            axes[i, 0].legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(os.path.join(dest, "b4_convergence.png"), dpi=150)
-        plt.close(fig)
+    entry = pd.DataFrame(by("B4entry"))
+    if len(entry):
+        entry[["name", "n_c", "N", "seed", "iterations", "wall_s", "F_final", "message"]].to_csv(
+            os.path.join(dest, "b4_entry.csv"), index=False)
 
-    # ---- write README.md
-    md.append("# Repo GRAPE vs QuTiP GRAPE: benchmark results\n")
+
+def _read_csv(dest, name):
+    import pandas as pd
+    path = os.path.join(dest, name)
+    return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
+
+
+def _plot_b3(b3, path):
+    import matplotlib
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    for ax, sweep, xcol, xlabel in ((axes[0], "nc", "d", "Hilbert-space dimension d = 3 n_c"),
+                                    (axes[1], "N", "N", "number of time steps N")):
+        s = b3[b3.sweep == sweep]
+        ax.loglog(s[xcol], s["repo_fg_s"], "o-", label="repo (grape_core)")
+        ax.loglog(s[xcol], s["qutip_DIAG_fg_s"], "s-", label="QuTiP qtrl, DIAG (default)")
+        if "qutip_FRECHET_fg_s" in s:
+            ax.loglog(s[xcol], s["qutip_FRECHET_fg_s"], "^--", label="QuTiP qtrl, FRECHET")
+        ax.set_xlabel(xlabel)
+        ax.set_xticks(sorted(s[xcol].unique()))
+        ax.xaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+        ax.set_ylabel("seconds per fidelity + gradient")
+        ax.grid(True, which="both", alpha=0.3)
+        ax.set_title("N = %d" % s.N.iloc[0] if sweep == "nc" else "n_c = %d" % s.n_c.iloc[0])
+    axes[0].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+T_DROP = 0.2     # B4 wall-time axis starts at half the first time any run reaches 1 - F < T_DROP
+
+
+def _best_curves(traces, name, code):
+    """Best-so-far infidelity of every seed: list of (seed, time_s, eval_index, 1 - max F)."""
+    out = []
+    sub = traces[(traces.name == name) & (traces.code == code)]
+    for seed, g in sub.groupby("seed"):
+        g = g.sort_values("evaluation")
+        best = 1.0 - np.maximum.accumulate(g.F.values)
+        out.append((seed, g.time_s.values, g.evaluation.values, best))
+    return out
+
+
+def _band(curves, x_of, grid):
+    """Median and quartiles of the curves on a common grid; a finished run keeps its last value."""
+    vals = np.full((len(curves), len(grid)), np.nan)
+    for i, c in enumerate(curves):
+        x, best = x_of(c), c[3]
+        idx = np.searchsorted(x, grid, side="right") - 1
+        ok = idx >= 0
+        vals[i, ok] = best[idx[ok]]
+        vals[i, ~ok] = 1.0
+    return np.percentile(vals, [25, 50, 75], axis=0)
+
+
+def _plot_b4(summ, traces, path):
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    names = [n for n in PROBLEMS if n in set(summ.name)] + sorted(set(summ.name) - set(PROBLEMS))
+    y_floors = []
+    with plt.rc_context({"font.size": 11, "axes.titlesize": 12, "legend.fontsize": 11}):
+        fig, axes = plt.subplots(len(names), 2, figsize=(12, 4.3 * len(names)), squeeze=False)
+        for i, name in enumerate(names):
+            info = PROBLEMS.get(name, dict(title=name))
+            row = summ[summ.name == name].iloc[0]
+            n_seeds = summ[summ.name == name].groupby("code").seed.nunique().max()
+            curves = {code: _best_curves(traces, name, code) for code in CODE_STYLE}
+            # wall-time axis: start just before the first clear drop
+            t_drop = min(c[1][np.argmax(c[3] < T_DROP)] for cs in curves.values() for c in cs
+                         if np.any(c[3] < T_DROP))
+            t_lo = 0.5 * t_drop
+            # y axis: down to the decade below the lowest quartile band (computed first)
+            q_low = min(_band(cs, lambda c: c[2], np.arange(1, max(c[2][-1] for c in cs) + 1))[0].min()
+                        for cs in curves.values())
+            y_floor = 10.0 ** np.floor(np.log10(q_low))
+            y_floors.append(y_floor)
+            below = []
+            for code, cs in curves.items():
+                st = CODE_STYLE[code]
+                for c in cs:
+                    axes[i, 0].plot(c[1], c[3], color=st["color"], lw=0.7, alpha=0.25)
+                    axes[i, 1].plot(c[2], c[3], color=st["color"], lw=0.7, alpha=0.25)
+                    if c[3][-1] < y_floor:
+                        below.append((code, c[0], c[3][-1]))
+                t_max = max(c[1][-1] for c in cs)
+                tg = np.logspace(np.log10(t_lo), np.log10(t_max), 600)
+                eg = np.arange(1, max(c[2][-1] for c in cs) + 1)
+                for ax, x_of, grid in ((axes[i, 0], lambda c: c[1], tg),
+                                       (axes[i, 1], lambda c: c[2], eg)):
+                    q25, q50, q75 = _band(cs, x_of, grid)
+                    ax.fill_between(grid, q25, q75, color=st["color"], alpha=0.2, lw=0)
+                    ax.plot(grid, q50, color=st["color"], lw=2.2)
+            title = (f"{info['title']}   ($n_c = {row.n_c}$, $N = {row.N}$, "
+                     f"{n_seeds} seeds per code)")
+            for j, ax in enumerate(axes[i]):
+                ax.set_yscale("log")
+                ax.set_ylim(y_floor, 1.5)
+                for thr in THRESHOLDS:
+                    ax.axhline(thr, color="0.45", ls=":", lw=1)
+                ax.grid(True, which="major", alpha=0.25)
+                ax.set_ylabel(r"best-so-far infidelity $1 - F$")
+                ax.text(0.015, 0.03, "(%s)" % "abcdefgh"[2 * i + j], transform=ax.transAxes,
+                        fontsize=12, fontweight="bold", va="bottom")
+                if below:
+                    ax.text(0.98, 0.03, "\n".join(
+                        f"{CODE_STYLE[c]['label'].split(' (')[0].split(',')[0]} seed {s} goes on to "
+                        f"$1 - F = {_sci(v)}$ (off scale)" for c, s, v in below),
+                        transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5, color="0.25")
+            axes[i, 0].set_xscale("log")
+            axes[i, 0].set_xlim(t_lo, None)
+            axes[i, 0].set_xlabel("wall time since start (s)")
+            axes[i, 1].set_xlim(0, None)
+            axes[i, 1].set_xlabel("fidelity + gradient evaluations")
+            axes[i, 0].set_title(title, loc="left")
+        handles = [Line2D([], [], color=CODE_STYLE[c]["color"], lw=2.2,
+                          label=CODE_STYLE[c]["label"] + ", median") for c in CODE_STYLE]
+        handles += [Patch(color="0.5", alpha=0.3, lw=0, label="middle 50 % of seeds"),
+                    Line2D([], [], color="0.5", lw=0.7, alpha=0.5, label="one seed"),
+                    Line2D([], [], color="0.45", ls=":", lw=1,
+                           label=r"thresholds $10^{-2}, 10^{-3}, 10^{-4}$")]
+        fig.legend(handles=handles, loc="upper center", ncol=3, frameon=False,
+                   bbox_to_anchor=(0.5, 1.0))
+        fig.tight_layout(rect=(0, 0, 1, 0.93 if len(names) > 1 else 0.88), h_pad=2.0)
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+    return y_floors
+
+
+def _median_inf(x):
+    """Median that counts NaN (threshold never reached) as infinitely slow."""
+    v = np.where(np.isnan(x), np.inf, np.asarray(x, dtype=float))
+    return float(np.median(v))
+
+
+def _fmt_s(x):
+    if not np.isfinite(x):
+        return "never"
+    return f"{x:.0f}" if x >= 100 else f"{x:.3g}"
+
+
+INTRO = r"""# Repo GRAPE vs QuTiP GRAPE: benchmark results
+
+This folder compares two implementations of GRAPE (gradient ascent pulse engineering) for closed-system,
+unitary dynamics:
+
+- **repo**: `core/grape_core.py`, driven by scipy's L-BFGS-B optimiser with the settings of `core/optimizer.py`;
+- **QuTiP**: the GRAPE of the `qutip-qtrl` package (unitary dynamics, `dyn_type="UNIT"`).
+
+Both codes get the same Hamiltonian, the same time steps and the same targets. QuTiP's default propagator
+(`DIAG`) also diagonalises each step's Hamiltonian and computes an exact gradient, so the two codes do the
+**same maths**: the benchmarks compare implementations, not algorithms. B1 checks that both solve the same
+problem, B2 that their gradients are right, B3 how long one evaluation takes, and B4 how long a whole
+optimisation takes.
+
+Generated by `python QuTip/benchmark_qtrl.py report`; do not edit by hand.
+"""
+
+PROBLEM_SECTION = r"""## The shared problem
+
+**Hamiltonian.** A transmon (3 levels, lowering operator $b$) coupled to a cavity ($n_c$ levels, lowering
+operator $a$), so the state space has dimension $d = 3n_c$. In the frame rotating with both modes,
+
+$$
+H(t) = H_0 + \sum_{j=1}^{4} u_j(t)\, H_j ,
+\qquad
+H_0 = \chi\, a^\dagger a\, b^\dagger b
+    + \frac{K}{2}\, a^{\dagger 2} a^{2}
+    + \frac{\chi'}{2}\, b^\dagger b\, a^{\dagger 2} a^{2}
+    + \frac{\alpha}{2}\, b^{\dagger 2} b^{2} ,
+$$
+
+with the four controls $H_1 = a + a^\dagger$ and $H_2 = i(a - a^\dagger)$ (cavity I and Q), $H_3 = b + b^\dagger$
+and $H_4 = i(b - b^\dagger)$ (transmon I and Q). Parameters (`core/grape_core.py`):
+$\chi/2\pi = <<chi>>$ MHz (dispersive shift), $K/2\pi = <<K>>$ MHz (cavity Kerr),
+$\chi'/2\pi = <<chip>>$ MHz (second-order dispersive shift), $\alpha/2\pi = <<alpha>>$ MHz (transmon
+anharmonicity). The amplitudes $u_j$ are in rad/μs.
+
+**Time steps.** The controls are constant on each of $N$ steps of length $\Delta t = <<dt_ns>>$ ns. On step $n$ the
+Hamiltonian is $H_n = H_0 + \sum_j u_{nj} H_j$, and the gate is the ordered product
+
+$$
+U = U_N\, U_{N-1} \cdots U_1 ,
+\qquad
+U_n = e^{-i H_n \Delta t} = V_n\, e^{-i \Lambda_n \Delta t}\, V_n^\dagger ,
+$$
+
+where $H_n = V_n \Lambda_n V_n^\dagger$ is the eigendecomposition both codes use. The pulse is the $N \times 4$
+array $u = (u_{nj})$.
+
+**Fidelity.** A problem is a list of $k$ input states $|i_m\rangle$ and their targets $|f_m\rangle$. Every
+fidelity in this folder is the repo's
+
+$$
+F = \left| \frac{1}{k} \sum_{m=1}^{k} \langle f_m | U | i_m \rangle \right|^2 ,
+$$
+
+which is 1 only if $U$ sends every input to its target with one common phase. QuTiP's phase-insensitive
+fidelity (`PSU`) is
+
+$$
+f = \frac{1}{k} \left| \mathrm{Tr}\!\left( W^\dagger U V \right) \right| ,
+$$
+
+with the inputs as the columns of $V$ and the targets as the columns of $W$. So $F = f^2$ and
+$\partial F / \partial u_{nj} = 2f\, \partial f / \partial u_{nj}$; every QuTiP number below is converted this way.
+
+| problem (B1-B3) | name (B4) | inputs $\to$ targets | $k$ |
+|---|---|---|---|
+| `fock1` | `A_fock1` | $\lvert g,0\rangle \to \lvert g,1\rangle$: put one photon into the empty cavity | 1 |
+| `X` | `B_Xgate` | logical X on the cat code with $\alpha_\text{cat} = \sqrt{3}$: $\lvert 0_L\rangle \to \lvert 1_L\rangle$ and $\lvert 1_L\rangle \to \lvert 0_L\rangle$, transmon in $g$ | 2 |
+
+**Table 1.** The two test problems. `X` is the repo's production gate (the trained pulse
+`pulses/u_X_main.npy` solves it). $\lvert g,n\rangle$ = transmon in its ground state, $n$ photons in the
+cavity. Each benchmark states its own $n_c$ and $N$.
+"""
+
+
+def write_report(dest, quick=False):
+    """Stage 2: CSVs + environment.json in `dest` -> README.md and both figures (no raw data needed)."""
+    import pandas as pd
+    import matplotlib
+    import matplotlib.ticker  # noqa: F401
+    matplotlib.use("Agg")
+    import core.grape_core as gc
+
+    env_path = os.path.join(dest, "environment.json")
+    env = json.load(open(env_path)) if os.path.exists(env_path) else environment()
+    b1 = _read_csv(dest, "b1_agreement.csv")
+    b2 = _read_csv(dest, "b2_gradient.csv")
+    b3 = _read_csv(dest, "b3_timing.csv")
+    prof = _read_csv(dest, "b3_qutip_profile.csv")
+    summ = _read_csv(dest, "b4_optimisation.csv")
+    traces = _read_csv(dest, "b4_traces.csv")
+    entry = _read_csv(dest, "b4_entry.csv")
+    if len(b3):
+        b3 = b3.sort_values(["sweep", "n_c", "N"])
+        _plot_b3(b3, os.path.join(dest, "b3_timing.png"))
+    if len(summ):
+        summ = summ.sort_values(["name", "code", "seed"])
+        if len(traces):
+            y_floors = _plot_b4(summ, traces, os.path.join(dest, "b4_convergence.png"))
+
+    md = [INTRO]
     if quick:
         md.append("> **Quick smoke-test run** (tiny sizes). Numbers here are not the benchmark.\n")
-    md.append(
-        "This folder compares the repo's closed-system GRAPE (`core/grape_core.py` + scipy "
-        "L-BFGS-B) with QuTiP's GRAPE (the `qutip-qtrl` package, unitary dynamics). Both get the "
-        "same transmon-cavity Hamiltonian, the same 2 ns piecewise-constant time steps and the "
-        "same targets. QuTiP's default propagator (`DIAG`) also uses an eigendecomposition and an "
-        "exact gradient, so the two codes do the **same maths**: what differs is how it is "
-        "implemented. Generated by `python QuTip/benchmark_qtrl.py report`; do not edit by hand.\n")
-    md.append("**Machine:** " + ", ".join(f"{k} {env.get(k)}" for k in (
-        "platform", "processor", "cpu_count", "python", "numpy", "scipy", "qutip", "qutip_qtrl",
-        "blas", "blas_threads")) + "\n")
-    md.append(
-        "**Fidelity convention.** All fidelities are the repo's F = |sum_m <f_m|U|i_m>|^2 / k^2 "
-        "(k = number of input states; k = 1 for the Fock problem, k = 2 for the cat-code X gate). "
-        "QuTiP's phase-insensitive fidelity is f = |Tr(W^dag U V)| / k, so F = f^2.\n")
+    tp = 2 * np.pi
+    md.append(_fill(PROBLEM_SECTION, chi=f"{gc.chi / tp:g}", K=f"{gc.Kerr / tp:g}",
+                    chip=f"{gc.chip / tp:g}", alpha=f"{gc.alpha / tp:g}", dt_ns=f"{DT * 1e3:g}"))
 
-    # Summary
+    # ---- B4 medians (used by the summary and by B4)
+    med_rows = []
+    if len(summ):
+        for name in [n for n in PROBLEMS if n in set(summ.name)] + sorted(set(summ.name) - set(PROBLEMS)):
+            g = summ[summ.name == name]
+            per = {}
+            for code in ("repo", "qutip"):
+                s = g[g.code == code]
+                if not len(s):
+                    continue
+                r = dict(name=name, code=code, runs=len(s))
+                for thr in THRESHOLDS:
+                    col = f"t_to_{thr:g}_s"
+                    r[thr] = _median_inf(s[col].values)
+                    r[f"n_{thr}"] = int(np.isfinite(s[col].values).sum())
+                r["F_final"] = float(np.median(s.F_final))
+                r["s_eval"] = float(np.median(s.s_per_evaluation))
+                per[code] = r
+                med_rows.append(r)
+            if {"repo", "qutip"} <= set(per):
+                ratio = dict(name=name, code="ratio", runs=None, F_final=None,
+                             s_eval=per["qutip"]["s_eval"] / per["repo"]["s_eval"])
+                for thr in THRESHOLDS:
+                    ratio[thr] = per["qutip"][thr] / per["repo"][thr]
+                med_rows.append(ratio)
+    med = {(r["name"], r["code"]): r for r in med_rows}
+
+    # ---- Summary
     md.append("## Summary\n")
     summary = []
     if len(b1):
-        summary.append(f"- **B1 same physics:** largest |F_repo - F_QuTiP| = {b1.abs_diff.max():.1e} "
-                       f"over {len(b1)} pulses ({b1.abs_diff_float32_tau.max():.1e} with QuTiP's "
-                       f"default single-precision time steps).")
+        summary.append(
+            rf"- **B1 same physics:** the largest $\lvert F_\text{{repo}} - F_\text{{QuTiP}}\rvert$ is "
+            rf"${_sci(b1.abs_diff.max())}$ over {len(b1)} pulses (${_sci(b1.abs_diff_float32_tau.max())}$ with "
+            "QuTiP's default single-precision time steps).")
     if len(b2):
-        summary.append(f"- **B2 gradients:** largest error against finite differences: repo "
-                       f"{b2.repo_max_rel_err.max():.1e}, QuTiP DIAG {b2.qutip_DIAG_max_rel_err.max():.1e}, "
-                       f"QuTiP FRECHET {b2.qutip_FRECHET_max_rel_err.max():.1e}.")
+        summary.append(
+            rf"- **B2 gradients:** largest relative error against finite differences: repo "
+            rf"${_sci(b2.repo_max_rel_err.max())}$, QuTiP DIAG ${_sci(b2.qutip_DIAG_max_rel_err.max())}$, "
+            rf"QuTiP FRECHET ${_sci(b2.qutip_FRECHET_max_rel_err.max())}$, all at the finite-difference "
+            rf"floor; the two codes' gradients differ by at most "
+            rf"${_sci(b2.repo_vs_qutip_DIAG_max_rel_diff.max())}$.")
     if len(b3):
         s = b3[b3.sweep == "nc"]
-        summary.append(f"- **B3 cost per evaluation:** QuTiP DIAG takes {s.speedup_fg_DIAG.min():.2f} to "
-                       f"{s.speedup_fg_DIAG.max():.2f} times as long as the repo "
-                       f"(n_c {s.n_c.min()} to {s.n_c.max()}, N {s.N.iloc[0]}); QuTiP FRECHET "
-                       f"{(s.qutip_FRECHET_fg_s / s.repo_fg_s).min():.1f} to "
-                       f"{(s.qutip_FRECHET_fg_s / s.repo_fg_s).max():.1f} times.")
-    if b4:
-        for name in sorted(summ.name.unique()):
-            g = summ[summ.name == name].groupby("code")
-            med = g[["t_to_0.001_s", "F_final", "wall_s"]].median()
-            if {"repo", "qutip"} <= set(med.index):
-                summary.append(
-                    f"- **B4 {name}:** median time to 1 - F <= 1e-3: repo "
-                    f"{med.loc['repo', 't_to_0.001_s']:.3g} s, QuTiP {med.loc['qutip', 't_to_0.001_s']:.3g} s; "
-                    f"median final F repo {med.loc['repo', 'F_final']:.6f}, QuTiP {med.loc['qutip', 'F_final']:.6f}.")
+        fr = s.qutip_FRECHET_fg_s / s.repo_fg_s
+        summary.append(
+            rf"- **B3 cost per evaluation:** QuTiP DIAG takes {s.speedup_fg_DIAG.min():.2f} to "
+            rf"{s.speedup_fg_DIAG.max():.2f} times as long as the repo ($n_c$ = {s.n_c.min()} to "
+            rf"{s.n_c.max()}, $N$ = {s.N.iloc[0]}); QuTiP FRECHET {fr.min():.1f} to {fr.max():.1f} times.")
+    for name in PROBLEMS:
+        if (name, "repo") in med and (name, "qutip") in med:
+            r, q = med[(name, "repo")], med[(name, "qutip")]
+            summary.append(
+                rf"- **B4 `{name}`:** median time to reach $1 - F \le 10^{{-3}}$: repo "
+                rf"{_fmt_s(r[1e-3])} s, QuTiP {_fmt_s(q[1e-3])} s ({q[1e-3] / r[1e-3]:.2f}×); "
+                rf"median final $F$: repo {r['F_final']:.6f}, QuTiP {q['F_final']:.6f}.")
     md.append("\n".join(summary) + "\n")
 
-    md.append("## B1. Same physics: do both codes give the same fidelity for the same pulse?\n")
+    # ---- B1
+    md.append("## B1. Same physics: same pulse, same fidelity?\n")
     md.append(
-        "*Why:* every speed or convergence comparison below only means something if both codes "
-        "solve exactly the same problem (same Hamiltonian, operator ordering, time stepping and "
-        "fidelity). *What it measures:* the fidelity of fixed pulses (random smooth pulses and the "
-        "production pulse `pulses/u_X_main.npy`) computed by each code. *Pass:* differences at "
-        "rounding level (about 1e-10 or less).\n")
+        "**What it tests.** Two calculators given the same numbers must print the same answer. If the two "
+        "codes disagree on the fidelity of a fixed pulse, they are solving different problems (a different "
+        "Hamiltonian, operator ordering, time step or fidelity), and every speed comparison below would be "
+        "meaningless.\n")
+    md.append(
+        r"**How.** For each fixed pulse $u$ both codes compute $F(u)$, and the table reports "
+        r"$\lvert F_\text{repo}(u) - F_\text{QuTiP}(u)\rvert$. Pass: a difference at rounding level, "
+        r"$\lesssim 10^{-10}$." + "\n")
     if len(b1):
         md.append(_md_table(b1, {"F_repo": "{:.12f}", "F_qutip": "{:.12f}", "abs_diff": "{:.1e}",
                                  "abs_diff_float32_tau": "{:.1e}"}) + "\n")
         md.append(
-            "`abs_diff_float32_tau` is QuTiP as it behaves by default when given `num_tslots` and "
-            "`evo_time`: qutip-qtrl 0.2.0 stores the time steps in single precision "
-            "(`dynamics.init_timeslots`, `np.ones(..., dtype=\"f\")`), so every step is 2 ns minus "
-            "2.3e-10 ns and each propagator is off by about 1e-7 relative. Everywhere else in this "
-            "benchmark QuTiP is given an explicit double-precision `tau`, which removes the "
-            "difference.\n")
+            rf"**Table 2.** The same pulse scored by both codes: they agree to rounding (largest difference "
+            rf"${_sci(b1.abs_diff.max())}$)." + "\n")
+        md.append(
+            "*Columns:* `n_c` = cavity levels; `N` = time steps; `pulse`: `random_s<s>` = the repo's smooth "
+            r"random start (`make_smooth_warm_start`, seed $s$) scaled by 3 to a peak of 12 rad/μs, "
+            "`u_X_main.npy` = the trained production X pulse; `F_repo`, `F_qutip` = $F$ from each code; "
+            r"`abs_diff` = $\lvert F_\text{repo} - F_\text{QuTiP}\rvert$; `abs_diff_float32_tau` = the same "
+            "with QuTiP at its default time-step precision (next paragraph).\n")
+        md.append(
+            "*Why the last column is larger.* When given `num_tslots` and `evo_time`, qutip-qtrl 0.2.0 stores "
+            "the step lengths in single precision (`dynamics.init_timeslots`, `np.ones(..., dtype=\"f\")`). "
+            r"Each step is then $\Delta t = 2\ \text{ns} - 2.3 \times 10^{-10}\ \text{ns}$, a relative error of "
+            r"about $10^{-7}$ in every step. Everywhere else in this benchmark QuTiP is given an explicit "
+            "double-precision `tau`, which removes the difference.\n")
 
+    # ---- B2
     md.append("## B2. Gradient accuracy\n")
     md.append(
-        "*Why:* L-BFGS-B builds its curvature model from the gradient, so a wrong or approximate "
-        "gradient slows or stalls the optimisation even if each evaluation is cheap. *What it "
-        "measures:* the largest error of each code's gradient dF/du on random entries, relative to "
-        "the largest central finite difference (h = 1e-6). QuTiP is tested with both of its exact "
-        "propagator-gradient options: `DIAG` (default for unitary problems, eigendecomposition) and "
-        "`FRECHET` (scipy's expm_frechet; QuTiP's default for open systems). Its third option, "
-        "`APPROX`, only works with QuTiP's finite-difference fidelity (`TDAPPROX`), not with the "
-        "unitary fidelity used here, so it is left out. The last column compares the full "
-        "gradients of the two codes directly.\n")
+        "**What it tests.** The optimiser climbs $F$, and the gradient is its compass. L-BFGS-B also builds "
+        "its picture of the landscape's curvature from successive gradients, so a slightly wrong compass "
+        "makes it slow down or stall even when each step is cheap. This test checks that each code's "
+        "gradient is right.\n")
+    md.append(
+        r"**How.** At one random pulse $u$, pick a set $S$ of " +
+        (f"{int(b2.n_entries.iloc[0])} " if len(b2) else "") +
+        r"random entries $(n, j)$ (time step $n$, control $j$) and compare each code's gradient "
+        r"$g_{nj} = \partial F / \partial u_{nj}$ with the central finite difference" + "\n\n"
+        r"$$" + "\n"
+        r"g^\text{FD}_{nj} = \frac{F(u + h\, e_{nj}) - F(u - h\, e_{nj})}{2h} , \qquad h = 10^{-6} ," + "\n"
+        r"$$" + "\n\n"
+        r"where $e_{nj}$ is the unit pulse that is 1 at entry $(n, j)$ and 0 elsewhere. The error is relative to "
+        r"the largest finite difference:" + "\n\n"
+        r"$$" + "\n"
+        r"\varepsilon = \frac{\max_{(n,j) \in S} \left| g_{nj} - g^\text{FD}_{nj} \right|}"
+        r"{\max_{(n,j) \in S} \left| g^\text{FD}_{nj} \right|} ." + "\n"
+        r"$$" + "\n\n"
+        r"The two codes are also compared directly, over all $4N$ entries:" + "\n\n"
+        r"$$" + "\n"
+        r"\delta = \frac{\max_{n,j} \left| g^\text{repo}_{nj} - g^\text{QuTiP}_{nj} \right|}"
+        r"{\max_{n,j} \left| g^\text{repo}_{nj} \right|} ." + "\n"
+        r"$$" + "\n\n"
+        "QuTiP is tested with both of its exact gradient options: `DIAG` (eigendecomposition; its default for "
+        "unitary problems) and `FRECHET` (scipy's `expm_frechet`, the derivative of the matrix exponential; "
+        "its default for open systems). Its third option, `APPROX`, works only with QuTiP's finite-difference "
+        "fidelity (`TDAPPROX`), not with the unitary fidelity used here, so it is left out.\n")
     if len(b2):
         cols = ["problem", "n_c", "N", "repo_max_rel_err", "qutip_DIAG_max_rel_err",
                 "qutip_FRECHET_max_rel_err", "repo_vs_qutip_DIAG_max_rel_diff"]
         md.append(_md_table(b2[[c for c in cols if c in b2]], {c: "{:.1e}" for c in cols[3:]}) + "\n")
-        md.append("Finite differences carry their own error (rounding and the h^2 term), here "
-                  "about 1e-7 to 1e-6 relative. A code whose error sits at that floor is exact as far "
-                  "as finite differences can tell; the sharper test is the last column, the two "
-                  "codes' full gradients against each other.\n")
+        md.append(
+            r"**Table 3.** Gradient error of each code against finite differences ($\varepsilon$) and between "
+            r"the two codes ($\delta$)." + "\n")
+        md.append(
+            r"*Columns:* `repo_max_rel_err`, `qutip_DIAG_max_rel_err`, `qutip_FRECHET_max_rel_err` = $\varepsilon$ "
+            r"for that code; `repo_vs_qutip_DIAG_max_rel_diff` = $\delta$ (the CSV also holds the same for "
+            "FRECHET).\n")
+        errs = b2[["repo_max_rel_err", "qutip_DIAG_max_rel_err", "qutip_FRECHET_max_rel_err"]].values
+        spread = float(np.max((errs.max(axis=1) - errs.min(axis=1)) / errs.max(axis=1)))
+        digits = int(np.floor(-np.log10(spread))) if spread > 0 else 15
+        md.append(
+            rf"*Reading it.* In each row the three values of $\varepsilon$ agree to {digits} significant digits. "
+            r"So $\varepsilon$ measures the finite difference itself (mostly rounding, about "
+            r"$\epsilon_\text{mach} F / h$ in absolute terms, plus a truncation term of order $h^2$), not any "
+            r"of the codes: all three gradients are exact as far as finite differences can tell. The sharper "
+            rf"test is $\delta$: the two codes' full gradients agree to ${_sci(b2.repo_vs_qutip_DIAG_max_rel_diff.max())}$, "
+            "which is rounding.\n")
 
+    # ---- B3
     md.append("## B3. Cost of one fidelity + gradient evaluation\n")
     md.append(
-        "*Why:* one L-BFGS-B iteration needs about one evaluation of the fidelity and its "
-        "gradient, so this cost sets the training time. *What it measures:* the median wall time "
-        "of one evaluation (the exact functions the optimiser calls; a new pulse each call so "
-        "nothing is cached), single-threaded BLAS, cat-code X-gate problem (2 input states). Left: "
-        "against the Hilbert-space size; right: against the number of time steps. `_f_s` columns "
-        "are fidelity-only times; `speedup_fg_DIAG` = QuTiP DIAG time / repo time. *What differs:* the "
-        "repo diagonalises all time steps in one batched `eigh` call and propagates only the 2 "
-        "input states; qtrl loops over time steps in Python, calling `eigh` once per step, and "
-        "forms d x d propagator gradients. Both are dominated by the per-step eigendecomposition, "
-        "so they can end up close.\n")
+        r"**What it tests.** Each L-BFGS-B iteration needs about one evaluation of $F$ and its gradient "
+        "(sometimes a few, see B4), so the cost of one evaluation sets the training time. This is the price "
+        "of a single step, measured on its own.\n")
+    md.append(
+        r"**How.** The median wall time $t$ of one call to exactly the functions the optimiser calls, on the "
+        r"cat-code X problem ($k = 2$), with a new pulse every call so nothing is cached, and one BLAS thread. "
+        r"Two sweeps: the state-space size $d = 3n_c$ at fixed $N$, and the number of steps $N$ at fixed $n_c$. "
+        r"The speed-up is $s = t_\text{QuTiP} / t_\text{repo}$, so $s > 1$ means the repo is faster." + "\n")
+    md.append(
+        r"*What differs between the codes.* The repo diagonalises all $N$ step Hamiltonians in one batched "
+        r"`eigh` call and carries only the $k = 2$ input states forward and the targets backward. qtrl loops "
+        r"over the steps in Python, calls `eigh` once per step, and builds the full $d \times d$ propagators "
+        "and their derivatives. Both spend most of their time in the per-step eigendecomposition, so they end "
+        "up within a small factor of each other.\n")
     if len(b3):
         cols = ["sweep", "n_c", "d", "N", "repo_fg_s", "qutip_DIAG_fg_s", "qutip_FRECHET_fg_s",
                 "speedup_fg_DIAG", "repo_f_s", "qutip_DIAG_f_s"]
-        md.append(_md_table(b3[[c for c in cols if c in b3]],
-                            {c: "{:.4g}" for c in cols[4:]}) + "\n")
+        md.append(_md_table(b3[[c for c in cols if c in b3]], {c: "{:.4g}" for c in cols[4:]}) + "\n")
+        md.append(r"**Table 4.** Median seconds per evaluation, X problem, one BLAS thread." + "\n")
+        md.append(
+            r"*Columns:* `sweep` = which size varies (`nc`: $n_c$ at fixed $N$; `N`: $N$ at fixed $n_c$); "
+            r"`d` = $3n_c$; `*_fg_s` = fidelity + gradient, `*_f_s` = fidelity alone (seconds); "
+            r"`speedup_fg_DIAG` = $s$ for fidelity + gradient against QuTiP `DIAG`." + "\n")
         md.append("![B3 timing](b3_timing.png)\n")
+        md.append(
+            r"**Figure 1.** Seconds per fidelity + gradient evaluation for the repo (blue), QuTiP `DIAG` "
+            r"(orange, its default) and QuTiP `FRECHET` (green, dashed), log-log. Left: against the "
+            rf"state-space size $d = 3n_c$ at $N = {b3[b3.sweep == 'nc'].N.iloc[0]}$. Right: against the "
+            rf"number of steps $N$ at $n_c = {b3[b3.sweep == 'N'].n_c.iloc[0]}$." + "\n")
+        fits = {}
         for nm in ("nc", "N"):
             s = b3[b3.sweep == nm]
             if len(s) >= 2:
                 x = np.log(s["d" if nm == "nc" else "N"].values.astype(float))
-                for col, lab in (("repo_fg_s", "repo"), ("qutip_DIAG_fg_s", "QuTiP DIAG")):
-                    p = np.polyfit(x[-3:], np.log(s[col].values[-3:]), 1)[0]
-                    md.append(f"- scaling of {lab} with {'d' if nm == 'nc' else 'N'} "
-                              f"(last 3 points): exponent {p:.2f}")
-        md.append("")
-    if prof:
-        p = prof[0]
-        tot = sum(p[k] for k in ("hamiltonians", "propagators", "forward", "onward", "gradient"))
-        md.append(f"Where QuTiP's time goes (its own statistics, n_c {p['n_c']}, N {p['N']}): " +
-                  ", ".join(f"{k} {100 * p[k] / tot:.0f} %" for k in
-                            ("propagators", "gradient", "hamiltonians", "forward", "onward")) + ".\n")
+                for col in ("repo_fg_s", "qutip_DIAG_fg_s"):
+                    fits[(nm, col)] = np.polyfit(x[-3:], np.log(s[col].values[-3:]), 1)[0]
+        if len(fits) == 4:
+            md.append(
+                r"**Scaling.** Fitting $t \propto d^{\,p}$ and $t \propto N^{\,q}$ to the last three points of "
+                "each sweep:\n")
+            md.append("| code | $p$ (against $d$) | $q$ (against $N$) |\n|---|---|---|\n"
+                      f"| repo | {fits[('nc', 'repo_fg_s')]:.2f} | {fits[('N', 'repo_fg_s')]:.2f} |\n"
+                      f"| QuTiP DIAG | {fits[('nc', 'qutip_DIAG_fg_s')]:.2f} | "
+                      f"{fits[('N', 'qutip_DIAG_fg_s')]:.2f} |\n")
+            md.append(
+                r"**Table 5.** Fitted scaling exponents. An eigendecomposition costs $O(d^3)$ and there is one "
+                r"per step, so for large $d$ one expects $t \propto N d^3$ ($p = 3$, $q = 1$). Both codes scale "
+                r"alike. $p$ is still below 3, most likely because at $d \le " +
+                f"{int(b3.d.max())}" + r"$ the work that grows more slowly than $d^3$ (matrix-vector "
+                r"products, per-call overhead) still takes a visible share." +
+                "\n")
+    if len(prof):
+        p = prof.sort_values("share_percent", ascending=False)
+        md.append(
+            rf"**Where QuTiP's time goes** (its own timing statistics, $n_c = {int(p.n_c.iloc[0])}$, "
+            rf"$N = {int(p.N.iloc[0])}$): " +
+            ", ".join(f"`{r.part}` {r.share_percent:.0f} %" for r in p.itertuples()) +
+            ". `propagators` is the per-step propagator computation, which holds the eigendecompositions; "
+            "`hamiltonians` builds each $H_n$; `forward` and `onward` are the running products of propagators "
+            "from the start and from the end; `gradient` combines them into $\\partial f / \\partial u$.\n")
 
+    # ---- B4
     md.append("## B4. End-to-end optimisation: time to solution\n")
     md.append(
-        "*Why:* a faster evaluation does not automatically mean faster training: the two codes "
-        "optimise different functions of the same overlap (repo -F, QuTiP 1 - sqrt(F)) and have "
-        "different wrapper overheads. *What it measures:* both run scipy L-BFGS-B from the same "
-        "smooth random start (`make_smooth_warm_start`, peak 4 rad/us, same seed), same box "
-        f"+-{AMP_BOX:g} rad/us, same stopping rules (ftol {FTOL:g} = QuTiP accuracy_factor "
-        f"{FTOL / np.finfo(float).eps:.0f}, gradient tolerance {GTOL:g}, {MAXCOR} correction pairs, "
-        "same iteration cap and wall-time cap). Reported: wall time until the best-so-far "
-        "infidelity first reaches 1e-2 / 1e-3 / 1e-4 (NaN = never), final F, iterations, "
-        "evaluations. No band filter, ramp or penalties: QuTiP has no equivalent of the repo's "
-        "constraint chain, so the production recipe cannot be compared like for like.\n"
-        "Problems: **A_fock1** = |g,0> -> |g,1>; **B_Xgate** = cat-code logical X (alpha = sqrt 3), "
-        "the production gate, at one truncation.\n")
-    if b4:
+        "**What it tests.** The race. A faster evaluation (B3) does not guarantee faster training: the codes "
+        "optimise different functions of the same overlap, pay different overheads around each call, and "
+        "their line searches may need different numbers of calls. Here both codes train the same problem from "
+        "the same start, and we time how long each takes to reach a given fidelity.\n")
+    md.append(_fill(
+        r"""**How.** Both run scipy's L-BFGS-B from the same start (the repo's `make_smooth_warm_start`, peak
+4 rad/μs, same seed), inside the box $\lvert u_{nj} \rvert \le <<box>>$ rad/μs, with the same stopping rules
+(`ftol` $<<ftol>>$ = QuTiP `accuracy_factor` <<acc>>, gradient tolerance $<<gtol>>$, <<maxcor>> correction
+pairs) and the same iteration and wall-time caps. They minimise different functions of the same overlap:
+
+$$
+C_\text{repo} = -F , \qquad C_\text{QuTiP} = 1 - f = 1 - \sqrt{F} .
+$$
+
+The time to reach an infidelity threshold $\epsilon$ uses the best fidelity seen so far,
+
+$$
+t_\epsilon = \min \left\{ t \;:\; 1 - \max_{t' \le t} F(t') \le \epsilon \right\} ,
+\qquad \epsilon \in \{ 10^{-2},\ 10^{-3},\ 10^{-4} \} ,
+$$
+
+where $F(t')$ is the fidelity of the evaluation that finished $t'$ seconds after the start. No band filter,
+ramp or penalties: QuTiP has nothing like the repo's constraint chain, so the production recipe cannot be
+compared like for like.
+""", box=f"{AMP_BOX:g}", ftol=_sci(FTOL, 0), acc=f"{FTOL / np.finfo(float).eps:.0f}",
+        gtol=_sci(GTOL, 0), maxcor=MAXCOR))
+    if med_rows:
+        lines = ["| problem | code | runs | $t_{10^{-2}}$ (s) | $t_{10^{-3}}$ (s) | $t_{10^{-4}}$ (s) "
+                 "| final $F$ | s per evaluation |", "|---|---|---|---|---|---|---|---|"]
+        for r in med_rows:
+            if r["code"] == "ratio":
+                cells = [f"`{r['name']}`", "*QuTiP / repo*", ""]
+                cells += [f"*{r[t]:.2f}*" if np.isfinite(r[t]) else "" for t in THRESHOLDS]
+                cells += ["", f"*{r['s_eval']:.2f}*"]
+            else:
+                cells = [f"`{r['name']}`", r["code"], str(r["runs"])]
+                for t in THRESHOLDS:
+                    c = _fmt_s(r[t])
+                    if r[f"n_{t}"] < r["runs"]:
+                        c += f" ({r[f'n_{t}']}/{r['runs']})"
+                    cells.append(c)
+                cells += [f"{r['F_final']:.6f}", f"{r['s_eval']:.3g}"]
+            lines.append("| " + " | ".join(cells) + " |")
+        md.append("\n".join(lines) + "\n")
+        md.append(
+            r"**Table 6.** Medians over seeds of the time to each threshold, the final fidelity and the cost "
+            r"per evaluation; the *QuTiP / repo* rows divide the two medians (above 1 = the repo is faster). "
+            r"$(n/m)$ = only $n$ of $m$ runs reached the threshold; a run that never did counts as infinitely "
+            "slow in the median.\n")
+        early = summ[~summ.message.str.contains("limit", case=False)]
+        if len(early):
+            md.append(
+                "*Stopping.* Every run used its full iteration budget except " +
+                "; ".join(f"`{r.name}` {r.code} seed {r.seed}, which met the convergence test "
+                          f"(`{r.message}`) after {r.iterations} iterations at $1 - F = {_sci(r.infidelity_final)}$"
+                          for r in early.itertuples()) + ".\n")
+        else:
+            md.append("*Stopping.* Every run used its full iteration budget.\n")
+    if len(traces):
+        md.append("![B4 convergence](b4_convergence.png)\n")
+        n_by = summ.groupby("name").seed.nunique().to_dict()
+        md.append(
+            "**Figure 2.** Convergence of the best fidelity seen so far, repo (blue) against QuTiP DIAG "
+            "(orange). Rows: the two problems of Table 1 (" +
+            ", ".join(f"`{n}` {n_by[n]} seeds" for n in n_by) +
+            "). Left column (a, c): against wall time, log axis, starting just before the first drop. Right "
+            "column (b, d): against the number of fidelity + gradient evaluations. Thick line = median over "
+            "seeds, band = middle 50 % of seeds, thin lines = single seeds, dotted lines = the thresholds of "
+            "Table 6. The two codes converge alike per evaluation (right), so the gap in wall time (left) comes "
+            "mostly from the cost per evaluation (Table 6, last column; B3). Each row's y axis ends one decade below its lowest band (" +
+            ", ".join(f"${_sci(y, 0)}$" for y in y_floors) + "); a run that goes lower is named in the "
+            "panel.\n")
+    if len(summ):
         cols = ["name", "n_c", "N", "seed", "code", "iterations", "evaluations", "wall_s",
                 "s_per_evaluation", "F_final", "t_to_0.01_s", "t_to_0.001_s", "t_to_0.0001_s", "message"]
+        md.append("<details>\n<summary><b>Table 7.</b> Every run, one row per seed and code "
+                  "(click to open).</summary>\n")
         md.append(_md_table(summ[cols], {"wall_s": "{:.1f}", "s_per_evaluation": "{:.3g}",
                                          "F_final": "{:.8f}", "t_to_0.01_s": "{:.3g}",
                                          "t_to_0.001_s": "{:.3g}", "t_to_0.0001_s": "{:.3g}"}) + "\n")
-        md.append("![B4 convergence](b4_convergence.png)\n")
-    if len(entry):
         md.append(
-            "Overhead check: the same problem through the repo's production entry point "
-            "`optimize_multi_state_pulse` (penalties 0, no ramp, no band, one truncation, n_jobs 1), "
-            "first seed only. Note it returns the best pulse seen, and builds its own start the same way.\n")
-        md.append(_md_table(entry[["name", "n_c", "N", "seed", "iterations", "wall_s", "F_final"]],
-                            {"wall_s": "{:.1f}", "F_final": "{:.8f}"}) + "\n")
+            "*Columns:* `code` = which optimiser; `iterations` = L-BFGS-B iterations; `evaluations` = calls of "
+            "fidelity + gradient (more than the iterations, because a line search sometimes needs more than "
+            "one call); `wall_s` = total seconds; `s_per_evaluation` = `wall_s` / `evaluations`; `F_final` = "
+            r"$F$ of the returned pulse; `t_to_<ε>_s` = $t_\epsilon$ in seconds, `nan` = never reached; "
+            "`message` = why the optimiser stopped: the iteration cap (`STOP: TOTAL NO. of ITERATIONS REACHED "
+            "LIMIT` from scipy, `Iteration or fidelity function call limit reached` from QuTiP) or convergence "
+            r"(`CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH`: the cost changed by less than `ftol` "
+            "between iterations).\n")
+        md.append("</details>\n")
+    if len(entry):
+        e = entry.copy()
+        bare = summ[summ.code == "repo"].set_index(["name", "seed"]).wall_s
+        e["bare_wall_s"] = [bare.get((r.name, r.seed), np.nan) for r in e.itertuples()]
+        e["overhead"] = [f"{100 * (r.wall_s / r.bare_wall_s - 1):+.0f} %" for r in e.itertuples()]
+        md.append(
+            "**Overhead check.** The same problem through the repo's production entry point "
+            "`optimize_multi_state_pulse` (penalties 0, no ramp, no band, one truncation, one job), first "
+            "seed only. It builds its start the same way and returns the best pulse seen.\n")
+        md.append(_md_table(e[["name", "n_c", "N", "seed", "iterations", "wall_s", "bare_wall_s", "overhead",
+                               "F_final"]],
+                            {"wall_s": "{:.1f}", "bare_wall_s": "{:.1f}", "F_final": "{:.8f}"}) + "\n")
+        md.append(
+            "**Table 8.** The production entry point against the bare L-BFGS-B loop of Table 7 for the same "
+            "seed. *Columns:* `wall_s` = entry point, `bare_wall_s` = bare loop (Table 7), `overhead` = "
+            "extra time of the entry point." +
+            (" The final $F$ is the same as the bare loop's." if all(
+                abs(r.F_final - summ[(summ.code == "repo") & (summ.name == r.name) & (summ.seed == r.seed)]
+                    .F_final.iloc[0]) < 1e-8 for r in e.itertuples()) else "") + "\n")
 
     note = os.path.join(REPO_ROOT, "QuTip", "benchmark_interpretation.md")
     if os.path.exists(note) and not quick:
@@ -828,12 +1238,37 @@ def report(out, dest):
         "- **Open systems (Lindblad GRAPE vs DGRAPE):** out of scope by decision (2026-11-23).\n"
         "- **Production recipe** (band filter, ramp, penalties, three truncations): no QuTiP equivalent.\n")
     md.append("## Files\n")
-    md.append("`b1_agreement.csv`, `b2_gradient.csv`, `b3_timing.csv`, `b4_optimisation.csv`, "
-              "`b4_traces.csv` (every evaluation of every run), `b3_timing.png`, `b4_convergence.png`, "
-              "`environment.json`. Rerun: `python QuTip/benchmark_qtrl.py run --part all`, then `report`.\n")
+    md.append(
+        "| file | contents |\n|---|---|\n"
+        "| `b1_agreement.csv` | Table 2 |\n"
+        "| `b2_gradient.csv` | Table 3, plus the FRECHET-vs-repo difference and the finite-difference scale |\n"
+        "| `b3_timing.csv`, `b3_timing.png` | Table 4, Figure 1 |\n"
+        "| `b3_qutip_profile.csv` | QuTiP's own timing split (B3) |\n"
+        "| `b4_optimisation.csv` | Table 7 (Table 6 is computed from it) |\n"
+        "| `b4_traces.csv`, `b4_convergence.png` | every evaluation of every B4 run (time, $F$); Figure 2 |\n"
+        "| `b4_entry.csv` | Table 8 |\n"
+        "| `environment.json` | the machine and package versions below |\n")
+    md.append(
+        "**Table 9.** Files in this folder. Rerun: `python QuTip/benchmark_qtrl.py run --part all`, then "
+        "`report`. The raw results (one JSON per case) stay in `~/fwm_runs/qutip_bench/raw` on the machine "
+        "that ran them; without them, `report` rebuilds this README and both figures from the CSVs here.\n")
+    md.append("## Environment\n")
+    md.append(", ".join(f"{k} {env.get(k)}" for k in (
+        "platform", "processor", "cpu_count", "python", "numpy", "scipy", "qutip", "qutip_qtrl",
+        "blas", "blas_threads")) + ".\n")
     with open(os.path.join(dest, "README.md"), "w") as fh:
         fh.write("\n".join(md))
     log(f"report written to {dest}")
+
+
+def report(out, dest):
+    """CSVs from the raw results when <out>/raw exists, then README + figures from the CSVs."""
+    quick = os.path.basename(os.path.normpath(out)).endswith("quick")
+    if os.path.isdir(os.path.join(out, "raw")):
+        export_tables(out, dest)
+    else:
+        log(f"{os.path.join(out, 'raw')} not found: rebuilding the README and figures from the CSVs in {dest}")
+    write_report(dest, quick=quick)
 
 
 # --------------------------------------------------------------------------

@@ -567,7 +567,7 @@ python QuTip/qutip_validate.py
 # qutip-qtrl 0.2.0 builds its time steps in float32 unless given an explicit float64 `tau`
 # (the benchmark passes one; B1 reports both). Full run ~3-4 h single-threaded.
 python QuTip/benchmark_qtrl.py run --part all [--quick]
-python QuTip/benchmark_qtrl.py report
+python QuTip/benchmark_qtrl.py report   # without ~/fwm_runs/qutip_bench/raw it rebuilds README + figures from the CSVs
 python3 validation/test_qutip_benchmark.py -v   # 3 tests, ~1 s; skipped without qutip-qtrl
 ```
 

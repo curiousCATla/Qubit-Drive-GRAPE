@@ -1,0 +1,6 @@
+n_c,N,calls,part,seconds,share_percent
+26,550,3,propagators,,95
+26,550,3,gradient,,1
+26,550,3,hamiltonians,,3
+26,550,3,forward,,0
+26,550,3,onward,,0
