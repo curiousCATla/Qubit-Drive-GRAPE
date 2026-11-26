@@ -15,6 +15,12 @@ Nothing here is retrained: the AQEC step and the FWM tail were trained after the
 Channels: "decay" (the decay set, as every earlier B1/B2 table; reproduces them bit for bit) or "shirol" (Shirol's full
 set, DGRAPE.model.shirol_collapse_ops) in the gate, the step and the tail alike. The AQEC chains run at n_r = 1 (exact:
 neither the gates nor the step ever fill the readout); the FWM chains at n_r = 2.
+
+Realistic readout windows (notebook §6.3, DGRAPE/aqec_window.py): "ideal map + real window" (the ideal map, its
+pre-twist calibrated for the window, then the window; no ideal reset) and "open step + real window" (a trained step
+pulse, then the window). Both need window= (a WindowSpec or a json path); the second also open_pulse= (a tag or .npy
+path, default OPEN_STEP). The window's residual readout photons are NOT carried into the next gate (n_r = 1): the
+cost per residual photon is measured separately (aqec_window.gate_with_residual_photons).
 """
 
 import os
@@ -33,7 +39,7 @@ GATES = {"X": aq.EST_PULSE,                                         # EsT X, see
          "H": "pulses/dgrape/u_H_est_err_closed_T2_s17.npy"}        # EsT H, seed 17 of C_err, 2 us
 OPEN_STEP = "aqec_open_T15_w"                                       # the best open-trained step, 1.5 us (+ 1.2 us)
 FWM_TAIL = "X_tail_estg_T08_shirol_d01_s8"                          # the seed-8 FWM tail, 0.8 us
-CORRECTIONS = ("ideal AQEC", "open step", "FWM tail")
+CORRECTIONS = ("ideal AQEC", "open step", "FWM tail", "ideal map + real window", "open step + real window")
 TAIL_NOISE = {"decay": "dgrape", "shirol": "shirol"}                # aq.model channels -> fwm_tail noise
 
 
@@ -61,9 +67,26 @@ def target_after(seq, N):
 class Corrections:
     """The correction steps on one model (n_c, n_r, channels): name -> (function R -> R, duration in us)."""
 
-    def __init__(self, n_c, n_r, channels, names):
+    def __init__(self, n_c, n_r, channels, names, window=None, open_pulse=None):
         self.m = aq.model(n_c, n_r, channels)
         self.steps = {}
+        real = [nm for nm in names if nm.endswith("real window")]
+        if real:
+            from DGRAPE import aqec_window as aw
+            if window is None:
+                raise ValueError(f"{real} need window= (a WindowSpec or a json path)")
+            spec = aw.load_spec(window) if isinstance(window, str) else window
+            W = aw.Window(spec, self.m)
+            if "ideal map + real window" in names:
+                K = aq.kraus(n_c, n_r)
+                v = W.pretwist()
+                self.steps["ideal map + real window"] = (lambda R: aw.real_step(W, R, K, "forgive", twist=v),
+                                                         aq.TAU1 + W.duration)
+            if "open step + real window" in names:
+                path = open_pulse or OPEN_STEP
+                u = np.load(path) if path.endswith(".npy") else _load(f"pulses/dgrape/u_{path}.npy")
+                self.steps["open step + real window"] = (lambda R: aw.open_step_real(W, R, u),
+                                                         u.shape[0] * ap.DT + W.duration)
         if "ideal AQEC" in names:
             K = aq.kraus(n_c, n_r)
             self.steps["ideal AQEC"] = (lambda R: aq.aqec_step(self.m, R, K, "forgive"), aq.TAU1 + aq.TAU2)
@@ -85,10 +108,10 @@ def _row(seq, protocol, correction, N, time_us, R, n_c, n_r, channels):
             **fr.score_state(R, n_c, n_r, target_after(seq, N))}
 
 
-def b1(seq, corrections, N_max, n_c=24, n_r=1, channels="shirol", log=None):
+def b1(seq, corrections, N_max, n_c=24, n_r=1, channels="shirol", log=None, window=None, open_pulse=None):
     """N = 1..N_max gates of seq back to back; after each N the state as is (correction "none") and, on a copy,
     followed by each correction."""
-    cs = Corrections(n_c, n_r, channels, corrections)
+    cs = Corrections(n_c, n_r, channels, corrections, window, open_pulse)
     pulses = gate_pulses()
     R, t, rows = fr.inputs(n_c, n_r), 0.0, []
     for N in range(1, N_max + 1):
@@ -104,9 +127,9 @@ def b1(seq, corrections, N_max, n_c=24, n_r=1, channels="shirol", log=None):
     return rows
 
 
-def b2(seq, correction, N_max, n_c=24, n_r=1, channels="shirol", log=None):
+def b2(seq, correction, N_max, n_c=24, n_r=1, channels="shirol", log=None, window=None, open_pulse=None):
     """N = 1..N_max (gate + correction) pairs of seq, scored after every pair."""
-    cs = Corrections(n_c, n_r, channels, (correction,))
+    cs = Corrections(n_c, n_r, channels, (correction,), window, open_pulse)
     fn, T = cs.steps[correction]
     pulses = gate_pulses()
     R, t, rows = fr.inputs(n_c, n_r), 0.0, []

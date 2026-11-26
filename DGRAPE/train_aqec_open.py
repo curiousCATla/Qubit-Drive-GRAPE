@@ -7,6 +7,9 @@ pulse -> 1.2 us readout window -> reset, cost 1 - F_pro (decay set) + drive cap 
     python3 DGRAPE/train_aqec_open.py --duration-us 2.0 --start closed      # warm: the closed pulse x_aqec_T20_s42
     python3 DGRAPE/train_aqec_open.py --duration-us 2.0 --start cold --seed 42
     python3 DGRAPE/train_aqec_open.py --duration-us 2.0 --init-x path/x_....npy --tag ...   # resume
+    python3 DGRAPE/train_aqec_open.py --duration-us 1.5 --init-x pulses/dgrape/x_aqec_open_T15_w.npy \
+        --window pulses/dgrape/aqec_window_<wtag>.json --channels shirol --tag aqec_open_T15_<wtag>
+            # against a realistic readout window (DGRAPE/aqec_window.py, notebook §6.3) instead of idle + reset
 
 Tags: aqec_open_T20_w (warm from the closed pulse), aqec_open_T20_s42 (cold). Writes to --outdir (default
 ~/fwm_runs/aqec_open, outside iCloud): u_/x_<tag>.npy, <tag>.json (settings, history, open + closed truncation scan)
@@ -55,7 +58,8 @@ def main():
     p.add_argument("--n-c", type=int, default=ao.N_C_TRAIN)
     p.add_argument("--n-jobs", type=int, default=3)
     p.add_argument("--lambda-forbid", type=float, default=ao.LAMBDA_FORBID)
-    p.add_argument("--channels", choices=["decay", "all"], default="decay")
+    p.add_argument("--channels", choices=["decay", "all", "shirol"], default="decay")
+    p.add_argument("--window", default=None, help="realistic readout window json (DGRAPE/aqec_window.py)")
     p.add_argument("--tag", default=None)
     p.add_argument("--outdir", default=DEFAULT_OUT)
     p.add_argument("--dry-run", action="store_true")
@@ -69,8 +73,13 @@ def main():
     else:
         init_path = None
     init_x = None if init_path is None else np.load(init_path)
+    window = None
+    if a.window is not None:
+        from DGRAPE import aqec_window as aw
+        window = aw.load_spec(a.window)
     if a.dry_run:
-        obj = ao.OpenAqecObjective(N, a.n_c, channels=a.channels, lambda_forbid=a.lambda_forbid, n_jobs=a.n_jobs)
+        obj = ao.OpenAqecObjective(N, a.n_c, channels=a.channels, lambda_forbid=a.lambda_forbid, n_jobs=a.n_jobs,
+                                   window=window)
         x0 = eg.start_preimage(a.seed, N) if init_x is None else init_x
         obj.evaluate(x0)
         obj._cache_x = None
@@ -90,12 +99,13 @@ def main():
         _dump(os.path.join(a.outdir, f"{tag}_ckpt.json"), terms)
 
     u, x, info = ao.train(a.duration_us, init_x=init_x, seed=a.seed, maxiter=a.maxiter, n_c=a.n_c,
-                          channels=a.channels, lambda_forbid=a.lambda_forbid, n_jobs=a.n_jobs, checkpoint=ckpt)
-    info.update(tag=tag, init_x_path=init_path)
+                          channels=a.channels, lambda_forbid=a.lambda_forbid, n_jobs=a.n_jobs, checkpoint=ckpt,
+                          window=window)
+    info.update(tag=tag, init_x_path=init_path, window_path=a.window)
     np.save(os.path.join(a.outdir, f"u_{tag}.npy"), u)
     np.save(os.path.join(a.outdir, f"x_{tag}.npy"), x)
     _dump(os.path.join(a.outdir, f"{tag}.json"), info)
-    info["trunc_scan"] = {str(k): v for k, v in ao.truncation_scan(u).items()}
+    info["trunc_scan"] = {str(k): v for k, v in ao.truncation_scan(u, channels=a.channels, window=window).items()}
     _dump(os.path.join(a.outdir, f"{tag}.json"), info)
     print(f"{tag}: F {info['F_start']:.6f} -> {info['F_train']:.6f}  trunc {info['trunc_scan']}  "
           f"pinned {info['frac_preimage_pinned']:.2%}", flush=True)

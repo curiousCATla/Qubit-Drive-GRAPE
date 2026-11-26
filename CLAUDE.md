@@ -351,7 +351,28 @@ once, ceiling 1 (not the FWM photon-add). Loss every 10 ns (271 branches; n_c 28
 in place (0.83-0.91), 800-1100 ns scrambled (0.56-0.76 even repaired), last 200 ns + window clean error words
 (0.95-1.00 repaired). Exposure 7.0 % (gate 2.7 %), cost 4.41 % as is (window 2.66 %), 0.76 % after ideal repair. Next
 pair (every 20 ns): window losses 0.000 -> 0.81 (gate 2 is the leak: 0.997 -> 0.855 repairable); +2.9 % won back.
-Tests in `validation/test_aqec_ideal.py` (`Transparency`, 18 tests total, ~25 s). **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
+Tests in `validation/test_aqec_ideal.py` (`Transparency`, 18 tests total, ~25 s). **Realistic readout + reset window
+(AQEC_compare §6.3, code 2026-11-25 on the Mac, studies on the PC; user)**: replaces step 2's 1.2 us idle + perfect reset
+with ring-up, integration, decision, latency, a conditional Gaussian+DRAG pi pulse and ring-down, Shirol channels, one
+outcome-averaged CPTP map. `DGRAPE/readout.py` = classical pointers per (transmon level, storage n) and per transmon jump
+(10 ns bins), drive shapes square / kick / CLEAR (2x2 depletion solve) / free 8 segments, matched-filter record, threshold
+P(e). `DGRAPE/aqec_window.py` (docstring = the model) = `WindowSpec` json, the transmon-diagonal sector split by storage
+coherence order (exact expm per step, adjoint = conjugate transpose), storage term from the exact linear-readout pointer
+formula (chi_ar Stark + measurement dephasing), decision-resolved integration (0 / 1 transmon jump exact, 2+ jumps by final
+level, `remainder_trace` reported), pi pulse averaged over Poisson readout photons, calibrated pre-twist, `Terms` (eta and
+threshold re-scored with no propagation). **Assumptions: chi_ar = 2pi 9.3 kHz, chi_fr = 0 (f reads as g), n_cap 10, no
+MIST / readout Kerr / thermal readout photons.** Leftover e/f goes to the next gate (no final reset); residual photons are
+charged J = F_pro - s n_res, s from EsT X at n_r 6. Threaded with `window=None` default (bit for bit) through
+`aqec_open.window_targets/OpenAqecObjective/train/open_score/truncation_scan`, `train_aqec_open.py --window <json>
+--channels shirol`, `aqec_sequences.Corrections(window=, open_pulse=)` ("ideal map + real window", "open step + real
+window"). CLI `DGRAPE/aqec_window_run.py dry-run|calib|grid|optimise|chains|score-open|check` -> `~/fwm_runs/aqec_window`
+(tables `aqec_window_*.csv`, windows `windows/aqec_window_<tag>.json`, tags `rw_e30_l3` = eta 0.3, latency 0.3 us; `_c5`,
+`_passive`, `_free`, `_nochiar`). Mac timing: one grid cell 4.8 s at n_c 24 (1.7 s at n_c 8), 1656 cells. First look (square
+nbar 5, t_int 0.8, latency 0.3, eta 0.3, n_c 24): one gate + ideal map + real window 0.8975 vs ideal AQEC 0.9540;
+chi_ar off 0.9212, an equal-length idle + ideal reset 0.9221: window length ~3 %, chi_ar dephasing ~2.4 % (mostly from
+ring-up/down transients), so chi_ar is the key uncertain input and CLEAR / low nbar should win. Idle limit = `aqec_step`
+and `open_step` to 1e-13. Tests: `python3 validation/test_aqec_window.py -v` (14 tests incl. qutip chi_ar brute force,
+~30 s). **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
 `code="fock01"` on `DGRAPE/code.embedded_basis`/`process_targets`, `est_gate.system/train/truncation_scan`,
 `fwm_repeat.inputs/score_state` (default kitten, bit for bit; fock01 has no error words, so only `--variant ord`).
 Training `train_est_gate.py --code fock01 --variant ord --duration-us 1.1|1.5 --seed 42|43|44`, tags

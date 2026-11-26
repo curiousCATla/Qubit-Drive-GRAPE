@@ -31,6 +31,10 @@ truncation wall (DGRAPE's first X run). Trained pulses are re-scored at n_c 24 a
 
 Channels: the decay set (photon loss, readout decay, transmon T1), as every DGRAPE and FWM-tail training. Pulses go to
 ~/fwm_runs/aqec_open first, then pulses/dgrape/u_aqec_open_*.npy.
+
+REALISTIC WINDOW (window=, notebook §6.3). A DGRAPE.aqec_window.WindowSpec replaces "1.2 us idle + ideal reset" by the
+realistic readout, decision, conditional pi pulse and ring-down (no reset). It is still a fixed CPTP map, so the same
+trick applies with Tw = W'(T) (aqec_window.Window.adjoint). window=None (the default) is the old window, bit for bit.
 """
 
 import time
@@ -67,8 +71,11 @@ def reset_adjoint(T, n_c, n_r=1):
     return np.einsum("bnrmq,jk->bnjrmkq", Yg, np.eye(N_Q)).reshape(T.shape).astype(complex)
 
 
-def window_targets(m, T, tau2=TAU2):
-    """Tw = Idle'(Reset'(T)) (module docstring)."""
+def window_targets(m, T, tau2=TAU2, window=None):
+    """Tw = Idle'(Reset'(T)) (module docstring), or W'(T) for a realistic window (a WindowSpec)."""
+    if window is not None:
+        from DGRAPE import aqec_window as aw
+        return aw.Window(window, m).adjoint(T)
     X = reset_adjoint(T, m.n_c, m.n_r)
     if tau2 == 0:
         return X
@@ -118,13 +125,14 @@ class OpenAqecObjective:
     """cost(x), grad(x) on the pre-image x (N, 4) (module docstring). The three process inputs run as joblib jobs."""
 
     def __init__(self, N, n_c=N_C_TRAIN, gate_n_c=GATE_N_C, channels="decay", dt=DT, tau2=TAU2,
-                 lambda_forbid=LAMBDA_FORBID, n_jobs=3, target="X", gate_pulse=None):
+                 lambda_forbid=LAMBDA_FORBID, n_jobs=3, target="X", gate_pulse=None, window=None):
         self.N, self.n_c, self.channels, self.dt, self.tau2 = N, n_c, channels, dt, tau2
+        self.window = window
         self.lambda_forbid, self.n_jobs = lambda_forbid, n_jobs
         self.m = _model(n_c, channels)
         self.R0 = gate_input(n_c, gate_n_c, channels, gate_pulse)
         T, self.w = ft.tail_targets(n_c, 1, target, "traced")
-        self.Tw = window_targets(self.m, T, tau2)
+        self.Tw = window_targets(self.m, T, tau2, window)
         self.to_physical, self.to_preimage_grad = make_constraint_chain(N, dt, eg.CAV_BAND, eg.TRA_BAND, eg.RAMP_NS)
         self._pool = None
         self._cache_x, self._cache = None, None
@@ -180,7 +188,7 @@ class OpenAqecObjective:
 
 
 def train(duration_us, init_x=None, seed=eg.SEED, maxiter=2000, n_c=N_C_TRAIN, channels="decay",
-          lambda_forbid=LAMBDA_FORBID, n_jobs=3, verbose=True, print_every=25, checkpoint=None):
+          lambda_forbid=LAMBDA_FORBID, n_jobs=3, verbose=True, print_every=25, checkpoint=None, window=None):
     """L-BFGS-B on the open cost from init_x (a pre-image of the same chain, e.g. a closed AQEC pulse's x_) or, with
     init_x None, d2's smooth seeded start. Keeps the best-seen F_pro iterate. Returns (u, x, info)."""
     N = ap.n_steps(duration_us)
@@ -188,7 +196,7 @@ def train(duration_us, init_x=None, seed=eg.SEED, maxiter=2000, n_c=N_C_TRAIN, c
     if np.abs(x).max() > eg.U_BOX * (1 + 1e-12):
         raise ValueError(f"start pre-image reaches {np.abs(x).max():.2f} > box {eg.U_BOX}")
     x = np.clip(x, -eg.U_BOX, eg.U_BOX)
-    obj = OpenAqecObjective(N, n_c, channels=channels, lambda_forbid=lambda_forbid, n_jobs=n_jobs)
+    obj = OpenAqecObjective(N, n_c, channels=channels, lambda_forbid=lambda_forbid, n_jobs=n_jobs, window=window)
     t0 = time.time()
     count = [0]
     _, _, t_start = obj.evaluate(x)
@@ -230,6 +238,7 @@ def train(duration_us, init_x=None, seed=eg.SEED, maxiter=2000, n_c=N_C_TRAIN, c
             "best_it": best["it"] if F_end < best["F"] else int(res.nit), "history": history,
             "cav_band": list(eg.CAV_BAND), "tra_band": list(eg.TRA_BAND), "ramp_ns": eg.RAMP_NS,
             "u_box": eg.U_BOX, "eps_max": eg.EPS_MAX,
+            "window": None if window is None else window.to_dict(),
             "max_drive_modulus": {"cav": float(np.hypot(u[:, 0], u[:, 1]).max()),
                                   "tra": float(np.hypot(u[:, 2], u[:, 3]).max())},
             "max_abs_preimage": float(np.abs(x_use).max()),
@@ -240,13 +249,17 @@ def train(duration_us, init_x=None, seed=eg.SEED, maxiter=2000, n_c=N_C_TRAIN, c
     return u, x_use, info
 
 
-def open_score(u, n_c=24, channels="decay"):
-    """F_pro of EsT gate + the step "as is" at n_c (gate at max(n_c, 24)), the forward check of a trained pulse."""
+def open_score(u, n_c=24, channels="decay", window=None):
+    """F_pro of EsT gate + the step "as is" at n_c (gate at max(n_c, 24)), the forward check of a trained pulse.
+    window: a realistic-window WindowSpec instead of the 1.2 us idle + ideal reset."""
     m = aq.model(n_c, 1, channels)
     R = gate_input(n_c, GATE_N_C, channels)
     with np.errstate(**_QUIET):
-        return fr.score_state(ap.open_step(m, R, u), n_c, 1, "X")["F_pro"]
+        if window is None:
+            return fr.score_state(ap.open_step(m, R, u), n_c, 1, "X")["F_pro"]
+        from DGRAPE import aqec_window as aw
+        return fr.score_state(aw.open_step_real(aw.Window(window, m), R, u), n_c, 1, "X")["F_pro"]
 
 
-def truncation_scan(u, trunc=(20, 24, 28)):
-    return {n: {"F_open": open_score(u, n), **ap.block_fidelities(u, n)} for n in trunc}
+def truncation_scan(u, trunc=(20, 24, 28), channels="decay", window=None):
+    return {n: {"F_open": open_score(u, n, channels, window), **ap.block_fidelities(u, n)} for n in trunc}
