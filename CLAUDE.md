@@ -372,7 +372,24 @@ nbar 5, t_int 0.8, latency 0.3, eta 0.3, n_c 24): one gate + ideal map + real wi
 chi_ar off 0.9212, an equal-length idle + ideal reset 0.9221: window length ~3 %, chi_ar dephasing ~2.4 % (mostly from
 ring-up/down transients), so chi_ar is the key uncertain input and CLEAR / low nbar should win. Idle limit = `aqec_step`
 and `open_step` to 1e-13. Tests: `python3 validation/test_aqec_window.py -v` (14 tests incl. qutip chi_ar brute force,
-~30 s). **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
+~30 s). **Result (PC, 2026-11-25/27; notebook §6.3, Figures 13-16, Tables 20-26).** Needs joblib >= 1.4
+(`return_as="generator_unordered"`; requirements.txt). Calib: pi sigma 4 ns (reset error 0.20 %), s = 0.0644 per
+leftover photon. All 18 windows CONVERGED (n_c 28 1.3e-8, bins 4.6e-7). **Nelder-Mead trap**: at eta <= 0.3 (and
+c5, passive, nochiar, free) the grid-best start never flips (bias so high every record reads g), so NM shrank the
+readout away; a second start from the best grid cell with P(g|e) < 0.5 (user-approved 2026-11-26, same objective,
+bounds, maxfev; 14 tags, 308 min) and per tag the higher J kept: `aqec_window_{opt,breakdown,check,residual_check}.csv`
+= merged (column `start`, opt also `J_other_start`), `*_plateau.csv` = first start, `*_restart.csv` = second start.
+**Headline rw_e30_l3**: CLEAR, nbar 3.60, peak 10, t_int 0.679 us, bias 0.72 noise widths toward g, pi sigma 8 ns,
+t_w 1.011 us, P(g|e) 8.2 %, P(e|g) 0.21 %: one gate 0.94586 vs ideal AQEC 0.95399 (-0.81 %; gate alone 0.95993);
+chi_ar dephasing 0.70 %, misassignment 0.52 %; nochiar 0.9538, c20 0.9518, eta 0.6 0.9494. Never-flip windows win at eta
+0.05 (all latencies), c5 and passive (0.931, 0.16-0.54 us). Chains (B2, N = 20, Shirol): ideal map + headline window
+0.563 (1.99 %/pair, tau_L 74 us, above the Fock chain per us from 6.2 us, 0.789 vs 0.722 at 22 us), never-flip 0.367 (<
+none 0.452). **Retrained open step** (`pulses/dgrape/*aqec_open_T15_rw_{e30_l3,e05_l3,e30_l3_passive}*`, 1000 it, 27-29
+h each, still climbing): one gate 0.9119 / 0.9119 / 0.9135 (not retrained 0.830 / 0.893 / 0.894; old pulse + ideal window
+0.9177); B2 N = 20 0.384 / 0.179 / 0.184 (never-flip: P_e+P_f 0.39-0.41), headline below none at every N, 0.687 at 22 us
+(FWM 0.690, Fock 0.722), tau_L 44 us. One-gate J cannot see the never-flip windows' leftover e. Not-retrained scores:
+`tables/aqec_window_open_notretrained_{single,B2}.csv` (old pulse relabelled `aqec_open_T15_w_on_<w>`, score-open
+`--pulse-dir/--out-dir`). All 18 windows in `pulses/dgrape/aqec_window_*.json`. **Fock {0,1} reference (AQEC_compare §6, 2026-11-21, user)**: an X gate on |0_L> = |0>, |1_L> = |1> (transmon g), the break-even bar for every kitten chain.
 `code="fock01"` on `DGRAPE/code.embedded_basis`/`process_targets`, `est_gate.system/train/truncation_scan`,
 `fwm_repeat.inputs/score_state` (default kitten, bit for bit; fock01 has no error words, so only `--variant ord`).
 Training `train_est_gate.py --code fock01 --variant ord --duration-us 1.1|1.5 --seed 42|43|44`, tags

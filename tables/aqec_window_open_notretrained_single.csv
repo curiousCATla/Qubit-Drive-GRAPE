@@ -1,0 +1,7 @@
+open_pulse,window,n_c,channels,F_pro
+aqec_open_T15_w_on_rw_e30_l3,aqec_window_rw_e30_l3.json,24,shirol,0.8303967660367595
+aqec_open_T15_w_on_rw_e30_l3,aqec_window_rw_e30_l3.json,28,shirol,0.830393735608896
+aqec_open_T15_w_on_rw_e05_l3,aqec_window_rw_e05_l3.json,24,shirol,0.8934775432843549
+aqec_open_T15_w_on_rw_e05_l3,aqec_window_rw_e05_l3.json,28,shirol,0.8934725935765977
+aqec_open_T15_w_on_rw_e30_l3_passive,aqec_window_rw_e30_l3_passive.json,24,shirol,0.8937177890639574
+aqec_open_T15_w_on_rw_e30_l3_passive,aqec_window_rw_e30_l3_passive.json,28,shirol,0.8937128282070451
